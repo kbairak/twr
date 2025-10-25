@@ -1,14 +1,7 @@
 -- Function to calculate incremental TWR on cash flow insert
--- Provide the new row with:
---   - user_id
---   - product_id
---   - timestamp
---   - units
--- Enhances NEW with:
---   - cumulative_units
---   - cumulative_deposits
---   - period_return
---   - cumulative_twr_factor
+--   Provide the new row with: user_id, product_id, timestamp, units
+--   Enhances NEW with: deposit, cumulative_units, cumulative_deposits,
+--                      period_return, cumulative_twr_factor
 CREATE OR REPLACE FUNCTION calculate_incremental_twr()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -27,8 +20,7 @@ BEGIN
     -- Get current price for this product (most recent price <= transaction timestamp)
     SELECT price INTO v_current_price
     FROM product_price
-    WHERE product_id = NEW.product_id
-      AND timestamp <= NEW.timestamp
+    WHERE product_id = NEW.product_id AND timestamp <= NEW.timestamp
     ORDER BY timestamp DESC
     LIMIT 1;
 
@@ -65,17 +57,20 @@ BEGIN
         LIMIT 1;
     END IF;
 
+    -- Calculate deposit for this transaction
+    NEW.deposit := NEW.units * v_current_price;
+
     -- Calculate cumulative values and TWR
     IF v_prev_cumulative_units IS NULL THEN
         -- First transaction for this user-product
         NEW.cumulative_units := NEW.units;
-        NEW.cumulative_deposits := NEW.units * v_current_price;
+        NEW.cumulative_deposits := NEW.deposit;
         NEW.period_return := 0;
         NEW.cumulative_twr_factor := 1.0;
     ELSE
         -- Calculate cumulative units and deposits incrementally
         NEW.cumulative_units := v_prev_cumulative_units + NEW.units;
-        NEW.cumulative_deposits := v_prev_cumulative_deposits + (NEW.units * v_current_price);
+        NEW.cumulative_deposits := v_prev_cumulative_deposits + NEW.deposit;
 
         -- Calculate value after previous flow using price at that time
         v_prev_value_after_flow := v_prev_cumulative_units * v_prev_price;
@@ -106,4 +101,3 @@ CREATE TRIGGER calculate_twr_trigger
 BEFORE INSERT ON user_cash_flow
 FOR EACH ROW
 EXECUTE FUNCTION calculate_incremental_twr();
-

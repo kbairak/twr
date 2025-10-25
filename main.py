@@ -16,7 +16,14 @@ from rich.panel import Panel
 class TWRDatabase:
     """Database operations for TWR tracking system."""
 
-    def __init__(self, host="localhost", port=5432, dbname="twr", user="twr_user", password="twr_password"):
+    def __init__(
+        self,
+        host="localhost",
+        port=5432,
+        dbname="twr",
+        user="twr_user",
+        password="twr_password",
+    ):
         self.host = host
         self.port = port
         self.dbname = dbname
@@ -31,7 +38,7 @@ class TWRDatabase:
             port=self.port,
             dbname=self.dbname,
             user=self.user,
-            password=self.password
+            password=self.password,
         )
 
     def _execute_query(self, query, params=None, fetch=False):
@@ -59,7 +66,7 @@ class TWRDatabase:
             port=self.port,
             dbname="postgres",
             user=self.user,
-            password=self.password
+            password=self.password,
         )
         # Need to be outside transaction to drop/create database
         conn.autocommit = True
@@ -69,12 +76,15 @@ class TWRDatabase:
 
             # Terminate existing connections
             self.console.print("Terminating existing connections...")
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT pg_terminate_backend(pg_stat_activity.pid)
                 FROM pg_stat_activity
                 WHERE pg_stat_activity.datname = %s
                   AND pid <> pg_backend_pid()
-            """, (self.dbname,))
+            """,
+                (self.dbname,),
+            )
 
             # Drop database
             self.console.print(f"Dropping database {self.dbname}...")
@@ -84,7 +94,9 @@ class TWRDatabase:
             self.console.print(f"Creating database {self.dbname}...")
             cur.execute(f'CREATE DATABASE "{self.dbname}" OWNER {self.user}')
 
-            self.console.print("[green]✓[/green] Database dropped and recreated successfully!")
+            self.console.print(
+                "[green]✓[/green] Database dropped and recreated successfully!"
+            )
 
         finally:
             conn.close()
@@ -115,12 +127,16 @@ class TWRDatabase:
                 try:
                     cur.execute(sql_content)
                     conn.commit()
-                    self.console.print(f"[green]✓[/green] {sql_file.name} completed successfully")
+                    self.console.print(
+                        f"[green]✓[/green] {sql_file.name} completed successfully"
+                    )
                 except Exception as e:
                     conn.rollback()
                     raise RuntimeError(f"Failed to execute {sql_file.name}: {e}")
 
-            self.console.print("[green]✓[/green] All migrations completed successfully!")
+            self.console.print(
+                "[green]✓[/green] All migrations completed successfully!"
+            )
 
         finally:
             conn.close()
@@ -130,7 +146,7 @@ class TWRDatabase:
         # Truncate in reverse order of dependencies
         self._execute_query("TRUNCATE TABLE user_cash_flow CASCADE")
         self._execute_query("TRUNCATE TABLE product_price CASCADE")
-        self._execute_query("TRUNCATE TABLE app_user CASCADE")
+        self._execute_query('TRUNCATE TABLE "user" CASCADE')
         self._execute_query("TRUNCATE TABLE product CASCADE")
 
     def add_price(self, product_name, price, timestamp=None):
@@ -171,7 +187,9 @@ class TWRDatabase:
             f"[green]✓[/green] Added price for [cyan]{product_name}[/cyan]: [yellow]${price}[/yellow] at {timestamp.isoformat()}"
         )
 
-    def add_cashflow(self, user_name, product_name, units=None, money=None, timestamp=None):
+    def add_cashflow(
+        self, user_name, product_name, units=None, money=None, timestamp=None
+    ):
         """Add a cash flow (buy or sell) for a user."""
         if units is None and money is None:
             raise ValueError("Either --units or --money must be specified")
@@ -196,7 +214,7 @@ class TWRDatabase:
 
         # Look up or create user
         query_user = """
-            INSERT INTO app_user (name)
+            INSERT INTO "user" (name)
             VALUES (%s)
             ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
             RETURNING id
@@ -224,9 +242,13 @@ class TWRDatabase:
                 ORDER BY timestamp DESC
                 LIMIT 1
             """
-            price_result = self._execute_query(query_price, (product_id, timestamp), fetch=True)
+            price_result = self._execute_query(
+                query_price, (product_id, timestamp), fetch=True
+            )
             if not price_result:
-                self.console.print(f"[red]✗[/red] No price found for [cyan]{product_name}[/cyan] at or before {timestamp.isoformat()}")
+                self.console.print(
+                    f"[red]✗[/red] No price found for [cyan]{product_name}[/cyan] at or before {timestamp.isoformat()}"
+                )
                 return
             current_price = float(price_result[0]["price"])
             units = money / current_price
@@ -250,12 +272,15 @@ class TWRDatabase:
 
         # Show product prices
         self.console.print(Panel("[bold cyan]PRODUCT PRICES[/bold cyan]", expand=False))
-        prices = self._execute_query("""
+        prices = self._execute_query(
+            """
             SELECT p.name as product_name, pp.price, pp.timestamp
             FROM product_price pp
             JOIN product p ON pp.product_id = p.id
             ORDER BY pp.timestamp, p.name
-        """, fetch=True)
+        """,
+            fetch=True,
+        )
         if prices:
             table = Table(show_header=True, header_style="bold magenta")
             table.add_column("name")
@@ -263,7 +288,9 @@ class TWRDatabase:
             table.add_column("timestamp")
             for row in prices:
                 table.add_row(
-                    str(row["product_name"]), f"${row['price']:.2f}", str(row["timestamp"])
+                    str(row["product_name"]),
+                    f"${row['price']:.2f}",
+                    str(row["timestamp"]),
                 )
             self.console.print(table)
         else:
@@ -272,32 +299,29 @@ class TWRDatabase:
         self.console.print()
 
         # Show cash flows
-        self.console.print(Panel("[bold cyan]USER CASH FLOWS[/bold cyan]", expand=False))
-        cash_flows = self._execute_query("""
+        self.console.print(
+            Panel("[bold cyan]USER CASH FLOWS[/bold cyan]", expand=False)
+        )
+        cash_flows = self._execute_query(
+            """
             SELECT
                 u.name as user_name,
                 p.name as product_name,
                 ucf.units,
+                ucf.deposit as money_flow,
                 ucf.timestamp,
                 ucf.cumulative_units - ucf.units AS units_before_flow,
                 ucf.cumulative_units AS units_after_flow,
-                -- Calculate money invested/withdrawn using price at time of flow
-                ucf.units * (
-                    SELECT price
-                    FROM product_price pp
-                    WHERE pp.product_id = ucf.product_id
-                      AND pp.timestamp <= ucf.timestamp
-                    ORDER BY pp.timestamp DESC
-                    LIMIT 1
-                ) AS money_flow,
                 ucf.period_return,
                 ucf.cumulative_twr_factor,
                 (ucf.cumulative_twr_factor - 1) * 100 as cumulative_twr_pct
             FROM user_cash_flow ucf
-            JOIN app_user u ON ucf.user_id = u.id
+            JOIN "user" u ON ucf.user_id = u.id
             JOIN product p ON ucf.product_id = p.id
             ORDER BY ucf.timestamp, u.name, p.name
-        """, fetch=True)
+        """,
+            fetch=True,
+        )
         if cash_flows:
             table = Table(show_header=True, header_style="bold magenta")
             table.add_column("user")
@@ -312,7 +336,9 @@ class TWRDatabase:
             table.add_column("cumulative_twr_pct", justify="right")
 
             for row in cash_flows:
-                money_color = "green" if row["money_flow"] and row["money_flow"] >= 0 else "red"
+                money_color = (
+                    "green" if row["money_flow"] and row["money_flow"] >= 0 else "red"
+                )
                 money_sign = "+" if row["money_flow"] and row["money_flow"] >= 0 else ""
                 table.add_row(
                     str(row["user_name"]),
@@ -350,19 +376,24 @@ class TWRDatabase:
         self.console.print(
             Panel("[bold cyan]USER-PRODUCT TIMELINE[/bold cyan]", expand=False)
         )
-        user_product_state = self._execute_query("""
+        user_product_state = self._execute_query(
+            """
             SELECT
-                user_name,
-                product_name,
-                timestamp,
-                holdings,
-                net_deposits,
-                current_price,
-                current_value,
-                current_twr * 100 as twr_pct
-            FROM user_product_timeline
-            ORDER BY timestamp, user_name, product_name
-        """, fetch=True)
+                u.name as user_name,
+                p.name as product_name,
+                upt.timestamp,
+                upt.holdings,
+                upt.net_deposits,
+                upt.current_price,
+                upt.current_value,
+                upt.current_twr * 100 as twr_pct
+            FROM user_product_timeline upt
+            JOIN "user" u ON upt.user_id = u.id
+            JOIN product p ON upt.product_id = p.id
+            ORDER BY upt.timestamp, u.name, p.name
+        """,
+            fetch=True,
+        )
         if user_product_state:
             table = Table(show_header=True, header_style="bold magenta")
             table.add_column("user")
@@ -377,7 +408,9 @@ class TWRDatabase:
             for row in user_product_state:
                 twr_color = "green" if row["twr_pct"] and row["twr_pct"] >= 0 else "red"
                 deposits_color = (
-                    "green" if row["net_deposits"] and row["net_deposits"] >= 0 else "red"
+                    "green"
+                    if row["net_deposits"] and row["net_deposits"] >= 0
+                    else "red"
                 )
                 table.add_row(
                     str(row["user_name"]),
@@ -410,16 +443,20 @@ class TWRDatabase:
                 expand=False,
             )
         )
-        timeline = self._execute_query("""
+        timeline = self._execute_query(
+            """
             SELECT
-                user_name,
-                timestamp,
-                total_net_deposits,
-                total_value,
-                value_weighted_twr * 100 as twr_pct
-            FROM user_timeline
-            ORDER BY timestamp, user_name
-        """, fetch=True)
+                u.name as user_name,
+                ut.timestamp,
+                ut.total_net_deposits,
+                ut.total_value,
+                ut.value_weighted_twr * 100 as twr_pct
+            FROM user_timeline ut
+            JOIN "user" u ON ut.user_id = u.id
+            ORDER BY ut.timestamp, u.name
+        """,
+            fetch=True,
+        )
         if timeline:
             table = Table(show_header=True, header_style="bold magenta")
             table.add_column("user")
@@ -511,9 +548,9 @@ def main():
         db.add_cashflow(
             args.user,
             args.product,
-            units=args.units if hasattr(args, 'units') else None,
-            money=args.money if hasattr(args, 'money') else None,
-            timestamp=args.timestamp
+            units=args.units if hasattr(args, "units") else None,
+            money=args.money if hasattr(args, "money") else None,
+            timestamp=args.timestamp,
         )
     elif args.command == "show":
         db.show_all()

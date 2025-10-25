@@ -98,7 +98,7 @@ def test_add_price(twr):
     assert results == [{"name": "nvidia", "price": Decimal("186.260000")}]
 
     # Verify other tables are empty (only product and product_price should have data)
-    users = twr._execute_query("SELECT * FROM app_user", fetch=True)
+    users = twr._execute_query('SELECT * FROM "user"', fetch=True)
     assert users == []
 
     cash_flows = twr._execute_query("SELECT * FROM user_cash_flow", fetch=True)
@@ -131,10 +131,12 @@ def test_one_price_one_cashflow(twr, at):
         "SELECT p.name, pp.price, pp.timestamp FROM product_price pp JOIN product p ON pp.product_id = p.id",
         fetch=True,
     )
-    assert prices == [{"name": "nvidia", "price": Decimal("10.000000"), "timestamp": at(0)}]
+    assert prices == [
+        {"name": "nvidia", "price": Decimal("10.000000"), "timestamp": at(0)}
+    ]
 
-    # Verify app_user table
-    users = twr._execute_query("SELECT name FROM app_user", fetch=True)
+    # Verify user table
+    users = twr._execute_query('SELECT name FROM "user"', fetch=True)
     assert users == [{"name": "Alice"}]
 
     # Verify user_cash_flow table
@@ -143,13 +145,14 @@ def test_one_price_one_cashflow(twr, at):
         SELECT u.name as user_name,
                p.name as product_name,
                ucf.units,
+               ucf.deposit,
                ucf.cumulative_units,
                ucf.cumulative_deposits,
                ucf.period_return,
                ucf.cumulative_twr_factor,
                ucf.timestamp
         FROM user_cash_flow ucf
-            JOIN app_user u ON ucf.user_id = u.id
+            JOIN "user" u ON ucf.user_id = u.id
             JOIN product p ON ucf.product_id = p.id
         """,
         fetch=True,
@@ -159,6 +162,7 @@ def test_one_price_one_cashflow(twr, at):
             "user_name": "Alice",
             "product_name": "nvidia",
             "units": Decimal("10.000000"),
+            "deposit": Decimal("100.000000"),
             "cumulative_units": Decimal("10.000000"),
             "cumulative_deposits": Decimal("100.000000"),
             "period_return": Decimal("0.000000"),
@@ -170,15 +174,17 @@ def test_one_price_one_cashflow(twr, at):
     # Verify user_product_timeline view
     user_product_timeline = twr._execute_query(
         """
-        SELECT user_name,
-               product_name,
-               holdings,
-               net_deposits,
-               current_price,
-               current_value,
-               current_twr,
-               timestamp
-        FROM user_product_timeline
+        SELECT u.name as user_name,
+               p.name as product_name,
+               upt.holdings,
+               upt.net_deposits,
+               upt.current_price,
+               upt.current_value,
+               upt.current_twr,
+               upt.timestamp
+        FROM user_product_timeline upt
+        JOIN "user" u ON upt.user_id = u.id
+        JOIN product p ON upt.product_id = p.id
         """,
         fetch=True,
     )
@@ -198,8 +204,9 @@ def test_one_price_one_cashflow(twr, at):
     # Verify user_timeline view
     user_timeline = twr._execute_query(
         """
-        SELECT user_name, total_net_deposits, total_value, value_weighted_twr, timestamp
-        FROM user_timeline""",
+        SELECT u.name as user_name, ut.total_net_deposits, ut.total_value, ut.value_weighted_twr, ut.timestamp
+        FROM user_timeline ut
+        JOIN "user" u ON ut.user_id = u.id""",
         fetch=True,
     )
     assert user_timeline == [
@@ -238,8 +245,8 @@ def test_price_increase_50_percent(twr, at):
         {"name": "nvidia", "price": Decimal("15.000000"), "timestamp": at(2)},
     ]
 
-    # Verify app_user table
-    users = twr._execute_query("SELECT name FROM app_user", fetch=True)
+    # Verify user table
+    users = twr._execute_query('SELECT name FROM "user"', fetch=True)
     assert users == [{"name": "Alice"}]
 
     # Verify user_cash_flow table
@@ -248,13 +255,14 @@ def test_price_increase_50_percent(twr, at):
         SELECT u.name as user_name,
                p.name as product_name,
                ucf.units,
+               ucf.deposit,
                ucf.cumulative_units,
                ucf.cumulative_deposits,
                ucf.period_return,
                ucf.cumulative_twr_factor,
                ucf.timestamp
         FROM user_cash_flow ucf
-            JOIN app_user u ON ucf.user_id = u.id
+            JOIN "user" u ON ucf.user_id = u.id
             JOIN product p ON ucf.product_id = p.id
         """,
         fetch=True,
@@ -264,6 +272,7 @@ def test_price_increase_50_percent(twr, at):
             "user_name": "Alice",
             "product_name": "nvidia",
             "units": Decimal("10.000000"),
+            "deposit": Decimal("100.000000"),
             "cumulative_units": Decimal("10.000000"),
             "cumulative_deposits": Decimal("100.000000"),
             "period_return": Decimal("0.000000"),
@@ -275,15 +284,17 @@ def test_price_increase_50_percent(twr, at):
     # Verify user_product_timeline view
     user_product_timeline = twr._execute_query(
         """
-        SELECT user_name,
-               product_name,
-               holdings,
-               net_deposits,
-               current_price,
-               current_value,
-               current_twr,
-               timestamp
-        FROM user_product_timeline
+        SELECT u.name as user_name,
+               p.name as product_name,
+               upt.holdings,
+               upt.net_deposits,
+               upt.current_price,
+               upt.current_value,
+               upt.current_twr,
+               upt.timestamp
+        FROM user_product_timeline upt
+        JOIN "user" u ON upt.user_id = u.id
+        JOIN product p ON upt.product_id = p.id
         ORDER BY timestamp
         """,
         fetch=True,
@@ -314,8 +325,9 @@ def test_price_increase_50_percent(twr, at):
     # Verify user_timeline view
     user_timeline = twr._execute_query(
         """
-        SELECT user_name, total_net_deposits, total_value, value_weighted_twr, timestamp
-        FROM user_timeline
+        SELECT u.name as user_name, ut.total_net_deposits, ut.total_value, ut.value_weighted_twr, ut.timestamp
+        FROM user_timeline ut
+        JOIN "user" u ON ut.user_id = u.id
         ORDER BY timestamp""",
         fetch=True,
     )
@@ -366,8 +378,8 @@ def test_price_up_then_down(twr, at):
         {"name": "nvidia", "price": Decimal("10.000000"), "timestamp": at(3)},
     ]
 
-    # Verify app_user table
-    users = twr._execute_query("SELECT name FROM app_user", fetch=True)
+    # Verify user table
+    users = twr._execute_query('SELECT name FROM "user"', fetch=True)
     assert users == [{"name": "Alice"}]
 
     # Verify user_cash_flow table
@@ -376,13 +388,14 @@ def test_price_up_then_down(twr, at):
         SELECT u.name as user_name,
                p.name as product_name,
                ucf.units,
+               ucf.deposit,
                ucf.cumulative_units,
                ucf.cumulative_deposits,
                ucf.period_return,
                ucf.cumulative_twr_factor,
                ucf.timestamp
         FROM user_cash_flow ucf
-            JOIN app_user u ON ucf.user_id = u.id
+            JOIN "user" u ON ucf.user_id = u.id
             JOIN product p ON ucf.product_id = p.id
         """,
         fetch=True,
@@ -392,6 +405,7 @@ def test_price_up_then_down(twr, at):
             "user_name": "Alice",
             "product_name": "nvidia",
             "units": Decimal("10.000000"),
+            "deposit": Decimal("100.000000"),
             "cumulative_units": Decimal("10.000000"),
             "cumulative_deposits": Decimal("100.000000"),
             "period_return": Decimal("0.000000"),
@@ -403,15 +417,17 @@ def test_price_up_then_down(twr, at):
     # Verify user_product_timeline view
     user_product_timeline = twr._execute_query(
         """
-        SELECT user_name,
-               product_name,
-               holdings,
-               net_deposits,
-               current_price,
-               current_value,
-               current_twr,
-               timestamp
-        FROM user_product_timeline
+        SELECT u.name as user_name,
+               p.name as product_name,
+               upt.holdings,
+               upt.net_deposits,
+               upt.current_price,
+               upt.current_value,
+               upt.current_twr,
+               upt.timestamp
+        FROM user_product_timeline upt
+        JOIN "user" u ON upt.user_id = u.id
+        JOIN product p ON upt.product_id = p.id
         ORDER BY timestamp
         """,
         fetch=True,
@@ -452,8 +468,9 @@ def test_price_up_then_down(twr, at):
     # Verify user_timeline view
     user_timeline = twr._execute_query(
         """
-        SELECT user_name, total_net_deposits, total_value, value_weighted_twr, timestamp
-        FROM user_timeline
+        SELECT u.name as user_name, ut.total_net_deposits, ut.total_value, ut.value_weighted_twr, ut.timestamp
+        FROM user_timeline ut
+        JOIN "user" u ON ut.user_id = u.id
         ORDER BY timestamp""",
         fetch=True,
     )
