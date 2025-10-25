@@ -1,9 +1,10 @@
--- Timeline view: Portfolio state at each point in time when something changed
+-- Base timeline view: Portfolio state at each point in time when something changed
 -- For each user-product pair, only includes relevant events:
 -- - Cash flows for that specific user-product
 -- - Price changes for that product (only after user's first cash flow)
 -- This avoids creating redundant rows for products a user doesn't hold
-CREATE VIEW user_product_timeline AS
+-- This is the "base" view that computes everything - used by the cache system
+CREATE VIEW user_product_timeline_base AS
 WITH user_product_events AS (
     -- For each user-product pair, get only the relevant timestamps
     SELECT DISTINCT
@@ -129,8 +130,31 @@ WHERE
     AND ups.holdings != 0  -- Exclude times when user has no holdings
 ORDER BY ups.user_id, ups.product_id, ups.timestamp;
 
--- User-level timeline: Aggregated portfolio value over time
-CREATE VIEW user_timeline AS
+-- Combined timeline view: Cached data UNION new delta
+-- This is the main view users should query
+-- It combines pre-computed cached data with freshly computed delta
+CREATE VIEW user_product_timeline AS
+WITH watermark AS (
+    SELECT max_cached_timestamp FROM cache_watermark WHERE id = 1
+),
+cached AS (
+    SELECT *, TRUE as is_cached
+    FROM user_product_timeline_cache
+),
+delta AS (
+    -- Only compute events after the watermark
+    SELECT *, FALSE as is_cached
+    FROM user_product_timeline_base
+    WHERE timestamp > COALESCE((SELECT max_cached_timestamp FROM watermark), '1970-01-01'::timestamptz)
+)
+SELECT * FROM cached
+UNION ALL
+SELECT * FROM delta
+ORDER BY user_id, product_id, timestamp;
+
+-- Base user-level timeline: Aggregated portfolio value over time
+-- Computes aggregations from user_product_timeline_base (not the combined view)
+CREATE VIEW user_timeline_base AS
 SELECT
     user_id,
     timestamp,
@@ -144,6 +168,27 @@ SELECT
         ELSE
             0
     END AS value_weighted_twr
-FROM user_product_timeline
+FROM user_product_timeline_base
 GROUP BY user_id, timestamp
+ORDER BY user_id, timestamp;
+
+-- Combined user timeline: Cached data UNION new delta
+-- This is the main view users should query for user-level aggregated data
+CREATE VIEW user_timeline AS
+WITH watermark AS (
+    SELECT max_cached_timestamp FROM cache_watermark WHERE id = 1
+),
+cached AS (
+    SELECT *, TRUE as is_cached
+    FROM user_timeline_cache
+),
+delta AS (
+    -- Only compute events after the watermark
+    SELECT *, FALSE as is_cached
+    FROM user_timeline_base
+    WHERE timestamp > COALESCE((SELECT max_cached_timestamp FROM watermark), '1970-01-01'::timestamptz)
+)
+SELECT * FROM cached
+UNION ALL
+SELECT * FROM delta
 ORDER BY user_id, timestamp;

@@ -148,6 +148,15 @@ class TWRDatabase:
         self._execute_query("TRUNCATE TABLE product_price CASCADE")
         self._execute_query('TRUNCATE TABLE "user" CASCADE')
         self._execute_query("TRUNCATE TABLE product CASCADE")
+        # Reset caches
+        self._execute_query("TRUNCATE TABLE user_product_timeline_cache")
+        self._execute_query("TRUNCATE TABLE user_timeline_cache")
+        self._execute_query("UPDATE cache_watermark SET max_cached_timestamp = NULL WHERE id = 1")
+
+    def refresh_cache(self):
+        """Refresh the timeline cache with new data."""
+        self._execute_query("SELECT refresh_timeline_cache()")
+        self.console.print("[green]✓[/green] Cache refreshed successfully!")
 
     def add_price(self, product_name, price, timestamp=None):
         """Add a price record for a product."""
@@ -386,7 +395,8 @@ class TWRDatabase:
                 upt.net_deposits,
                 upt.current_price,
                 upt.current_value,
-                upt.current_twr * 100 as twr_pct
+                upt.current_twr * 100 as twr_pct,
+                upt.is_cached
             FROM user_product_timeline upt
             JOIN "user" u ON upt.user_id = u.id
             JOIN product p ON upt.product_id = p.id
@@ -404,6 +414,7 @@ class TWRDatabase:
             table.add_column("price", justify="right")
             table.add_column("value", justify="right")
             table.add_column("twr_pct", justify="right")
+            table.add_column("cached", justify="center")
 
             for row in user_product_state:
                 twr_color = "green" if row["twr_pct"] and row["twr_pct"] >= 0 else "red"
@@ -429,6 +440,7 @@ class TWRDatabase:
                     f"[{twr_color}]{row['twr_pct']:.2f}%[/{twr_color}]"
                     if row["twr_pct"] is not None
                     else "N/A",
+                    "✓" if row["is_cached"] else "✗",
                 )
             self.console.print(table)
         else:
@@ -450,7 +462,8 @@ class TWRDatabase:
                 ut.timestamp,
                 ut.total_net_deposits,
                 ut.total_value,
-                ut.value_weighted_twr * 100 as twr_pct
+                ut.value_weighted_twr * 100 as twr_pct,
+                ut.is_cached
             FROM user_timeline ut
             JOIN "user" u ON ut.user_id = u.id
             ORDER BY ut.timestamp, u.name
@@ -464,6 +477,7 @@ class TWRDatabase:
             table.add_column("net_deposits", justify="right")
             table.add_column("total_value", justify="right")
             table.add_column("twr_pct", justify="right")
+            table.add_column("cached", justify="center")
 
             for row in timeline:
                 twr_color = "green" if row["twr_pct"] and row["twr_pct"] >= 0 else "red"
@@ -484,6 +498,7 @@ class TWRDatabase:
                     f"[{twr_color}]{row['twr_pct']:.2f}%[/{twr_color}]"
                     if row["twr_pct"] is not None
                     else "N/A",
+                    "✓" if row["is_cached"] else "✗",
                 )
             self.console.print(table)
         else:
@@ -501,6 +516,9 @@ def main():
 
     # migrate subcommand
     subparsers.add_parser("migrate", help="Run database migrations")
+
+    # refresh subcommand
+    subparsers.add_parser("refresh", help="Refresh the timeline cache")
 
     # add-price subcommand
     price_parser = subparsers.add_parser("add-price", help="Add a price record")
@@ -542,6 +560,8 @@ def main():
         db.drop_database()
     elif args.command == "migrate":
         db.run_migrations()
+    elif args.command == "refresh":
+        db.refresh_cache()
     elif args.command == "add-price":
         db.add_price(args.product, args.price, args.timestamp)
     elif args.command == "add-cashflow":

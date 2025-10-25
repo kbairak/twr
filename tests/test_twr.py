@@ -497,3 +497,104 @@ def test_price_up_then_down(twr, at):
             "timestamp": at(3),
         },
     ]
+
+
+
+def test_cache_refresh(twr, at):
+    """Test cache refresh functionality."""
+    # Add initial data
+    twr.add_price("nvidia", 10, timestamp=at(0))
+    twr.add_cashflow("Alice", "nvidia", money=100, timestamp=at(1))
+    twr.add_price("nvidia", 15, timestamp=at(2))
+
+    # Before refresh: cache should be empty
+    cache_before = twr._execute_query(
+        "SELECT COUNT(*) as count FROM user_product_timeline_cache", fetch=True
+    )
+    assert cache_before[0]["count"] == 0
+
+    # Watermark should be NULL
+    watermark_before = twr._execute_query(
+        "SELECT max_cached_timestamp FROM cache_watermark WHERE id = 1", fetch=True
+    )
+    assert watermark_before[0]["max_cached_timestamp"] is None
+
+    # View should still work (everything from delta)
+    timeline = twr._execute_query(
+        """
+        SELECT u.name as user_name, p.name as product_name, upt.timestamp
+        FROM user_product_timeline upt
+        JOIN "user" u ON upt.user_id = u.id
+        JOIN product p ON upt.product_id = p.id
+        ORDER BY upt.timestamp
+        """,
+        fetch=True,
+    )
+    assert len(timeline) == 2  # Two timeline entries (at(1) and at(2))
+
+    # Refresh the cache
+    twr.refresh_cache()
+
+    # After refresh: cache should have data
+    cache_after = twr._execute_query(
+        "SELECT COUNT(*) as count FROM user_product_timeline_cache", fetch=True
+    )
+    assert cache_after[0]["count"] == 2  # Two entries cached
+
+    # Watermark should be set
+    watermark_after = twr._execute_query(
+        "SELECT max_cached_timestamp FROM cache_watermark WHERE id = 1", fetch=True
+    )
+    assert watermark_after[0]["max_cached_timestamp"] is not None
+
+    # View should still return same results
+    timeline_after = twr._execute_query(
+        """
+        SELECT u.name as user_name, p.name as product_name, upt.timestamp
+        FROM user_product_timeline upt
+        JOIN "user" u ON upt.user_id = u.id
+        JOIN product p ON upt.product_id = p.id
+        ORDER BY upt.timestamp
+        """,
+        fetch=True,
+    )
+    assert len(timeline_after) == 2
+    assert timeline == timeline_after  # Same results
+
+    # Add new data after cache refresh
+    twr.add_price("nvidia", 20, timestamp=at(3))
+
+    # Cache should still have 2 entries (not updated yet)
+    cache_new = twr._execute_query(
+        "SELECT COUNT(*) as count FROM user_product_timeline_cache", fetch=True
+    )
+    assert cache_new[0]["count"] == 2
+
+    # But view should show 3 entries (2 from cache + 1 from delta)
+    timeline_new = twr._execute_query(
+        """
+        SELECT u.name as user_name, p.name as product_name, upt.timestamp
+        FROM user_product_timeline upt
+        JOIN "user" u ON upt.user_id = u.id
+        JOIN product p ON upt.product_id = p.id
+        ORDER BY upt.timestamp
+        """,
+        fetch=True,
+    )
+    assert len(timeline_new) == 3  # 2 cached + 1 delta
+
+    # Refresh again - should be incremental
+    twr.refresh_cache()
+
+    # Now cache should have 3 entries
+    cache_final = twr._execute_query(
+        "SELECT COUNT(*) as count FROM user_product_timeline_cache", fetch=True
+    )
+    assert cache_final[0]["count"] == 3
+
+
+    # Also verify user_timeline cache was populated
+    user_cache_final = twr._execute_query(
+        "SELECT COUNT(*) as count FROM user_timeline_cache", fetch=True
+    )
+    assert user_cache_final[0]["count"] == 3  # Same 3 timestamps, aggregated per user

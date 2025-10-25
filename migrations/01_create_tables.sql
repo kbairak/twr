@@ -37,12 +37,12 @@ CREATE TABLE user_cash_flow (
     -- money amount for this transaction (units * price)
     deposit NUMERIC(20, 6) NOT NULL,
     -- running total of units held after this transaction
-    cumulative_units NUMERIC(20, 6),
+    cumulative_units NUMERIC(20, 6) CHECK (cumulative_units >= 0),
     -- running total of net cash deposited (invested - withdrawn)
     cumulative_deposits NUMERIC(20, 6),
     period_return NUMERIC(20, 6),  -- return since last cash flow
     -- (1 + TWR) compounded, starts at 1.0
-    cumulative_twr_factor NUMERIC(20, 6),
+    cumulative_twr_factor NUMERIC(20, 6) CHECK (cumulative_twr_factor > 0),
 
     PRIMARY KEY (user_id, product_id, timestamp),
 
