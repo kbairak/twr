@@ -8,3 +8,14 @@ dependencies = [
     "psycopg2-binary>=2.9.9",
     "rich>=13.7.0",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "testcontainers[postgres]>=3.7.0",
+]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::DeprecationWarning:testcontainers.*:",
+]

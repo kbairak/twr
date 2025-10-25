@@ -125,13 +125,27 @@ class TWRDatabase:
         finally:
             conn.close()
 
+    def clear(self):
+        """Clear all data from tables while preserving schema."""
+        # Truncate in reverse order of dependencies
+        self._execute_query("TRUNCATE TABLE user_cash_flow CASCADE")
+        self._execute_query("TRUNCATE TABLE product_price CASCADE")
+        self._execute_query("TRUNCATE TABLE app_user CASCADE")
+        self._execute_query("TRUNCATE TABLE product CASCADE")
+
     def add_price(self, product_name, price, timestamp=None):
         """Add a price record for a product."""
         if timestamp is None:
             timestamp = datetime.now(timezone.utc)
-        else:
-            # Parse timestamp and ensure it's UTC
+        elif isinstance(timestamp, str):
+            # Parse string timestamp for CLI compatibility
             timestamp = datetime.fromisoformat(timestamp)
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            else:
+                timestamp = timestamp.astimezone(timezone.utc)
+        else:
+            # Accept datetime objects directly
             if timestamp.tzinfo is None:
                 timestamp = timestamp.replace(tzinfo=timezone.utc)
             else:
@@ -166,9 +180,15 @@ class TWRDatabase:
 
         if timestamp is None:
             timestamp = datetime.now(timezone.utc)
-        else:
-            # Parse timestamp and ensure it's UTC
+        elif isinstance(timestamp, str):
+            # Parse string timestamp for CLI compatibility
             timestamp = datetime.fromisoformat(timestamp)
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            else:
+                timestamp = timestamp.astimezone(timezone.utc)
+        else:
+            # Accept datetime objects directly
             if timestamp.tzinfo is None:
                 timestamp = timestamp.replace(tzinfo=timezone.utc)
             else:
