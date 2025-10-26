@@ -176,14 +176,21 @@ class TWRDatabase:
                 timestamp = timestamp.astimezone(timezone.utc)
 
         # Look up or create product
-        query_product = """
-            INSERT INTO product (name)
-            VALUES (%s)
-            ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
-            RETURNING id
+        query_lookup = """
+            SELECT id FROM product WHERE name = %s
         """
-        result = self._execute_query(query_product, (product_name,), fetch=True)
-        product_id = result[0]["id"]
+        result = self._execute_query(query_lookup, (product_name,), fetch=True)
+
+        if result:
+            product_id = result[0]["id"]
+        else:
+            query_insert = """
+                INSERT INTO product (name)
+                VALUES (%s)
+                RETURNING id
+            """
+            result = self._execute_query(query_insert, (product_name,), fetch=True)
+            product_id = result[0]["id"]
 
         # Insert price
         query = """
@@ -221,24 +228,38 @@ class TWRDatabase:
                 timestamp = timestamp.astimezone(timezone.utc)
 
         # Look up or create user
-        query_user = """
-            INSERT INTO "user" (name)
-            VALUES (%s)
-            ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
-            RETURNING id
+        query_lookup_user = """
+            SELECT id FROM "user" WHERE name = %s
         """
-        result_user = self._execute_query(query_user, (user_name,), fetch=True)
-        user_id = result_user[0]["id"]
+        result_user = self._execute_query(query_lookup_user, (user_name,), fetch=True)
+
+        if result_user:
+            user_id = result_user[0]["id"]
+        else:
+            query_insert_user = """
+                INSERT INTO "user" (name)
+                VALUES (%s)
+                RETURNING id
+            """
+            result_user = self._execute_query(query_insert_user, (user_name,), fetch=True)
+            user_id = result_user[0]["id"]
 
         # Look up or create product
-        query_product = """
-            INSERT INTO product (name)
-            VALUES (%s)
-            ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
-            RETURNING id
+        query_lookup_product = """
+            SELECT id FROM product WHERE name = %s
         """
-        result_product = self._execute_query(query_product, (product_name,), fetch=True)
-        product_id = result_product[0]["id"]
+        result_product = self._execute_query(query_lookup_product, (product_name,), fetch=True)
+
+        if result_product:
+            product_id = result_product[0]["id"]
+        else:
+            query_insert_product = """
+                INSERT INTO product (name)
+                VALUES (%s)
+                RETURNING id
+            """
+            result_product = self._execute_query(query_insert_product, (product_name,), fetch=True)
+            product_id = result_product[0]["id"]
 
         # If money was specified, get current price and convert to units
         if money is not None:

@@ -7,10 +7,10 @@ WITH cached AS (
     FROM user_product_timeline_cache
 ),
 delta AS (
-    -- Only compute events after the watermark (MAX timestamp in cache)
+    -- Only compute events after the watermark (fast single-row lookup from watermark table)
     SELECT *, FALSE as is_cached
     FROM user_product_timeline_base
-    WHERE timestamp > COALESCE((SELECT MAX(timestamp) FROM user_product_timeline_cache), '1970-01-01'::timestamptz)
+    WHERE timestamp > (SELECT last_cached_timestamp FROM cache_watermark WHERE id = 1)
 )
 SELECT * FROM cached
 UNION ALL
@@ -25,10 +25,10 @@ WITH cached AS (
     FROM user_timeline_cache
 ),
 delta AS (
-    -- Only compute events after the watermark (MAX timestamp in cache)
+    -- Only compute events after the watermark (fast single-row lookup from watermark table)
     SELECT *, FALSE as is_cached
     FROM user_timeline_base
-    WHERE timestamp > COALESCE((SELECT MAX(timestamp) FROM user_timeline_cache), '1970-01-01'::timestamptz)
+    WHERE timestamp > (SELECT last_cached_timestamp FROM cache_watermark WHERE id = 1)
 )
 SELECT * FROM cached
 UNION ALL

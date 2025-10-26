@@ -34,19 +34,20 @@ Based on schema in `migrations/01_create_tables.sql:8-19`:
 - **Total per row**: ~60 bytes
 
 ### user_cash_flow table
-Based on schema in `migrations/01_create_tables.sql:32-58`:
+Based on schema in `migrations/01_create_tables.sql:27-58`:
 
 - `user_id`: UUID = 16 bytes
 - `product_id`: UUID = 16 bytes
 - `timestamp`: TIMESTAMPTZ = 8 bytes
 - `units`: NUMERIC(20,6) = ~12 bytes
+- `price`: NUMERIC(20,6) = ~12 bytes
 - `deposit`: NUMERIC(20,6) = ~12 bytes
 - `cumulative_units`: NUMERIC(20,6) = ~12 bytes
 - `cumulative_deposits`: NUMERIC(20,6) = ~12 bytes
 - `period_return`: NUMERIC(20,6) = ~12 bytes
 - `cumulative_twr_factor`: NUMERIC(20,6) = ~12 bytes
 - PostgreSQL row overhead: ~24 bytes
-- **Total per row**: ~136 bytes
+- **Total per row**: ~148 bytes
 
 ## Storage Growth Projections
 
@@ -54,24 +55,25 @@ Based on schema in `migrations/01_create_tables.sql:32-58`:
 
 **Raw Data:**
 - Price data: 25.35B rows × 60 bytes = **1.52 TB/year**
-- Cash flow data: 1.8M rows × 136 bytes = **245 MB/year**
+- Cash flow data: 1.8M rows × 148 bytes = **266 MB/year**
 - **Total raw data**: ~**1.52 TB/year**
 
 **With Indexes:**
-Based on indexes in `migrations/01_create_tables.sql:22-23, 61-62`:
+Based on indexes in `migrations/01_create_tables.sql:17-18, 57-58`:
 - B-tree indexes typically add 30-50% overhead
 - **Total with indexes**: ~**2-2.3 TB/year**
 
 ### Cache Tables Growth
 
-Based on `migrations/03_create_cache.sql:3-15, 22-30`:
+Based on `migrations/04_create_cache.sql:14-35` and watermark table:
 
 **Realistic scenario** (users hold ~10 products on average):
 - Active user-product pairs: 30,000 × 10 = 300,000 pairs
 - Events per pair per year: ~50,700 price updates
 - Total cache rows per year: 300,000 × 50,700 = 15.21 million rows
 - Cache row size: ~88 bytes (user_product_timeline_cache)
-- **Cache growth**: ~**1.34 GB/year** (if unmanaged)
+- **Cache growth**: ~**1.34 GB/year** (without retention policy)
+- Watermark table: negligible (single row)
 
 **Worst case** (all users trade all products):
 - User-product combinations: 30,000 × 500,000 = 15 billion combinations
@@ -83,7 +85,7 @@ Based on `migrations/03_create_cache.sql:3-15, 22-30`:
 |-----------|-----------|-----------|-------------|
 | product_price (raw) | 25.35B | 1.52 TB | 7.6 TB |
 | product_price (indexed) | 25.35B | 2.3 TB | 11.5 TB |
-| user_cash_flow | 1.8M | 245 MB | 1.2 GB |
+| user_cash_flow | 1.8M | 266 MB | 1.3 GB |
 | cache (unmanaged) | 15M | 1.34 GB | 6.7 GB |
 | **Total (5 years)** | **~127B rows** | | **~12 TB** |
 
@@ -95,19 +97,27 @@ At 1.52 TB/year just for prices, storage becomes expensive quickly. The price ta
 
 ### 2. Cache Strategy Accumulates Indefinitely
 
-Currently, the cache system (from `migrations/03_create_cache.sql`) stores ALL historical events without any retention policy. This means:
+Currently, the cache system (from `migrations/04_create_cache.sql`) stores ALL historical events without any retention policy. This means:
 - Cache grows at ~1.34 GB/year per 300k active user-product pairs
 - No automatic cleanup mechanism
-- Cache refresh adds data but never removes old data
+- Cache refresh (`refresh_timeline_cache()`) adds data but never removes old data
+- Watermark-based incremental refresh helps performance but doesn't limit storage
 
 ### 3. Query Performance Degradation
 
-The `user_product_timeline_base` view (from `migrations/04_create_views.sql:7-131`) performs:
+The `user_product_timeline_base` view (from `migrations/03_create_base_views.sql`) performs:
 - Correlated subqueries on billions of rows
 - Lateral joins across user-product pairs
 - Multiple ORDER BY ... LIMIT 1 operations per row
 
 This will become progressively slower as data grows.
+
+**Cache refresh performance** (from recent benchmarks on Apple M1):
+- 100k events: 1.9s
+- 500k events: 59s
+- 900k events: 5m 22s
+
+At production scale (25.35B events/year), cache refresh would take days without partitioning and would likely be impractical.
 
 ### 4. Index Growth
 
@@ -147,7 +157,7 @@ Implement time-based archival:
 
 ### 3. Cache Retention Policy
 
-Modify cache to only retain recent data:
+Modify `refresh_timeline_cache()` function in `migrations/04_create_cache.sql` to only retain recent data:
 
 ```sql
 -- Add retention to cache refresh function
@@ -257,6 +267,20 @@ Assuming AWS pricing (us-east-1, 2025):
 3. Data archival strategy (reduces costs by 60%+)
 4. Consider TimescaleDB for time-series optimization
 
-**Without optimization**: Storage costs will grow linearly and query performance will degrade significantly after year 2-3.
+**Without optimization**: Storage costs will grow linearly and query performance will degrade significantly after year 2-3. Cache refresh becomes impractical (hours to days) beyond ~1M events.
 
-**With optimization**: Can reduce storage to ~2-4 TB over 5 years with better performance and 60% cost savings.
+**With optimization**: Can reduce storage to ~2-4 TB over 5 years with better performance and 60% cost savings. However, production use at the described scale (500k products, 2-minute updates) remains challenging and requires careful infrastructure planning.
+
+## Production Viability Warning
+
+**This is a proof-of-concept system.** The scenario parameters (500k products with 2-minute price updates) represent an extremely demanding workload:
+
+- **25.35 billion rows/year** is comparable to high-frequency trading systems
+- Even with optimizations, managing this scale requires enterprise-grade infrastructure
+- Alternative approaches to consider for production:
+  - Reduce price update frequency (hourly instead of 2-minute)
+  - Implement price sampling (only store significant changes)
+  - Use specialized time-series databases (TimescaleDB, InfluxDB)
+  - Consider event streaming architectures (Kafka + real-time aggregation)
+
+**Realistic production scale**: System has been tested up to 900k events (5m22s cache refresh). Without partitioning and retention policies, the system will become unmanageable within 6-12 months at production scale.

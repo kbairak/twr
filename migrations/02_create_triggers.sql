@@ -29,6 +29,9 @@ BEGIN
                         NEW.product_id, NEW.timestamp;
     END IF;
 
+    -- Store the price at the time of transaction
+    NEW.price := v_current_price;
+
     -- Get previous cash flow for this user-product pair (O(1) lookup)
     SELECT cumulative_twr_factor, cumulative_units, cumulative_deposits, timestamp
     INTO v_prev_cumulative_twr_factor,

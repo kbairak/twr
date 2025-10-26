@@ -1,212 +1,16 @@
 # Time-Weighted Return (TWR) Calculation System
 
-A high-performance Time-Weighted Return (TWR) calculation system using PostgreSQL with incremental caching.
+A PostgreSQL-based TWR calculation system with incremental caching and O(1) trigger updates.
 
-## Overview
+## Features
 
-This project implements a TWR calculation system that:
+- **Incremental TWR calculation**: Database triggers compute TWR on each cash flow (O(1) per insert)
+- **Timeline generation**: Views compute portfolio state at every price change, not just transactions
+- **Cache + delta architecture**: Watermark-based incremental caching for fast queries
+- **Synthetic data generation**: Event generator for testing and benchmarking
+- **Performance benchmarks**: Query and cache refresh performance measurements
 
-- Tracks user cash flows (buys/sells) and product prices over time
-- Calculates TWR **incrementally** on each cash flow using database triggers (O(1) updates)
-- Provides an incremental cache system for optimized query performance
-- Includes comprehensive benchmarking and event generation tools
-- Enforces database constraints to prevent invalid states (negative holdings, etc.)
-
-## Architecture
-
-### Why Views and Caches?
-
-The basic tables (`product_price` and `user_cash_flow`) only store data **at specific moments in time**:
-
-- `product_price`: Price updates whenever they occur
-- `user_cash_flow`: Transactions when users buy or sell
-
-**What's missing?** Portfolio state **between transactions**.
-
-For example:
-
-1. Alice buys 100 units of AAPL at $100 (transaction recorded)
-2. Price rises to $120 (price recorded, but no transaction)
-3. Price rises to $130 (price recorded, but no transaction)
-4. Alice buys 50 more units at $130 (transaction recorded)
-
-The basic tables have **no record** of Alice's portfolio value at $120. The views solve this by:
-
-**Views compute portfolio state at ALL events** (not just transactions):
-
-- Generate timeline entries for every price change affecting each user's holdings
-- Calculate portfolio value at each moment: `holdings × current_price`
-- Track TWR evolution continuously, not just at transaction points
-
-**Example**: Between Alice's two transactions, the views generate entries showing:
-
-- Portfolio value at $120: 100 units × $120 = $12,000
-- Portfolio value at $130 (before second buy): 100 units × $130 = $13,000
-- Current TWR: +30% (even before the second transaction)
-
-**Caches** then store these computed timelines for fast retrieval, providing dramatic speedup (up to 32x for user-level queries).
-
-This enables querying "What was my portfolio worth on any given date?" without requiring a transaction on that date.
-
-### Cache + Delta Architecture
-
-The system uses a **three-tier pattern** for both user-product and user-level timelines:
-
-```
-Timeline Architecture (applies to both levels):
-
-┌─────────────────────────────────────────────────────────────────┐
-│                         Combined View                            │
-│              (What you query: user_product_timeline)             │
-│                      or (user_timeline)                          │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-                   ┌─────────┴─────────┐
-                   │   UNION ALL       │
-                   │                   │
-         ┌─────────▼──────────┐  ┌────▼──────────────────┐
-         │   Cache Table      │  │    Base View          │
-         │  (Materialized)    │  │  (Computed live)      │
-         ├────────────────────┤  ├───────────────────────┤
-         │ All events up to   │  │ Events after          │
-         │ watermark          │  │ watermark             │
-         │                    │  │                       │
-         │ timestamp ≤ W      │  │ timestamp > W         │
-         │                    │  │                       │
-         │ Fast: Pre-computed │  │ Fresh: Always current │
-         └────────────────────┘  └───────────────────────┘
-                                           │
-                                           │
-                              ┌────────────▼────────────┐
-                              │   Source Tables         │
-                              │  product_price          │
-                              │  user_cash_flow         │
-                              └─────────────────────────┘
-```
-
-**How it works:**
-
-1. **Base view** (e.g., `user_product_timeline_base`): Computes portfolio state from raw tables
-   - Generates timeline entries for all events (prices + cash flows)
-   - Computationally expensive for large datasets
-   - Always reflects current data
-
-2. **Cache table** (e.g., `user_product_timeline_cache`): Stores pre-computed results
-   - Contains all base view rows up to a specific timestamp (the "watermark")
-   - Updated manually via `refresh_timeline_cache()`
-   - Fast to query but may not include recent events
-
-3. **Combined view** (e.g., `user_product_timeline`): Merges both sources
-   - `SELECT * FROM cache WHERE timestamp <= watermark`
-   - `UNION ALL`
-   - `SELECT * FROM base_view WHERE timestamp > watermark`
-   - Result: Fast cached data + fresh recent data
-
-**Two levels of this pattern:**
-
-- **User-Product level**: `user_product_timeline_base` → `user_product_timeline_cache` → `user_product_timeline`
-- **User level**: `user_timeline_base` → `user_timeline_cache` → `user_timeline`
-
-The user-level base view aggregates across products by reading from `user_product_timeline_base` (not the combined view, to avoid circular dependencies).
-
-**Benefits:**
-
-- No stale data: Recent events always visible
-- Performance: Most queries hit fast cache, only computing recent delta
-- Flexibility: Refresh cache on any schedule (hourly, daily, on-demand)
-
-### Key Innovation: Incremental TWR Calculation
-
-Traditional TWR calculation requires iterating through all historical cash flows:
-
-```
-TWR = [(1 + r1) × (1 + r2) × ... × (1 + rn)] - 1
-```
-
-This system stores the cumulative TWR factor `(1 + TWR)` at each cash flow, enabling **O(1) updates**:
-
-```sql
-new_cumulative_twr_factor = previous_cumulative_twr_factor × (1 + period_return)
-```
-
-### Database Schema
-
-**Core Tables:**
-
-- **`product`** - Products with auto-generated UUIDs
-- **`product_price`** - Price history (product_id, timestamp, price)
-  - Constraint: `price > 0`
-- **`user`** - Users with auto-generated UUIDs
-- **`user_cash_flow`** - Transactions with incremental TWR state
-  - `units` - Positive for buys, negative for sells
-  - `deposit` - Money amount (units × price)
-  - `cumulative_units` - Total holdings after transaction
-    - Constraint: `cumulative_units >= 0` (prevents short selling)
-  - `cumulative_deposits` - Net cash deposited/withdrawn
-  - `period_return` - Return since last cash flow
-  - `cumulative_twr_factor` - Compounded (1 + TWR)
-    - Constraint: `cumulative_twr_factor > 0`
-
-**Cache Tables:**
-
-- **`user_product_timeline_cache`** - Cached timeline per user-product
-  - Watermark: Implicit from `MAX(timestamp)` in cache
-- **`user_timeline_cache`** - Cached aggregated timeline per user
-
-**Views:**
-
-- **`user_product_timeline_base`** - Computes portfolio state at each event
-  - Optimized: Only generates events relevant to each user-product pair
-  - Uses `CROSS JOIN LATERAL` to avoid redundant combinations
-- **`user_product_timeline`** - Combined cache + delta view
-  - Returns cached data + freshly computed data after watermark
-  - Includes `is_cached` boolean field
-- **`user_timeline_base`** - Aggregates across products per user
-- **`user_timeline`** - Combined cache + delta view for user-level data
-  - Includes `is_cached` boolean field
-
-### How It Works
-
-1. **Price Insert**: Add a price record
-
-   ```sql
-   INSERT INTO product_price (product_id, timestamp, price) VALUES (...)
-   ```
-
-2. **Cash Flow Insert**: User provides only `user_id`, `product_id`, `units`, and optionally `timestamp`
-
-   ```sql
-   INSERT INTO user_cash_flow (user_id, product_id, units, timestamp) VALUES (...)
-   ```
-
-   The trigger automatically populates:
-   - `deposit` (units × current price)
-   - `cumulative_units` (previous + current units)
-   - `cumulative_deposits` (running total of deposits)
-   - `period_return` (market gain/loss since last cash flow)
-   - `cumulative_twr_factor` (compounded TWR)
-
-   How the trigger works:
-   - Fetches previous cash flow state for this user-product
-   - Gets current price at transaction time
-   - Calculates period return and compounds TWR factor
-   - All in O(1) time!
-
-3. **Query Performance**:
-   - **Before cache**: Views compute on-the-fly from base data
-   - **After cache refresh**: UNION of cached data + recent delta
-   - Typical speedup: 1.5-5x for user-product queries, up to 32x for user queries
-
-4. **Cache Refresh**:
-
-   ```sql
-   SELECT refresh_timeline_cache();
-   ```
-
-   - Incrementally caches data after watermark
-   - Updates both user_product_timeline and user_timeline caches
-
-## Setup
+## Quick Start
 
 ### Prerequisites
 
@@ -214,229 +18,299 @@ new_cumulative_twr_factor = previous_cumulative_twr_factor × (1 + period_return
 - Python 3.13+
 - uv (Python package manager)
 
-### 1. Start PostgreSQL
+### Setup and Example
 
 ```bash
+# Start PostgreSQL
 docker compose up -d
-```
 
-Or use an existing PostgreSQL installation.
-
-### 2. Install Dependencies
-
-```bash
+# Install dependencies
 uv sync
-```
 
-### 3. Run Migrations
-
-```bash
-uv run main.py drop    # (optional) Drop existing database
-uv run main.py migrate # Create tables, triggers, views, cache
-```
-
-## Usage
-
-### CLI Commands
-
-**Add price data:**
-
-```bash
-uv run main.py add-price --product nvidia --price 150.00
-uv run main.py add-price --product apple --price 180.00 --timestamp "2025-01-15T10:00:00"
-```
-
-**Add cash flows:**
-
-```bash
-# Buy (positive money)
-uv run main.py add-cashflow --user alice --product nvidia --money 1000
-
-# Sell (negative money)
-uv run main.py add-cashflow --user alice --product nvidia --money -500
-```
-
-**View all data:**
-
-```bash
-uv run main.py show
-```
-
-Displays formatted tables with:
-
-- Product prices
-- User cash flows (with TWR calculations)
-- User-product timeline (portfolio state over time)
-- User timeline (aggregated portfolio value)
-- Color-coded cached/uncached rows
-
-**Refresh cache:**
-
-```bash
-uv run main.py refresh
-```
-
-### Example Scenario
-
-```bash
-# Setup
+# Setup database
 uv run main.py drop && uv run main.py migrate
 
-# Initial price
+# Initial price and first buy
 uv run main.py add-price --product AAPL --price 100.00
-
-# Alice buys $10,000 worth at $100
 uv run main.py add-cashflow --user alice --product AAPL --money 10000
-
-# Price rises to $120 (20% gain)
-uv run main.py add-price --product AAPL --price 120.00
-
-# Alice buys another $6,000 at $120
-uv run main.py add-cashflow --user alice --product AAPL --money 6000
-
-# Price rises to $130 (8.33% gain from $120)
-uv run main.py add-price --product AAPL --price 130.00
-
-# View results
-uv run main.py show
 ```
 
-**Expected TWR:**
+**Timeline after first buy:**
 
-- Period 1 (first buy to second buy): +20%
-- Period 2 (second buy to final price): +8.33%
-- **Cumulative TWR**: (1.20 × 1.0833) - 1 = **30%**
+```
+┃ timestamp ┃ holdings ┃ net_deposits ┃ price   ┃  value    ┃ twr_pct ┃ cached ┃
+│ t1        | 100.00   │    $10000.00 │ $100.00 │ $10000.00 │   0.00% │   ✗    │
+```
 
-Note: TWR is independent of when money was invested, measuring pure investment performance.
+```bash
+# Price rises to $120, Alice buys $6,000 more
+uv run main.py add-price --product AAPL --price 120.00
+uv run main.py add-cashflow --user alice --product AAPL --money 6000
+```
+
+**Timeline after second buy:**
+
+```
+┃ timestamp ┃ holdings ┃ net_deposits ┃ price   ┃  value    ┃ twr_pct ┃
+│ t2        | 100.00   │    $10000.00 │ $120.00 │ $12000.00 │  20.00% │  ← price change
+│ t3        | 150.00   │    $16000.00 │ $120.00 │ $18000.00 │  44.00% │  ← after buy (portfolio weighted avg)
+```
+
+```bash
+# Price rises to $130
+uv run main.py add-price --product AAPL --price 130.00
+```
+
+**Timeline after price change:**
+
+```
+┃ timestamp ┃ holdings ┃ net_deposits ┃ price   ┃  value    ┃ twr_pct ┃
+│ t4        ┃ 150.00   │    $16000.00 │ $130.00 │ $19500.00 │  30.00% │  ← period 2: +8.33%
+```
+
+**TWR calculation**: (1.20 × 1.0833) - 1 = **30%** (independent of when money was invested)
+
+```bash
+# Refresh cache
+uv run main.py refresh
+
+# Add new price after cache refresh
+uv run main.py add-price --product AAPL --price 140.00
+uv run main.py show  # Notice cached vs fresh data
+```
+
+**Timeline showing cache + delta:**
+
+```
+┃ timestamp  ┃ total_value ┃ twr_pct ┃ cached ┃
+│ t1         │   $10000.00 │   0.00% │   ✓    │  ← cached
+│ t2         │   $12000.00 │  20.00% │   ✓    │  ← cached
+│ t3         │   $18000.00 │  44.00% │   ✓    │  ← cached
+│ t4         │   $19500.00 │  30.00% │   ✓    │  ← cached
+│ t5         │   $21000.00 │  40.00% │   ✗    │  ← fresh (computed live)
+```
+
+The last row is computed on-the-fly because it's after the cache watermark, demonstrating the cache + delta pattern.
+
+## How It Works
+
+### Core Tables
+
+- **`product`**: Product registry with auto-generated UUIDs
+- **`product_price`**: Price history (product_id, timestamp, price)
+- **`user`**: User registry with auto-generated UUIDs
+- **`user_cash_flow`**: Transactions with incremental TWR state
+  - Trigger auto-calculates: deposit, cumulative values, period return, cumulative TWR factor
+
+### Timeline Views
+
+The basic tables only store data at specific moments (price updates and transactions). **What about portfolio value between transactions?**
+
+Example: Alice buys 100 units at $100. Price rises to $120 (no transaction). Price rises to $130, then she buys 50 more units.
+
+The views solve this by generating timeline entries for **every price change** affecting each user's holdings:
+
+- At $120: holdings = 100, value = $12,000, TWR = +20%
+- At $130 (before second buy): holdings = 100, value = $13,000, TWR = +30%
+
+This enables querying "What was my portfolio worth on any date?" without requiring a transaction.
+
+### Value-Weighted TWR for Multi-Product Portfolios
+
+When a user holds multiple products, we can't simply average their TWRs - a product with $100 invested shouldn't count the same as one with $10,000 invested.
+
+The system uses **value-weighting** to compute portfolio-level TWR:
+
+```sql
+portfolio_twr = SUM(product_twr × product_value) / SUM(product_value)
+```
+
+**Example:** Alice holds two products:
+- AAPL: $10,000 value, +30% TWR
+- NVDA: $1,000 value, +80% TWR
+
+Simple average: (30% + 80%) / 2 = **55%** ❌ (incorrect - treats them equally)
+
+Value-weighted: (30% × $10,000 + 80% × $1,000) / $11,000 = **34.5%** ✓ (correct - AAPL dominates portfolio)
+
+This ensures that larger positions appropriately influence the overall portfolio performance.
+
+### Cache + Delta Architecture
+
+```
+┌─────────────────────────────────────────┐
+│       Combined View (what you query)    │
+│   user_product_timeline / user_timeline │
+└──────────────┬──────────────────────────┘
+               │ UNION ALL
+       ┌───────┴────────┐
+       │                │
+┌──────▼───────┐  ┌──────▼──────────┐     ┌──────────────────┐
+│ Cache Table  │  │   Base View     │     │   Raw tables     │
+│ (≤ watermark)│  │ (> watermark)   │ -─► │ (user cashflow,  │
+│   Fast       │  │   Fresh         │     │  product prices) │
+└──────────────┘  └─────────────────┘     └──────────────────┘
+```
+
+- **Base view**: Computes timeline from raw tables (expensive)
+- **Cache table**: Pre-computed results up to watermark timestamp
+- **Combined view**: Fast cached data + fresh recent data
+- **Refresh**: `refresh_timeline_cache()` incrementally adds new data
+
+### Incremental TWR Calculation
+
+Traditional TWR requires iterating all historical cash flows. This system stores the cumulative TWR factor at each cash flow:
+
+```sql
+new_cumulative_twr_factor = previous_cumulative_twr_factor × (1 + period_return)
+```
+
+This enables **O(1) updates** on each insert.
 
 ## Event Generator
 
-The event generator creates synthetic test data for benchmarking and testing.
-
-### How It Works
-
-The `EventGenerator` class (`event_generator.py`):
-
-1. **Generates realistic names** using Faker library
-   - Users: Random person names
-   - Products: Random company names
-   - Ensures uniqueness to avoid constraint violations
-
-2. **Maintains state in-memory**:
-   - Current prices per product
-   - Holdings per user-product pair
-   - Monotonically increasing timestamps
-
-3. **Event generation logic**:
-   - **Price events** (90% probability by default):
-     - Pick random product
-     - Apply percentage delta (-2% to +2.5% by default, slightly bullish)
-     - First price for product: starts at $100
-   - **Cashflow events** (10% probability):
-     - Pick random user and product (only from products with prices)
-     - Generate random money amount ($50-$500 by default)
-     - **80% buys (positive money), 20% sells (negative money)**
-     - For sells: checks current holdings and caps at available units
-     - Convert money to units based on current price
-     - Updates in-memory holdings state
-     - Database constraint ensures `cumulative_units >= 0`
-
-4. **Database insertion**:
-   - Commits each event individually (for trigger execution)
-   - Progress reporting every 100 events
-
-### Usage
+Generate synthetic test data for benchmarking:
 
 ```bash
 # Generate 1000 events with 50 users and 100 products
 uv run event_generator.py --num-events 1000 --num-users 50 --num-products 100
-
-# Then view the generated data
-uv run main.py show
 ```
 
-**Parameters:**
+**Event generation logic:**
 
-- `--num-events`: Total events to generate
-- `--num-users`: Size of user pool
-- `--num-products`: Size of product pool
-
-**Configuration (in code):**
-
-- `price_cashflow_ratio`: Default 9.0 (90% prices, 10% cashflows)
-- `price_delta_range`: Default (-0.02, 0.025) = -2% to +2.5%
-- `cashflow_money_range`: Default (50, 500) = $50 to $500
-- `initial_price`: Default $100
-- `time_increment_seconds`: Default 120 (2 minutes)
+- 90% price events, 10% cashflow events
+- Price changes: -2% to +2.5% (slightly bullish)
+- Users tend to invest in products they already own (90% probability)
+- 80% buys, 20% sells
 
 ## Benchmarking
 
-The benchmark system (`benchmark.py`) measures:
+### Query Performance
 
-1. **Data generation & insertion performance**
-2. **Query performance before cache refresh** (specific user-products and users)
-3. **Cache refresh time**
-4. **Query performance after cache refresh**
-5. **Speedup comparison**
+Performance on Apple M1 MacBook Pro:
+
+| Events | Users | Products | Avg user-product query | Avg user query |
+|--------|-------|----------|------------------------|----------------|
+| 10k    | 100   | 500      | 0.40ms                 | 0.47ms         |
+| 100k   | 1k    | 500      | 0.79ms                 | 4.76ms         |
+| 500k   | 3k    | 500      | 2.42ms                 | 35.20ms        |
+| 1M     | 5k    | 1k       | 2.46ms                 | 64.58ms        |
+| 2M     | 10k   | 1k       | 4.19ms                 | 237.72ms       |
+| 5M     | 50k   | 1k       | 10.13ms                | 80.06ms        |
+
+**Key observations:**
+
+- Sub-10ms user-product queries even at 5M events
+- User query performance improves with more products (less data per product to aggregate)
+- Concentrated portfolios (probability-based product selection) significantly improve aggregation performance
+
+### Cache Refresh Performance
+
+Performance of `refresh_timeline_cache()` with 500 products:
+
+| Events | Users | Cache Refresh Time |
+|--------|-------|-------------------|
+| 100k   | 1k    | 2.1s              |
+| 200k   | 2k    | 5.9s              |
+| 300k   | 3k    | 19.2s             |
+| 400k   | 4k    | 35.0s             |
+| 500k   | 5k    | 52.4s             |
+| 600k   | 6k    | 1m 21s            |
+| 700k   | 7k    | 1m 58s            |
+| 800k   | 8k    | 3m 14s            |
+| 900k   | 9k    | 6m 22s            |
+
+**Key observations:**
+
+- Cache refresh scales roughly quadratically
+- Practical limit: ~800k events for sub-5-minute refresh
+- At production scale (billions of events), requires partitioning
+- Uses MATERIALIZED CTE to avoid duplicate sequential scans on user_cash_flow table
 
 ### Running Benchmarks
 
 ```bash
-# Small benchmark (quick test)
+# Small benchmark
 uv run benchmark.py --num-events 10000 --num-users 100 --num-products 500
 
 # Medium benchmark
 uv run benchmark.py --num-events 100000 --num-users 1000 --num-products 2000
-
-# Large benchmark
-uv run benchmark.py --num-events 500000 --num-users 3000 --num-products 5000
-
-# Extra large (1M+ events)
-uv run benchmark.py --num-events 1000000 --num-users 5000 --num-products 10000
 ```
 
-**Parameters:**
+## Storage & Production Scale
 
-- `--num-events`: Number of events to generate
-- `--num-users`: User pool size
-- `--num-products`: Product pool size
-- `--num-queries`: Number of query samples for performance testing (default: 100)
+**This is a proof-of-concept system.** See [STORAGE_ANALYSIS.md](STORAGE_ANALYSIS.md) for detailed analysis.
 
-### Benchmark Results
+**TL;DR**: At realistic production scale (500k products, 2-min price updates):
 
-Performance characteristics on Apple M1 MacBook Pro:
+- **25 billion rows/year** = 1.52 TB/year just for prices
+- Cache refresh becomes impractical beyond ~1M events without optimization
+- **Requires** table partitioning and retention policies for production use
+- Consider specialized time-series databases (TimescaleDB) or alternative architectures
 
-| Events | Users | Products | View Rows | Insert Time | Throughput | Avg Query (before cache) | Cache Refresh | Avg Query (after cache) |
-|--------|-------|----------|-----------|-------------|------------|--------------------------|---------------|-------------------------|
-| 10k    | 100   | 500      | 10,002    | 3.3s        | 3,030/s    | 0.60ms (up) / 1.65ms (u) | 0.31s         | 0.50ms (up) / 0.66ms (u) (1.2x / 2.5x) |
-| 100k   | 1k    | 500      | 911,539       | 33.13s         | 3,019/s        | 2.25ms (up) / avg=15.33ms (u)                      | 38.39s           | 0.74ms (up) / 1.99ms (u) (3x / 7.7x)                    |
-| 500k   | 3k    | 500      | TBD       | TBD         | TBD        | TBD                      | TBD           | TBD                     |
-| 1M     | 5k    | 500      | TBD       | TBD         | TBD        | TBD                      | TBD           | TBD                     |
+Without optimization, the system will become unmanageable within 6-12 months at production scale.
 
-Note: Query times show user-product (up) and user (u) averages. Speedup shown in parentheses after cache.
+## Database Schema
 
-**Key Observations:**
+### Tables
 
-1. **Linear insertion performance**: Trigger overhead is O(1) per event
-   - Consistently ~2,000-3,000 events/sec regardless of dataset size
-   - No degradation with scale
+- **`product`**: id (UUID), name
+- **`product_price`**: product_id, timestamp, price
+- **`user`**: id (UUID), name
+- **`user_cash_flow`**: user_id, product_id, timestamp, units, price, deposit, cumulative_units, cumulative_deposits, period_return, cumulative_twr_factor
+- **`cache_watermark`**: Single-row table tracking last cached timestamp
+- **`user_product_timeline_cache`**: Cached timeline per user-product
+- **`user_timeline_cache`**: Cached aggregated timeline per user
 
-2. **Cache provides significant speedup for user-level queries**:
-   - User queries aggregate across products, benefit most from caching
-   - 10k dataset: 2.5x speedup (1.65ms → 0.66ms)
-   - User-product queries already fast without cache (sub-millisecond)
+### Views
 
-3. **Fast cache refresh**:
-   - 10k events: 0.31s refresh time
-   - Cache refresh scales linearly with data size
-   - Suitable for frequent refresh schedules (hourly, on-demand)
+- **`user_product_timeline_base`**: Computes portfolio state at each event (expensive)
+- **`user_product_timeline`**: Combined cache + delta (fast)
+- **`user_timeline_base`**: Aggregates across products per user
+- **`user_timeline`**: Combined cache + delta for user-level data
 
-4. **Timeline expansion**:
-   - Events generate timeline rows at all price changes
-   - 10k events → 10k timeline rows (~1x expansion)
-   - Expansion factor depends on price update frequency vs cash flow ratio
+**Note:** Database constraints removed for maximum insertion performance (~2x speedup). Data consistency enforced at application level.
 
-## How TWR Differs from Simple ROI
+## Project Structure
+
+```
+/twr
+   main.py                          # CLI interface
+   event_generator.py               # Synthetic data generation
+   benchmark.py                     # Performance benchmarking
+   migrations/
+      01_create_tables.sql          # Core schema
+      02_create_triggers.sql        # Incremental TWR calculation
+      03_create_base_views.sql      # Expensive computation views
+      04_create_cache.sql           # Cache tables and refresh function
+      05_create_combined_views.sql  # Cache + delta union views
+   tests/
+      test_twr.py                   # Test suite
+   README.md
+   STORAGE_ANALYSIS.md              # Storage projections and optimization
+   pyproject.toml
+```
+
+## Testing
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run with verbose output
+uv run pytest -v
+```
+
+Tests cover database isolation, TWR calculation correctness, and cache functionality.
+
+## TWR vs Simple ROI
+
+**TWR measures investment skill** - how well the products/assets themselves performed - independent of your timing decisions about when/how much to invest.
+
+- **TWR answers:** "How good were my picks?"
+- **Simple ROI/MWR answers:** "How much money did I make?"
+
+### Formulas
 
 **Simple ROI** doesn't account for timing of cash flows:
 
@@ -450,67 +324,34 @@ ROI = (Current Value - Total Invested) / Total Invested
 TWR = [(1 + r_period1) × (1 + r_period2) × ...] - 1
 ```
 
-This makes TWR ideal for comparing investment performance independent of when money was added or withdrawn.
+### Example: Why Timing Doesn't Affect TWR
 
-## Storage Analysis
+**Scenario 1:** You invest $10,000 in AAPL at $100. It rises to $150 (+50%). You invest another $100,000 at $150. It drops to $140.
 
-See [STORAGE_ANALYSIS.md](STORAGE_ANALYSIS.md) for detailed analysis of storage requirements and optimization strategies for production deployments.
+- **TWR:** ~-7% (the investment itself lost value from $150 → $140)
+- **Simple ROI:** ~+21% (because most of your money was invested near the top)
 
-**TL;DR**: Without optimization, expect ~2-3 TB/year growth for realistic workloads (500k products, 30k users, 2-min price updates). Partitioning and retention policies essential for cost management.
+**Scenario 2:** Same price movements, but you invest $100,000 at $100, then $10,000 at $150.
 
-## Project Structure
+- **TWR:** Still ~-7% (same investment performance)
+- **Simple ROI:** ~+27% (because most money was invested early)
 
-```
-/twr
-   main.py                     # Main CLI interface
-   event_generator.py          # Synthetic data generation
-   benchmark.py                # Performance benchmarking
-   migrations/
-      01_create_tables.sql     # Core schema with constraints
-      02_create_triggers.sql   # Incremental TWR calculation
-      03_create_cache.sql      # Cache tables and refresh function
-      04_create_views.sql      # Base and combined views
-   tests/
-      test_twr.py              # Test suite
-   README.md
-   STORAGE_ANALYSIS.md         # Storage projections and optimization
-   pyproject.toml              # Python dependencies
-```
+**Key insight:** TWR is identical in both scenarios because the underlying investment performed the same way. The timing of your contributions doesn't matter - only the asset's performance matters.
 
-## Testing
-
-```bash
-# Run all tests
-uv run pytest
-
-# Run with verbose output
-uv run pytest -v
-
-# Run specific test
-uv run pytest tests/test_twr.py::test_price_increase_50_percent
-```
-
-Tests cover:
-
-- Database isolation
-- Price and cashflow insertion
-- TWR calculation correctness
-- Cache refresh functionality
-- View correctness
+This is why portfolio managers are judged by TWR - it isolates their stock-picking ability from the client's contribution timing. TWR tells you: "Ignoring when I added/withdrew money, were my product choices wise?"
 
 ## Future Enhancements
 
-- [ ] PostgreSQL table partitioning for price table
+- [ ] Decouple money and units for cash flows (provider fees)
+- [ ] Table partitioning for price table
 - [ ] Data retention policies (automatic cleanup)
 - [ ] Bulk insert optimization using COPY protocol
 - [ ] Money-Weighted Return (MWR/IRR) calculation
 - [ ] Web dashboard for visualizing TWR over time
 - [ ] Support for dividends and corporate actions
 - [ ] Multi-currency support with FX conversion
-- [ ] Benchmark comparison (vs. market indices)
 
 ## References
 
 - [Time-Weighted Return Explanation](https://www.investopedia.com/terms/t/time-weightedror.asp)
 - [PostgreSQL Triggers](https://www.postgresql.org/docs/current/triggers.html)
-- [PostgreSQL Constraints](https://www.postgresql.org/docs/current/ddl-constraints.html)

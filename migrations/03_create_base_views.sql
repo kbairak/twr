@@ -5,130 +5,101 @@
 -- This avoids creating redundant rows for products a user doesn't hold
 -- This is the "base" view that computes everything - used by the cache system
 CREATE VIEW user_product_timeline_base AS
-WITH user_product_events AS (
-    -- For each user-product pair, get only the relevant timestamps
-    SELECT DISTINCT
-        ucf.user_id,
-        ucf.product_id,
-        e.timestamp
-    FROM (
-        SELECT DISTINCT user_id, product_id
-        FROM user_cash_flow
-    ) ucf
-    CROSS JOIN LATERAL (
-        -- Cash flow timestamps for this user-product
-        SELECT timestamp FROM user_cash_flow cf
-        WHERE cf.user_id = ucf.user_id
-          AND cf.product_id = ucf.product_id
-        UNION
-        -- Price change timestamps for this product, only after user's first cash flow
-        SELECT pp.timestamp
-        FROM product_price pp
-        WHERE pp.product_id = ucf.product_id
-          AND pp.timestamp >= (
-              SELECT MIN(cf.timestamp)
-              FROM user_cash_flow cf
-              WHERE cf.user_id = ucf.user_id
-                AND cf.product_id = ucf.product_id
-          )
-    ) e
-),
+WITH
+  -- Get user-product pairs with their first cash flow timestamp
+  -- MATERIALIZED to avoid duplicate sequential scans on user_cash_flow
+  user_product_first_flow AS MATERIALIZED (
+      SELECT user_id, product_id, MIN(timestamp) AS first_ts
+      FROM user_cash_flow
+      GROUP BY user_id, product_id
+  ),
+  -- Combine cash flows and relevant price changes into events
+  -- Use UNION ALL since we know there are no duplicates (cash flows and prices have different sources)
+  user_product_events AS (
+      -- Cash flow events with all their data
+      SELECT
+          user_id,
+          product_id,
+          timestamp,
+          cumulative_units AS holdings,
+          cumulative_deposits AS net_deposits,
+          cumulative_twr_factor AS twr_factor_at_last_flow,
+          price,  -- Price at this cash flow (already stored)
+          TRUE AS is_cash_flow
+      FROM user_cash_flow
 
-user_product_state AS (
-    -- For each relevant event, calculate the portfolio state at that moment
-    SELECT
-        upe.timestamp,
-        upe.user_id,
-        upe.product_id,
-        -- Get the latest cash flow state up to this timestamp
-        (
-            SELECT cf.cumulative_units
-            FROM user_cash_flow AS cf
-            WHERE
-                cf.user_id = upe.user_id
-                AND cf.product_id = upe.product_id
-                AND cf.timestamp <= upe.timestamp
-            ORDER BY cf.timestamp DESC
-            LIMIT 1
-        ) AS holdings,
-        (
-            SELECT cf.cumulative_deposits
-            FROM user_cash_flow AS cf
-            WHERE
-                cf.user_id = upe.user_id
-                AND cf.product_id = upe.product_id
-                AND cf.timestamp <= upe.timestamp
-            ORDER BY cf.timestamp DESC
-            LIMIT 1
-        ) AS net_deposits,
-        (
-            SELECT cf.cumulative_twr_factor
-            FROM user_cash_flow AS cf
-            WHERE
-                cf.user_id = upe.user_id
-                AND cf.product_id = upe.product_id
-                AND cf.timestamp <= upe.timestamp
-            ORDER BY cf.timestamp DESC
-            LIMIT 1
-        ) AS twr_factor_at_last_flow,
-        -- Get price at the time of last cash flow
-        (
-            SELECT pp.price
-            FROM product_price AS pp
-            WHERE
-                pp.product_id = upe.product_id
-                AND pp.timestamp <= (
-                    SELECT cf.timestamp
-                    FROM user_cash_flow AS cf
-                    WHERE
-                        cf.user_id = upe.user_id
-                        AND cf.product_id = upe.product_id
-                        AND cf.timestamp <= upe.timestamp
-                    ORDER BY cf.timestamp DESC
-                    LIMIT 1
-                )
-            ORDER BY pp.timestamp DESC
-            LIMIT 1
-        ) AS price_at_last_flow,
-        -- Get current price at this event timestamp
-        (
-            SELECT pp.price
-            FROM product_price AS pp
-            WHERE
-                pp.product_id = upe.product_id
-                AND pp.timestamp <= upe.timestamp
-            ORDER BY pp.timestamp DESC
-            LIMIT 1
-        ) AS current_price
-    FROM user_product_events AS upe
-)
+      UNION ALL
 
+      -- Price change events (without cash flow data, will be filled in later)
+      SELECT
+          uff.user_id,
+          uff.product_id,
+          pp.timestamp,
+          NULL::NUMERIC AS holdings,
+          NULL::NUMERIC AS net_deposits,
+          NULL::NUMERIC AS twr_factor_at_last_flow,
+          pp.price,  -- Price at this price change event
+          FALSE AS is_cash_flow
+      FROM user_product_first_flow uff
+      JOIN product_price pp ON pp.product_id = uff.product_id
+      WHERE pp.timestamp > uff.first_ts  -- Only prices AFTER first flow (first flow already included above)
+  ),
+
+  -- For each event, get the latest cash flow data using LATERAL join
+  events_with_state AS (
+      SELECT
+          upe.user_id,
+          upe.product_id,
+          upe.timestamp,
+          upe.is_cash_flow,
+          upe.price AS current_price,  -- Price at this event (already known)
+          -- For cash flow events, use their own data; for price events, get latest cash flow
+          COALESCE(upe.holdings, cf_latest.cumulative_units) AS holdings,
+          COALESCE(upe.net_deposits, cf_latest.cumulative_deposits) AS net_deposits,
+          COALESCE(upe.twr_factor_at_last_flow, cf_latest.cumulative_twr_factor) AS twr_factor_at_last_flow,
+          -- Price at the last cash flow (for TWR calculation)
+          -- For both event types, we need the price from the PREVIOUS cash flow
+          cf_latest.price AS price_at_last_flow
+      FROM user_product_events upe
+      LEFT JOIN LATERAL (
+          SELECT cumulative_units, cumulative_deposits, cumulative_twr_factor, price
+          FROM user_cash_flow cf
+          WHERE cf.user_id = upe.user_id
+            AND cf.product_id = upe.product_id
+            AND cf.timestamp < upe.timestamp  -- Strictly before (not <=)
+          ORDER BY cf.timestamp DESC
+          LIMIT 1
+      ) cf_latest ON TRUE  -- Always join, not just for price events
+  )
+
+-- Final select: calculate current value and TWR from the state we've gathered
+-- No need for additional price lookups - we have everything we need!
 SELECT
-    ups.user_id,
-    ups.product_id,
-    ups.timestamp,
-    ups.holdings,
-    ups.net_deposits,
-    ups.current_price,
-    ups.holdings * ups.current_price AS current_value,
+    user_id,
+    product_id,
+    timestamp,
+    holdings,
+    net_deposits,
+    current_price,
+    holdings * current_price AS current_value,
     -- Real-time TWR: compound TWR at last flow with price change since then
     CASE
         WHEN
-            ups.price_at_last_flow > 0
-            AND ups.current_price IS NOT NULL
-            AND ups.twr_factor_at_last_flow IS NOT NULL
+            price_at_last_flow > 0
+            AND current_price IS NOT NULL
+            AND twr_factor_at_last_flow IS NOT NULL
             THEN
-                ups.twr_factor_at_last_flow
-                * (ups.current_price / ups.price_at_last_flow)
+                twr_factor_at_last_flow
+                * (current_price / price_at_last_flow)
                 - 1
         ELSE
             0
     END AS current_twr
-FROM user_product_state AS ups
+FROM events_with_state
 WHERE
-    ups.holdings IS NOT NULL
-    AND ups.holdings != 0  -- Exclude times when user has no holdings
-ORDER BY ups.user_id, ups.product_id, ups.timestamp;
+    holdings IS NOT NULL
+    AND holdings != 0  -- Exclude times when user has no holdings
+ORDER BY user_id, product_id, timestamp;
 
 -- Base user-level timeline: Aggregated portfolio value over time
 -- Computes aggregations from user_product_timeline_base (not the combined view)

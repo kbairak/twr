@@ -23,6 +23,7 @@ class EventGenerator:
         initial_price: float = 100.0,
         start_timestamp: datetime = None,
         time_increment_seconds: int = 120,
+        existing_product_probability: float = 0.9,
     ):
         # Database connection
         self.conn = psycopg2.connect(
@@ -58,6 +59,7 @@ class EventGenerator:
         self.current_prices = {}  # product_name -> price
         self.products_with_prices = set()  # product names that have prices
         self.holdings = {}  # (user_name, product_name) -> units
+        self.user_products = {}  # user_name -> set of product_names they've invested in
         self.current_timestamp = start_timestamp or datetime.now(timezone.utc)
 
         # Config
@@ -66,6 +68,7 @@ class EventGenerator:
         self.cashflow_money_range = cashflow_money_range
         self.initial_price = initial_price
         self.time_increment_seconds = time_increment_seconds
+        self.existing_product_probability = existing_product_probability
 
     def _initialize_entities(self):
         """Create users and products in DB"""
@@ -137,7 +140,28 @@ class EventGenerator:
             return None  # No products with prices yet, skip
 
         user = random.choice(self.users)
-        product = random.choice(list(self.products_with_prices))
+
+        # Initialize user's product set if not exists
+        if user not in self.user_products:
+            self.user_products[user] = set()
+
+        # Choose product based on probability
+        user_existing_products = self.user_products[user] & self.products_with_prices
+
+        if user_existing_products and random.random() < self.existing_product_probability:
+            # 90% chance: pick from products the user already has invested in
+            product = random.choice(list(user_existing_products))
+        else:
+            # 10% chance: pick a new product (or if user has no products yet)
+            available_new_products = self.products_with_prices - self.user_products[user]
+            if available_new_products:
+                product = random.choice(list(available_new_products))
+            elif user_existing_products:
+                # If no new products available, fall back to existing ones
+                product = random.choice(list(user_existing_products))
+            else:
+                # Edge case: no products available at all
+                product = random.choice(list(self.products_with_prices))
 
         current_price = self.current_prices[product]
         key = (user, product)
@@ -165,6 +189,9 @@ class EventGenerator:
             return None
 
         self.holdings[key] = new_holdings
+
+        # Track that this user has invested in this product
+        self.user_products[user].add(product)
 
         # Return tuple for batch insertion
         return (self.user_ids[user], self.product_ids[product], units, self.current_timestamp)
