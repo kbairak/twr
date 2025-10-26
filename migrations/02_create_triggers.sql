@@ -30,20 +30,15 @@ BEGIN
     END IF;
 
     -- Get previous cash flow for this user-product pair (O(1) lookup)
-    SELECT
-        cumulative_twr_factor,
-        cumulative_units,
-        cumulative_deposits,
-        timestamp
-    INTO
-        v_prev_cumulative_twr_factor,
-        v_prev_cumulative_units,
-        v_prev_cumulative_deposits,
-        v_prev_timestamp
+    SELECT cumulative_twr_factor, cumulative_units, cumulative_deposits, timestamp
+    INTO v_prev_cumulative_twr_factor,
+         v_prev_cumulative_units,
+         v_prev_cumulative_deposits,
+         v_prev_timestamp
     FROM user_cash_flow
-    WHERE user_id = NEW.user_id
-      AND product_id = NEW.product_id
-      AND timestamp < NEW.timestamp
+    WHERE user_id = NEW.user_id AND
+          product_id = NEW.product_id AND
+          timestamp < NEW.timestamp
     ORDER BY timestamp DESC
     LIMIT 1;
 
@@ -98,6 +93,6 @@ $$ LANGUAGE plpgsql;
 
 -- Create trigger to calculate TWR on insert
 CREATE TRIGGER calculate_twr_trigger
-BEFORE INSERT ON user_cash_flow
-FOR EACH ROW
-EXECUTE FUNCTION calculate_incremental_twr();
+  BEFORE INSERT ON user_cash_flow
+  FOR EACH ROW
+  EXECUTE FUNCTION calculate_incremental_twr();

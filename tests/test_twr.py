@@ -513,11 +513,11 @@ def test_cache_refresh(twr, at):
     )
     assert cache_before[0]["count"] == 0
 
-    # Watermark should be NULL
+    # Watermark should be NULL (MAX timestamp from empty cache)
     watermark_before = twr._execute_query(
-        "SELECT max_cached_timestamp FROM cache_watermark WHERE id = 1", fetch=True
+        "SELECT MAX(timestamp) as max_timestamp FROM user_product_timeline_cache", fetch=True
     )
-    assert watermark_before[0]["max_cached_timestamp"] is None
+    assert watermark_before[0]["max_timestamp"] is None
 
     # View should still work (everything from delta)
     timeline = twr._execute_query(
@@ -541,11 +541,11 @@ def test_cache_refresh(twr, at):
     )
     assert cache_after[0]["count"] == 2  # Two entries cached
 
-    # Watermark should be set
+    # Watermark should be set (MAX timestamp from populated cache)
     watermark_after = twr._execute_query(
-        "SELECT max_cached_timestamp FROM cache_watermark WHERE id = 1", fetch=True
+        "SELECT MAX(timestamp) as max_timestamp FROM user_product_timeline_cache", fetch=True
     )
-    assert watermark_after[0]["max_cached_timestamp"] is not None
+    assert watermark_after[0]["max_timestamp"] is not None
 
     # View should still return same results
     timeline_after = twr._execute_query(

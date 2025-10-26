@@ -148,10 +148,9 @@ class TWRDatabase:
         self._execute_query("TRUNCATE TABLE product_price CASCADE")
         self._execute_query('TRUNCATE TABLE "user" CASCADE')
         self._execute_query("TRUNCATE TABLE product CASCADE")
-        # Reset caches
+        # Reset caches (watermark is implicit from MAX(timestamp) in cache)
         self._execute_query("TRUNCATE TABLE user_product_timeline_cache")
         self._execute_query("TRUNCATE TABLE user_timeline_cache")
-        self._execute_query("UPDATE cache_watermark SET max_cached_timestamp = NULL WHERE id = 1")
 
     def refresh_cache(self):
         """Refresh the timeline cache with new data."""
