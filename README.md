@@ -374,12 +374,9 @@ uv run python benchmark.py --num-events 1000000 --num-users 5000 --num-products 
 
 Performance characteristics on Apple M1 MacBook Pro:
 
-| Events | Users | Products | View Rows | Insert Time | Throughput | View Eval (Cold) | Cache Refresh | Query Speedup (user) |
-|--------|-------|----------|-----------|-------------|------------|------------------|---------------|---------------------|
-| 10k    | 100   | 500      | 10,216    | 5s          | 2,000/s    | 0.7s             | 0.5s          | 2.2x                |
-| 100k   | 1k    | 2k       | 236,672   | 46s         | 2,189/s    | 3.2s             | 8.1s          | 32.5x               |
-| 500k   | 3k    | 5k       | 2,288,302 | 171s        | 2,929/s    | 29.8s            | 88s           | 5.4x                |
-| 1M     | 5k    | 10k      | 4,594,887 | 337s        | 2,964/s    | 58.8s            | 184s          | 3.3x                |
+| Events | Users | Products | View Rows | Insert Time | Throughput | Avg Query (before cache) | Cache Refresh | Avg Query (after cache) |
+|--------|-------|----------|-----------|-------------|------------|--------------------------|---------------|-------------------------|
+| TBD    | TBD   | TBD      | TBD       | TBD         | TBD        | TBD                      | TBD           | TBD                     |
 
 **Key Observations:**
 

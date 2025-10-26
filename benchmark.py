@@ -83,46 +83,26 @@ class Benchmark:
             f"({results['events_per_sec']:.0f} events/sec)\n"
         )
 
-        # Get event counts
+        # Get event counts and view row counts
         conn = self.get_connection()
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM product_price")
         results["num_price_events"] = cur.fetchone()[0]
         cur.execute("SELECT COUNT(*) FROM user_cash_flow")
         results["num_cashflow_events"] = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM user_product_timeline")
+        results["upt_rows"] = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM user_timeline")
+        results["ut_rows"] = cur.fetchone()[0]
         self.console.print(
             f"  Price events: {results['num_price_events']:,}, "
             f"Cashflow events: {results['num_cashflow_events']:,}\n"
+            f"  Timeline rows: {results['upt_rows']:,}\n"
         )
 
-        # Step 2: Measure view evaluation time
-        self.console.print("[bold]Step 2: Evaluating views (cold cache)...[/bold]")
-
-        # user_product_timeline
-        start = time.time()
-        cur.execute("SELECT COUNT(*) FROM user_product_timeline")
-        num_upt_rows = cur.fetchone()[0]
-        upt_eval_time = time.time() - start
-        results["upt_rows"] = num_upt_rows
-        results["upt_eval_time_cold"] = upt_eval_time
+        # Step 2: Query performance (before cache refresh)
         self.console.print(
-            f"✓ user_product_timeline: {num_upt_rows:,} rows in {upt_eval_time:.3f}s\n"
-        )
-
-        # user_timeline
-        start = time.time()
-        cur.execute("SELECT COUNT(*) FROM user_timeline")
-        num_ut_rows = cur.fetchone()[0]
-        ut_eval_time = time.time() - start
-        results["ut_rows"] = num_ut_rows
-        results["ut_eval_time_cold"] = ut_eval_time
-        self.console.print(
-            f"✓ user_timeline: {num_ut_rows:,} rows in {ut_eval_time:.3f}s\n"
-        )
-
-        # Step 3: Query performance (before cache refresh)
-        self.console.print(
-            "[bold]Step 3: Measuring query performance (before cache refresh)...[/bold]"
+            "[bold]Step 2: Measuring query performance (before cache refresh)...[/bold]"
         )
 
         # Get sample user-product pairs
@@ -190,8 +170,8 @@ class Benchmark:
             f"max={results['ut_query_max_before']*1000:.2f}ms\n"
         )
 
-        # Step 4: Cache refresh
-        self.console.print("[bold]Step 4: Refreshing cache...[/bold]")
+        # Step 3: Cache refresh
+        self.console.print("[bold]Step 3: Refreshing cache...[/bold]")
         start = time.time()
         cur.execute("SELECT refresh_timeline_cache()")
         conn.commit()
@@ -209,14 +189,25 @@ class Benchmark:
             f"  Cached user_timeline: {results['ut_cache_rows']:,} rows\n"
         )
 
-        # Step 5: Query performance (after cache refresh)
+        # Step 4: Query performance (after cache refresh)
         self.console.print(
-            "[bold]Step 5: Measuring query performance (after cache refresh)...[/bold]"
+            "[bold]Step 4: Measuring query performance (after cache refresh)...[/bold]"
         )
 
-        # Query specific user-products (same pairs as before)
+        # Get NEW sample user-product pairs (to avoid disk cache effects)
+        cur.execute(
+            """
+            SELECT DISTINCT user_id, product_id
+            FROM user_cash_flow
+            LIMIT %s
+        """,
+            (num_queries,),
+        )
+        user_product_pairs_after = cur.fetchall()
+
+        # Query specific user-products
         upt_query_times_after = []
-        for user_id, product_id in user_product_pairs:
+        for user_id, product_id in user_product_pairs_after:
             start = time.time()
             cur.execute(
                 """
@@ -247,9 +238,13 @@ class Benchmark:
             f"max={results['upt_query_max_after']*1000:.2f}ms\n"
         )
 
-        # Query specific users (same users as before)
+        # Get NEW sample users (to avoid disk cache effects)
+        cur.execute("SELECT DISTINCT user_id FROM user_cash_flow LIMIT %s", (num_queries,))
+        user_ids_after = [row[0] for row in cur.fetchall()]
+
+        # Query specific users
         ut_query_times_after = []
-        for user_id in user_ids:
+        for user_id in user_ids_after:
             start = time.time()
             cur.execute(
                 "SELECT * FROM user_timeline WHERE user_id = %s ORDER BY timestamp",
@@ -297,35 +292,19 @@ class Benchmark:
         self.console.print(table1)
         self.console.print()
 
-        # Table 2: View Evaluation
-        table2 = Table(title="View Evaluation (Cold Cache)")
-        table2.add_column("View", style="cyan")
-        table2.add_column("Rows", style="green", justify="right")
-        table2.add_column("Time", style="yellow", justify="right")
-
-        table2.add_row(
-            "user_product_timeline",
-            f"{results['upt_rows']:,}",
-            f"{results['upt_eval_time_cold']:.3f}s",
-        )
-        table2.add_row("user_timeline", f"{results['ut_rows']:,}", f"{results['ut_eval_time_cold']:.3f}s")
-
-        self.console.print(table2)
-        self.console.print()
-
-        # Table 3: Query Performance Comparison
-        table3 = Table(title="Query Performance (Before vs After Cache)")
-        table3.add_column("Query Type", style="cyan")
-        table3.add_column("Before Cache", style="yellow", justify="right")
-        table3.add_column("After Cache", style="green", justify="right")
-        table3.add_column("Speedup", style="magenta", justify="right")
+        # Table 2: Query Performance Comparison
+        table2 = Table(title="Query Performance (Before vs After Cache)")
+        table2.add_column("Query Type", style="cyan")
+        table2.add_column("Before Cache", style="yellow", justify="right")
+        table2.add_column("After Cache", style="green", justify="right")
+        table2.add_column("Speedup", style="magenta", justify="right")
 
         upt_speedup = (
             results["upt_query_avg_before"] / results["upt_query_avg_after"]
             if results["upt_query_avg_after"] > 0
             else 0
         )
-        table3.add_row(
+        table2.add_row(
             "user_product (avg)",
             f"{results['upt_query_avg_before']*1000:.2f}ms",
             f"{results['upt_query_avg_after']*1000:.2f}ms",
@@ -337,26 +316,26 @@ class Benchmark:
             if results["ut_query_avg_after"] > 0
             else 0
         )
-        table3.add_row(
+        table2.add_row(
             "user (avg)",
             f"{results['ut_query_avg_before']*1000:.2f}ms",
             f"{results['ut_query_avg_after']*1000:.2f}ms",
             f"{ut_speedup:.1f}x",
         )
 
-        self.console.print(table3)
+        self.console.print(table2)
         self.console.print()
 
-        # Table 4: Cache Statistics
-        table4 = Table(title="Cache Statistics")
-        table4.add_column("Metric", style="cyan")
-        table4.add_column("Value", style="green", justify="right")
+        # Table 3: Cache Statistics
+        table3 = Table(title="Cache Statistics")
+        table3.add_column("Metric", style="cyan")
+        table3.add_column("Value", style="green", justify="right")
 
-        table4.add_row("Refresh time", f"{results['refresh_time']:.2f}s")
-        table4.add_row("user_product_timeline cached", f"{results['upt_cache_rows']:,} rows")
-        table4.add_row("user_timeline cached", f"{results['ut_cache_rows']:,} rows")
+        table3.add_row("Refresh time", f"{results['refresh_time']:.2f}s")
+        table3.add_row("user_product_timeline cached", f"{results['upt_cache_rows']:,} rows")
+        table3.add_row("user_timeline cached", f"{results['ut_cache_rows']:,} rows")
 
-        self.console.print(table4)
+        self.console.print(table3)
 
 
 if __name__ == "__main__":
