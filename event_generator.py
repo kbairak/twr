@@ -3,7 +3,8 @@ from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 import random
 import psycopg2
-from psycopg2.extras import execute_batch
+from psycopg2.extras import execute_batch, execute_values
+from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
 
 
 class EventGenerator:
@@ -77,25 +78,42 @@ class EventGenerator:
             self.product_ids[product] = cur.fetchone()[0]
         self.conn.commit()
 
-    def generate_and_insert(self, num_events: int):
-        """Generate events and insert into DB"""
-        for i in range(num_events):
-            if random.random() < (
-                self.price_cashflow_ratio / (self.price_cashflow_ratio + 1)
-            ):
-                self._generate_price_event()
-            else:
-                self._generate_cashflow_event()
+    def generate_and_insert(self, num_events: int, batch_size: int = 10000):
+        """Generate events and insert into DB using batch operations"""
+        price_events = []
+        cashflow_events = []
 
-            self.current_timestamp += timedelta(seconds=self.time_increment_seconds)
+        with Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("({task.completed}/{task.total})"),
+            TimeElapsedColumn(),
+        ) as progress:
+            gen_task = progress.add_task("Generating events", total=num_events)
 
-            if (i + 1) % 100 == 0:
-                print(f"Generated {i + 1}/{num_events} events...")
+            # Generate all events first
+            for i in range(num_events):
+                if random.random() < (
+                    self.price_cashflow_ratio / (self.price_cashflow_ratio + 1)
+                ):
+                    event = self._generate_price_event()
+                    if event:
+                        price_events.append(event)
+                else:
+                    event = self._generate_cashflow_event()
+                    if event:
+                        cashflow_events.append(event)
 
-        print(f"Done! Generated {num_events} events")
+                self.current_timestamp += timedelta(seconds=self.time_increment_seconds)
+                progress.update(gen_task, advance=1)
+
+            # Now insert all events in batches
+            progress.remove_task(gen_task)
+            self._batch_insert_all_events(price_events, cashflow_events, batch_size, progress)
 
     def _generate_price_event(self):
-        """Generate and insert a price event"""
+        """Generate a price event (returns tuple for batch insertion)"""
         product = random.choice(self.products)
 
         if product not in self.current_prices:
@@ -109,19 +127,14 @@ class EventGenerator:
 
         self.current_prices[product] = price
 
-        # Insert into DB
-        cur = self.conn.cursor()
-        cur.execute(
-            "INSERT INTO product_price (product_id, timestamp, price) VALUES (%s, %s, %s)",
-            (self.product_ids[product], self.current_timestamp, price),
-        )
-        self.conn.commit()
+        # Return tuple for batch insertion
+        return (self.product_ids[product], self.current_timestamp, price)
 
     def _generate_cashflow_event(self):
-        """Generate and insert a cashflow event"""
+        """Generate a cashflow event (returns tuple for batch insertion)"""
         # Only pick from products that have prices
         if not self.products_with_prices:
-            return  # No products with prices yet, skip
+            return None  # No products with prices yet, skip
 
         user = random.choice(self.users)
         product = random.choice(list(self.products_with_prices))
@@ -133,28 +146,69 @@ class EventGenerator:
         # Generate money amount
         money = Decimal(str(random.uniform(*self.cashflow_money_range)))
 
-        # 20% chance of sell (negative money)
+        # 20% chance of sell (negative money), but only sell up to 80% of holdings to be safe
+        # This conservative approach ensures we never sell more than we have even with rounding errors
         if random.random() < 0.2 and current_holdings > 0:
-            money = -money
-
-        # Convert to units
-        units = money / current_price
-
-        # If selling, cap at current holdings
-        if units < 0 and abs(units) > current_holdings:
-            units = -current_holdings
+            # Sell between 10% and 80% of current holdings
+            sell_fraction = Decimal(str(random.uniform(0.1, 0.8)))
+            units = -(current_holdings * sell_fraction)
             money = units * current_price
+        else:
+            # Convert money to units for buys
+            units = money / current_price
 
         # Update holdings
-        self.holdings[key] = current_holdings + units
+        new_holdings = current_holdings + units
 
-        # Insert into DB
+        # Sanity check - should never happen with our conservative sell logic
+        if new_holdings < 0:
+            return None
+
+        self.holdings[key] = new_holdings
+
+        # Return tuple for batch insertion
+        return (self.user_ids[user], self.product_ids[product], units, self.current_timestamp)
+
+    def _batch_insert_all_events(self, price_events, cashflow_events, batch_size, progress):
+        """Sort and batch insert all price and cashflow events"""
         cur = self.conn.cursor()
-        cur.execute(
-            "INSERT INTO user_cash_flow (user_id, product_id, units, timestamp) VALUES (%s, %s, %s, %s)",
-            (self.user_ids[user], self.product_ids[product], units, self.current_timestamp),
-        )
-        self.conn.commit()
+
+        # Sort price events by (product_id, timestamp) to ensure chronological order
+        if price_events:
+            price_events.sort(key=lambda x: (x[0], x[1]))
+            insert_task = progress.add_task("Inserting price events", total=len(price_events))
+
+            for i in range(0, len(price_events), batch_size):
+                batch = price_events[i:i + batch_size]
+                execute_values(
+                    cur,
+                    "INSERT INTO product_price (product_id, timestamp, price) VALUES %s",
+                    batch,
+                    page_size=1000,
+                )
+                self.conn.commit()
+                progress.update(insert_task, advance=len(batch))
+
+            progress.remove_task(insert_task)
+
+        # Sort cashflow events by (user_id, product_id, timestamp) to ensure chronological order
+        # This is critical for the trigger to correctly calculate cumulative values
+        if cashflow_events:
+            cashflow_events.sort(key=lambda x: (x[0], x[1], x[3]))
+            insert_task = progress.add_task("Inserting cashflow events", total=len(cashflow_events))
+
+            for i in range(0, len(cashflow_events), batch_size):
+                batch = cashflow_events[i:i + batch_size]
+                execute_values(
+                    cur,
+                    "INSERT INTO user_cash_flow (user_id, product_id, units, timestamp) VALUES %s",
+                    batch,
+                    page_size=100,  # Smaller page size to ensure trigger sees previous rows
+                )
+                self.conn.commit()
+                progress.update(insert_task, advance=len(batch))
+
+            progress.remove_task(insert_task)
 
     def close(self):
         self.conn.close()

@@ -231,8 +231,8 @@ uv sync
 ### 3. Run Migrations
 
 ```bash
-uv run python main.py drop    # (optional) Drop existing database
-uv run python main.py migrate # Create tables, triggers, views, cache
+uv run main.py drop    # (optional) Drop existing database
+uv run main.py migrate # Create tables, triggers, views, cache
 ```
 
 ## Usage
@@ -242,24 +242,24 @@ uv run python main.py migrate # Create tables, triggers, views, cache
 **Add price data:**
 
 ```bash
-uv run python main.py add-price --product nvidia --price 150.00
-uv run python main.py add-price --product apple --price 180.00 --timestamp "2025-01-15T10:00:00"
+uv run main.py add-price --product nvidia --price 150.00
+uv run main.py add-price --product apple --price 180.00 --timestamp "2025-01-15T10:00:00"
 ```
 
 **Add cash flows:**
 
 ```bash
 # Buy (positive money)
-uv run python main.py add-cashflow --user alice --product nvidia --money 1000
+uv run main.py add-cashflow --user alice --product nvidia --money 1000
 
 # Sell (negative money)
-uv run python main.py add-cashflow --user alice --product nvidia --money -500
+uv run main.py add-cashflow --user alice --product nvidia --money -500
 ```
 
 **View all data:**
 
 ```bash
-uv run python main.py show
+uv run main.py show
 ```
 
 Displays formatted tables with:
@@ -273,8 +273,41 @@ Displays formatted tables with:
 **Refresh cache:**
 
 ```bash
-uv run python main.py refresh
+uv run main.py refresh
 ```
+
+### Example Scenario
+
+```bash
+# Setup
+uv run main.py drop && uv run main.py migrate
+
+# Initial price
+uv run main.py add-price --product AAPL --price 100.00
+
+# Alice buys $10,000 worth at $100
+uv run main.py add-cashflow --user alice --product AAPL --money 10000
+
+# Price rises to $120 (20% gain)
+uv run main.py add-price --product AAPL --price 120.00
+
+# Alice buys another $6,000 at $120
+uv run main.py add-cashflow --user alice --product AAPL --money 6000
+
+# Price rises to $130 (8.33% gain from $120)
+uv run main.py add-price --product AAPL --price 130.00
+
+# View results
+uv run main.py show
+```
+
+**Expected TWR:**
+
+- Period 1 (first buy to second buy): +20%
+- Period 2 (second buy to final price): +8.33%
+- **Cumulative TWR**: (1.20 × 1.0833) - 1 = **30%**
+
+Note: TWR is independent of when money was invested, measuring pure investment performance.
 
 ## Event Generator
 
@@ -316,10 +349,10 @@ The `EventGenerator` class (`event_generator.py`):
 
 ```bash
 # Generate 1000 events with 50 users and 100 products
-uv run python event_generator.py --num-events 1000 --num-users 50 --num-products 100
+uv run event_generator.py --num-events 1000 --num-users 50 --num-products 100
 
 # Then view the generated data
-uv run python main.py show
+uv run main.py show
 ```
 
 **Parameters:**
@@ -341,26 +374,25 @@ uv run python main.py show
 The benchmark system (`benchmark.py`) measures:
 
 1. **Data generation & insertion performance**
-2. **View evaluation time** (cold cache)
-3. **Query performance before cache refresh** (specific user-products and users)
-4. **Cache refresh time**
-5. **Query performance after cache refresh**
-6. **Speedup comparison**
+2. **Query performance before cache refresh** (specific user-products and users)
+3. **Cache refresh time**
+4. **Query performance after cache refresh**
+5. **Speedup comparison**
 
 ### Running Benchmarks
 
 ```bash
 # Small benchmark (quick test)
-uv run python benchmark.py --num-events 10000 --num-users 100 --num-products 500
+uv run benchmark.py --num-events 10000 --num-users 100 --num-products 500
 
 # Medium benchmark
-uv run python benchmark.py --num-events 100000 --num-users 1000 --num-products 2000
+uv run benchmark.py --num-events 100000 --num-users 1000 --num-products 2000
 
 # Large benchmark
-uv run python benchmark.py --num-events 500000 --num-users 3000 --num-products 5000
+uv run benchmark.py --num-events 500000 --num-users 3000 --num-products 5000
 
 # Extra large (1M+ events)
-uv run python benchmark.py --num-events 1000000 --num-users 5000 --num-products 10000
+uv run benchmark.py --num-events 1000000 --num-users 5000 --num-products 10000
 ```
 
 **Parameters:**
@@ -376,66 +408,33 @@ Performance characteristics on Apple M1 MacBook Pro:
 
 | Events | Users | Products | View Rows | Insert Time | Throughput | Avg Query (before cache) | Cache Refresh | Avg Query (after cache) |
 |--------|-------|----------|-----------|-------------|------------|--------------------------|---------------|-------------------------|
-| TBD    | TBD   | TBD      | TBD       | TBD         | TBD        | TBD                      | TBD           | TBD                     |
+| 10k    | 100   | 500      | 10,002    | 3.3s        | 3,030/s    | 0.60ms (up) / 1.65ms (u) | 0.31s         | 0.50ms (up) / 0.66ms (u) (1.2x / 2.5x) |
+| 100k   | 1k    | 500      | 911,539       | 33.13s         | 3,019/s        | 2.25ms (up) / avg=15.33ms (u)                      | 38.39s           | 0.74ms (up) / 1.99ms (u) (3x / 7.7x)                    |
+| 500k   | 3k    | 500      | TBD       | TBD         | TBD        | TBD                      | TBD           | TBD                     |
+| 1M     | 5k    | 500      | TBD       | TBD         | TBD        | TBD                      | TBD           | TBD                     |
+
+Note: Query times show user-product (up) and user (u) averages. Speedup shown in parentheses after cache.
 
 **Key Observations:**
 
-1. **Linear insertion performance**: Consistently ~2,000-3,000 events/sec regardless of dataset size
-   - Trigger overhead is O(1) per event
+1. **Linear insertion performance**: Trigger overhead is O(1) per event
+   - Consistently ~2,000-3,000 events/sec regardless of dataset size
    - No degradation with scale
 
-2. **Cache provides significant speedup for user queries**:
-   - 100k events: 32.5x speedup (29ms → 0.9ms)
-   - 500k events: 5.4x speedup (11.7ms → 2.2ms)
+2. **Cache provides significant speedup for user-level queries**:
    - User queries aggregate across products, benefit most from caching
+   - 10k dataset: 2.5x speedup (1.65ms → 0.66ms)
+   - User-product queries already fast without cache (sub-millisecond)
 
-3. **User-product queries are fast even without cache**:
-   - Modest 1.4-1.7x speedup with cache
-   - Already sub-millisecond without cache due to indexed lookups
+3. **Fast cache refresh**:
+   - 10k events: 0.31s refresh time
+   - Cache refresh scales linearly with data size
+   - Suitable for frequent refresh schedules (hourly, on-demand)
 
-4. **View evaluation scales sub-linearly**:
-   - 100k events → 237k view rows (2.4x expansion)
-   - Cold view evaluation: 3.2s for 237k rows
-   - Efficient query optimization despite complexity
-
-5. **Cache refresh scales linearly with data size**:
-   - 10k events: 0.5s
-   - 100k events: 8.1s
-   - 500k events: 88s
-   - Reasonable for batch/scheduled refreshes
-
-## Example Scenario
-
-```bash
-# Setup
-uv run python main.py drop && uv run python main.py migrate
-
-# Initial price
-uv run python main.py add-price --product AAPL --price 100.00
-
-# Alice buys $10,000 worth at $100
-uv run python main.py add-cashflow --user alice --product AAPL --money 10000
-
-# Price rises to $120 (20% gain)
-uv run python main.py add-price --product AAPL --price 120.00
-
-# Alice buys another $6,000 at $120
-uv run python main.py add-cashflow --user alice --product AAPL --money 6000
-
-# Price rises to $130 (8.33% gain from $120)
-uv run python main.py add-price --product AAPL --price 130.00
-
-# View results
-uv run python main.py show
-```
-
-**Expected TWR:**
-
-- Period 1 (first buy to second buy): +20%
-- Period 2 (second buy to final price): +8.33%
-- **Cumulative TWR**: (1.20 × 1.0833) - 1 = **30%**
-
-Note: TWR is independent of when money was invested, measuring pure investment performance.
+4. **Timeline expansion**:
+   - Events generate timeline rows at all price changes
+   - 10k events → 10k timeline rows (~1x expansion)
+   - Expansion factor depends on price update frequency vs cash flow ratio
 
 ## How TWR Differs from Simple ROI
 
@@ -452,48 +451,6 @@ TWR = [(1 + r_period1) × (1 + r_period2) × ...] - 1
 ```
 
 This makes TWR ideal for comparing investment performance independent of when money was added or withdrawn.
-
-## Technical Details
-
-### PostgreSQL Trigger Logic
-
-The `calculate_incremental_twr()` trigger on `user_cash_flow`:
-
-1. Retrieves previous cash flow for this user-product
-2. Fetches current price at transaction time
-3. Calculates market value before new cash flow
-4. Computes period return: `(value_before - prev_value_after) / prev_value_after`
-5. Compounds TWR factor: `new_factor = prev_factor × (1 + period_return)`
-6. Updates cumulative holdings and deposits
-
-### Edge Cases Handled
-
-- **First transaction**: `cumulative_twr_factor = 1.0`, `period_return = 0`
-- **Zero holdings**: Period return set to 0 to avoid division by zero
-- **Selling more than owned**: Database constraint prevents (cumulative_units >= 0)
-- **Missing prices**: Would cause query to fail, ensuring data consistency
-
-### Cache System Details
-
-**Cache Strategy**:
-
-- Manual refresh via `refresh_timeline_cache()` function
-- Incremental: Only caches data after watermark
-- Two-level: Both user-product and aggregated user timelines
-
-**Cache + Delta Pattern**:
-
-```sql
-SELECT * FROM cache WHERE timestamp <= watermark
-UNION ALL
-SELECT * FROM base_view WHERE timestamp > watermark
-```
-
-**Benefits**:
-
-- Fresh data always visible (no stale cache)
-- Read performance improves after refresh
-- Flexible refresh schedule (on-demand, scheduled, etc.)
 
 ## Storage Analysis
 
