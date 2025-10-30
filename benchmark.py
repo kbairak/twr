@@ -72,9 +72,17 @@ class Benchmark:
             num_products=num_products,
         )
         gen.generate_and_insert(num_events)
-        gen.close()
         insert_time = time.time() - start
         self.console.print(f"✓ Inserted {num_events:,} events in {insert_time:.2f}s\n")
+
+        # Step 1b: Refresh continuous aggregate
+        self.console.print("[bold]Step 1b: Refreshing continuous aggregate (15-min price buckets)...[/bold]")
+        start = time.time()
+        gen.refresh_continuous_aggregate()
+        gen.close()
+        ca_refresh_time = time.time() - start
+        self.console.print(f"✓ Refreshed continuous aggregate in {ca_refresh_time:.2f}s\n")
+        results["ca_refresh_time"] = ca_refresh_time
 
         conn = self.get_connection()
         cur = conn.cursor()
@@ -101,7 +109,7 @@ class Benchmark:
             start = time.time()
             cur.execute(
                 """
-                SELECT * FROM user_product_timeline
+                SELECT * FROM user_product_timeline_15min
                 WHERE user_id = %s AND product_id = %s
                 ORDER BY timestamp
             """,
@@ -133,7 +141,7 @@ class Benchmark:
         for user_id in user_ids:
             start = time.time()
             cur.execute(
-                "SELECT * FROM user_timeline WHERE user_id = %s ORDER BY timestamp",
+                "SELECT * FROM user_timeline_15min WHERE user_id = %s ORDER BY timestamp",
                 (user_id,),
             )
             rows = cur.fetchall()
@@ -156,7 +164,7 @@ class Benchmark:
             "[bold]Step 3: Refreshing cache...[/bold]"
         )
         start = time.time()
-        cur.execute("SELECT refresh_timeline_cache()")
+        cur.execute("SELECT refresh_timeline_cache_15min()")
         conn.commit()
         cache_refresh_time = time.time() - start
         results["cache_refresh_time"] = cache_refresh_time
@@ -173,7 +181,7 @@ class Benchmark:
             start = time.time()
             cur.execute(
                 """
-                SELECT * FROM user_product_timeline
+                SELECT * FROM user_product_timeline_15min
                 WHERE user_id = %s AND product_id = %s
                 ORDER BY timestamp
             """,
@@ -199,7 +207,7 @@ class Benchmark:
         for user_id in user_ids:
             start = time.time()
             cur.execute(
-                "SELECT * FROM user_timeline WHERE user_id = %s ORDER BY timestamp",
+                "SELECT * FROM user_timeline_15min WHERE user_id = %s ORDER BY timestamp",
                 (user_id,),
             )
             rows = cur.fetchall()
@@ -256,22 +264,31 @@ class Benchmark:
         self.console.print(table1)
         self.console.print()
 
-        # Table 2: Cache refresh time
-        if 'cache_refresh_time' in results:
-            table2 = Table(title="Cache Refresh")
-            table2.add_column("Metric", style="cyan")
-            table2.add_column("Value", style="yellow")
+        # Table 2: Refresh times (continuous aggregate + cache)
+        table2 = Table(title="Refresh Performance")
+        table2.add_column("Operation", style="cyan")
+        table2.add_column("Time", style="yellow")
 
+        # Continuous aggregate refresh time
+        if 'ca_refresh_time' in results:
+            ca_time = results['ca_refresh_time']
+            if ca_time >= 60:
+                ca_time_str = f"{int(ca_time // 60)}m {ca_time % 60:.1f}s"
+            else:
+                ca_time_str = f"{ca_time:.2f}s"
+            table2.add_row("Continuous aggregate (15-min buckets)", ca_time_str)
+
+        # Cache refresh time
+        if 'cache_refresh_time' in results:
             cache_time = results['cache_refresh_time']
             if cache_time >= 60:
                 cache_time_str = f"{int(cache_time // 60)}m {cache_time % 60:.1f}s"
             else:
                 cache_time_str = f"{cache_time:.2f}s"
+            table2.add_row("Timeline cache", cache_time_str)
 
-            table2.add_row("Cache refresh time", cache_time_str)
-
-            self.console.print(table2)
-            self.console.print()
+        self.console.print(table2)
+        self.console.print()
 
 
 if __name__ == "__main__":

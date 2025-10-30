@@ -9,9 +9,9 @@ CREATE TABLE cache_watermark (
 -- Initialize with a single row
 INSERT INTO cache_watermark (id, last_cached_timestamp) VALUES (1, '1970-01-01'::TIMESTAMPTZ);
 
--- Cache table: stores pre-computed timeline data for performance
+-- Cache table (15-minute granularity): stores pre-computed timeline data for performance
 -- Acts like a materialized view but supports incremental updates
-CREATE TABLE user_product_timeline_cache (
+CREATE TABLE user_product_timeline_cache_15min (
     user_id UUID NOT NULL,
     product_id UUID NOT NULL,
     "timestamp" TIMESTAMPTZ NOT NULL,
@@ -24,8 +24,8 @@ CREATE TABLE user_product_timeline_cache (
     PRIMARY KEY (user_id, product_id, timestamp)
 );
 
--- Cache table for user-level timeline (aggregated across products)
-CREATE TABLE user_timeline_cache (
+-- Cache table for user-level timeline (15-minute granularity, aggregated across products)
+CREATE TABLE user_timeline_cache_15min (
     user_id UUID NOT NULL,
     "timestamp" TIMESTAMPTZ NOT NULL,
     total_net_deposits NUMERIC(20, 6),
@@ -34,9 +34,9 @@ CREATE TABLE user_timeline_cache (
     PRIMARY KEY (user_id, timestamp)
 );
 
--- Function to incrementally refresh the cache
--- Optimized to compute user_product_timeline_base only once and use it for both caches
-CREATE OR REPLACE FUNCTION refresh_timeline_cache() RETURNS void AS $$
+-- Function to incrementally refresh the cache (15-minute granularity)
+-- Optimized to compute user_product_timeline_base_15min only once and use it for both caches
+CREATE OR REPLACE FUNCTION refresh_timeline_cache_15min() RETURNS void AS $$
 DECLARE
     v_watermark TIMESTAMPTZ;
     v_new_watermark TIMESTAMPTZ;
@@ -45,7 +45,7 @@ BEGIN
     SELECT last_cached_timestamp INTO v_watermark FROM cache_watermark WHERE id = 1;
 
     -- Determine new watermark (max timestamp from actual data)
-    SELECT MAX(timestamp) INTO v_new_watermark FROM user_product_timeline_base;
+    SELECT MAX(timestamp) INTO v_new_watermark FROM user_product_timeline_base_15min;
 
     -- If there's no data, use current time
     IF v_new_watermark IS NULL THEN
@@ -53,7 +53,7 @@ BEGIN
     END IF;
 
     -- Compute product timeline data ONCE and use it for both caches
-    -- This avoids computing user_product_timeline_base twice (once directly, once via user_timeline_base)
+    -- This avoids computing user_product_timeline_base_15min twice (once directly, once via user_timeline_base_15min)
     WITH product_timeline_data AS (
         SELECT user_id,
                product_id,
@@ -63,18 +63,18 @@ BEGIN
                current_price,
                current_value,
                current_twr
-        FROM user_product_timeline_base
+        FROM user_product_timeline_base_15min
         WHERE timestamp > v_watermark
           AND timestamp <= v_new_watermark
     ),
     product_insert AS (
-        -- Insert into product-level cache
-        INSERT INTO user_product_timeline_cache
+        -- Insert into product-level cache (15min granularity)
+        INSERT INTO user_product_timeline_cache_15min
         SELECT * FROM product_timeline_data
         RETURNING 1
     )
-    -- Insert into user-level cache by aggregating the product timeline data
-    INSERT INTO user_timeline_cache
+    -- Insert into user-level cache by aggregating the product timeline data (15min granularity)
+    INSERT INTO user_timeline_cache_15min
     SELECT
         user_id,
         timestamp,

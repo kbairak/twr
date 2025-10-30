@@ -112,7 +112,7 @@ class TWRDatabase:
             raise FileNotFoundError(f"No SQL migration files found in {migrations_dir}")
 
         conn = self._get_connection()
-        conn.autocommit = False  # Use transactions for migrations
+        conn.autocommit = True  # Use autocommit to support TimescaleDB continuous aggregates
 
         try:
             cur = conn.cursor()
@@ -126,12 +126,10 @@ class TWRDatabase:
                 # Execute the SQL
                 try:
                     cur.execute(sql_content)
-                    conn.commit()
                     self.console.print(
                         f"[green]✓[/green] {sql_file.name} completed successfully"
                     )
                 except Exception as e:
-                    conn.rollback()
                     raise RuntimeError(f"Failed to execute {sql_file.name}: {e}")
 
             self.console.print(
@@ -149,13 +147,18 @@ class TWRDatabase:
         self._execute_query('TRUNCATE TABLE "user" CASCADE')
         self._execute_query("TRUNCATE TABLE product CASCADE")
         # Reset caches (watermark is implicit from MAX(timestamp) in cache)
-        self._execute_query("TRUNCATE TABLE user_product_timeline_cache")
-        self._execute_query("TRUNCATE TABLE user_timeline_cache")
+        self._execute_query("TRUNCATE TABLE user_product_timeline_cache_15min")
+        self._execute_query("TRUNCATE TABLE user_timeline_cache_15min")
 
     def refresh_cache(self):
         """Refresh the timeline cache with new data."""
-        self._execute_query("SELECT refresh_timeline_cache()")
+        self._execute_query("SELECT refresh_timeline_cache_15min()")
         self.console.print("[green]✓[/green] Cache refreshed successfully!")
+
+    def refresh_buckets(self):
+        """Refresh the 15-minute continuous aggregate (buckets)."""
+        self._execute_query("CALL refresh_continuous_aggregate('product_price_15min', NULL, NULL)")
+        self.console.print("[green]✓[/green] 15-minute buckets refreshed successfully!")
 
     def add_price(self, product_name, price, timestamp=None):
         """Add a price record for a product."""
@@ -417,7 +420,7 @@ class TWRDatabase:
                 upt.current_value,
                 upt.current_twr * 100 as twr_pct,
                 upt.is_cached
-            FROM user_product_timeline upt
+            FROM user_product_timeline_15min upt
             JOIN "user" u ON upt.user_id = u.id
             JOIN product p ON upt.product_id = p.id
             ORDER BY upt.timestamp, u.name, p.name
@@ -484,7 +487,7 @@ class TWRDatabase:
                 ut.total_value,
                 ut.value_weighted_twr * 100 as twr_pct,
                 ut.is_cached
-            FROM user_timeline ut
+            FROM user_timeline_15min ut
             JOIN "user" u ON ut.user_id = u.id
             ORDER BY ut.timestamp, u.name
         """,
@@ -540,6 +543,9 @@ def main():
     # refresh subcommand
     subparsers.add_parser("refresh", help="Refresh the timeline cache")
 
+    # refresh-buckets subcommand
+    subparsers.add_parser("refresh-buckets", help="Refresh the 15-minute continuous aggregate")
+
     # add-price subcommand
     price_parser = subparsers.add_parser("add-price", help="Add a price record")
     price_parser.add_argument("--product", required=True, help="Product name")
@@ -582,6 +588,8 @@ def main():
         db.run_migrations()
     elif args.command == "refresh":
         db.refresh_cache()
+    elif args.command == "refresh-buckets":
+        db.refresh_buckets()
     elif args.command == "add-price":
         db.add_price(args.product, args.price, args.timestamp)
     elif args.command == "add-cashflow":

@@ -1,8 +1,6 @@
-version: '3.8'
-
 services:
   postgres:
-    image: postgres:16
+    image: timescale/timescaledb:latest-pg16
     container_name: twr_postgres
     environment:
       POSTGRES_DB: twr

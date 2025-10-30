@@ -18,8 +18,8 @@ os.environ["TESTCONTAINERS_RYUK_DISABLED"] = "true"
 @pytest.fixture(scope="session")
 def twr_uncleared():
     """Session-scoped fixture: PostgreSQL container and TWRDatabase instance."""
-    # Start PostgreSQL container - testcontainers will find an available random port
-    postgres = PostgresContainer("postgres:16")
+    # Start TimescaleDB container - testcontainers will find an available random port
+    postgres = PostgresContainer("timescale/timescaledb:latest-pg16")
     postgres.start()
 
     try:
@@ -106,11 +106,11 @@ def test_add_price(twr):
 
     # Verify views are empty
     user_product_timeline = twr._execute_query(
-        "SELECT * FROM user_product_timeline", fetch=True
+        "SELECT * FROM user_product_timeline_15min", fetch=True
     )
     assert user_product_timeline == []
 
-    user_timeline = twr._execute_query("SELECT * FROM user_timeline", fetch=True)
+    user_timeline = twr._execute_query("SELECT * FROM user_timeline_15min", fetch=True)
     assert user_timeline == []
 
 
@@ -182,7 +182,7 @@ def test_one_price_one_cashflow(twr, at):
                upt.current_value,
                upt.current_twr,
                upt.timestamp
-        FROM user_product_timeline upt
+        FROM user_product_timeline_15min upt
         JOIN "user" u ON upt.user_id = u.id
         JOIN product p ON upt.product_id = p.id
         """,
@@ -205,7 +205,7 @@ def test_one_price_one_cashflow(twr, at):
     user_timeline = twr._execute_query(
         """
         SELECT u.name as user_name, ut.total_net_deposits, ut.total_value, ut.value_weighted_twr, ut.timestamp
-        FROM user_timeline ut
+        FROM user_timeline_15min ut
         JOIN "user" u ON ut.user_id = u.id""",
         fetch=True,
     )
@@ -292,7 +292,7 @@ def test_price_increase_50_percent(twr, at):
                upt.current_value,
                upt.current_twr,
                upt.timestamp
-        FROM user_product_timeline upt
+        FROM user_product_timeline_15min upt
         JOIN "user" u ON upt.user_id = u.id
         JOIN product p ON upt.product_id = p.id
         ORDER BY timestamp
@@ -326,7 +326,7 @@ def test_price_increase_50_percent(twr, at):
     user_timeline = twr._execute_query(
         """
         SELECT u.name as user_name, ut.total_net_deposits, ut.total_value, ut.value_weighted_twr, ut.timestamp
-        FROM user_timeline ut
+        FROM user_timeline_15min ut
         JOIN "user" u ON ut.user_id = u.id
         ORDER BY timestamp""",
         fetch=True,
@@ -425,7 +425,7 @@ def test_price_up_then_down(twr, at):
                upt.current_value,
                upt.current_twr,
                upt.timestamp
-        FROM user_product_timeline upt
+        FROM user_product_timeline_15min upt
         JOIN "user" u ON upt.user_id = u.id
         JOIN product p ON upt.product_id = p.id
         ORDER BY timestamp
@@ -469,7 +469,7 @@ def test_price_up_then_down(twr, at):
     user_timeline = twr._execute_query(
         """
         SELECT u.name as user_name, ut.total_net_deposits, ut.total_value, ut.value_weighted_twr, ut.timestamp
-        FROM user_timeline ut
+        FROM user_timeline_15min ut
         JOIN "user" u ON ut.user_id = u.id
         ORDER BY timestamp""",
         fetch=True,
@@ -509,13 +509,13 @@ def test_cache_refresh(twr, at):
 
     # Before refresh: cache should be empty
     cache_before = twr._execute_query(
-        "SELECT COUNT(*) as count FROM user_product_timeline_cache", fetch=True
+        "SELECT COUNT(*) as count FROM user_product_timeline_cache_15min", fetch=True
     )
     assert cache_before[0]["count"] == 0
 
     # Watermark should be NULL (MAX timestamp from empty cache)
     watermark_before = twr._execute_query(
-        "SELECT MAX(timestamp) as max_timestamp FROM user_product_timeline_cache", fetch=True
+        "SELECT MAX(timestamp) as max_timestamp FROM user_product_timeline_cache_15min", fetch=True
     )
     assert watermark_before[0]["max_timestamp"] is None
 
@@ -523,7 +523,7 @@ def test_cache_refresh(twr, at):
     timeline = twr._execute_query(
         """
         SELECT u.name as user_name, p.name as product_name, upt.timestamp
-        FROM user_product_timeline upt
+        FROM user_product_timeline_15min upt
         JOIN "user" u ON upt.user_id = u.id
         JOIN product p ON upt.product_id = p.id
         ORDER BY upt.timestamp
@@ -537,13 +537,13 @@ def test_cache_refresh(twr, at):
 
     # After refresh: cache should have data
     cache_after = twr._execute_query(
-        "SELECT COUNT(*) as count FROM user_product_timeline_cache", fetch=True
+        "SELECT COUNT(*) as count FROM user_product_timeline_cache_15min", fetch=True
     )
     assert cache_after[0]["count"] == 2  # Two entries cached
 
     # Watermark should be set (MAX timestamp from populated cache)
     watermark_after = twr._execute_query(
-        "SELECT MAX(timestamp) as max_timestamp FROM user_product_timeline_cache", fetch=True
+        "SELECT MAX(timestamp) as max_timestamp FROM user_product_timeline_cache_15min", fetch=True
     )
     assert watermark_after[0]["max_timestamp"] is not None
 
@@ -551,7 +551,7 @@ def test_cache_refresh(twr, at):
     timeline_after = twr._execute_query(
         """
         SELECT u.name as user_name, p.name as product_name, upt.timestamp
-        FROM user_product_timeline upt
+        FROM user_product_timeline_15min upt
         JOIN "user" u ON upt.user_id = u.id
         JOIN product p ON upt.product_id = p.id
         ORDER BY upt.timestamp
@@ -566,7 +566,7 @@ def test_cache_refresh(twr, at):
 
     # Cache should still have 2 entries (not updated yet)
     cache_new = twr._execute_query(
-        "SELECT COUNT(*) as count FROM user_product_timeline_cache", fetch=True
+        "SELECT COUNT(*) as count FROM user_product_timeline_cache_15min", fetch=True
     )
     assert cache_new[0]["count"] == 2
 
@@ -574,7 +574,7 @@ def test_cache_refresh(twr, at):
     timeline_new = twr._execute_query(
         """
         SELECT u.name as user_name, p.name as product_name, upt.timestamp
-        FROM user_product_timeline upt
+        FROM user_product_timeline_15min upt
         JOIN "user" u ON upt.user_id = u.id
         JOIN product p ON upt.product_id = p.id
         ORDER BY upt.timestamp
@@ -588,13 +588,13 @@ def test_cache_refresh(twr, at):
 
     # Now cache should have 3 entries
     cache_final = twr._execute_query(
-        "SELECT COUNT(*) as count FROM user_product_timeline_cache", fetch=True
+        "SELECT COUNT(*) as count FROM user_product_timeline_cache_15min", fetch=True
     )
     assert cache_final[0]["count"] == 3
 
 
     # Also verify user_timeline cache was populated
     user_cache_final = twr._execute_query(
-        "SELECT COUNT(*) as count FROM user_timeline_cache", fetch=True
+        "SELECT COUNT(*) as count FROM user_timeline_cache_15min", fetch=True
     )
     assert user_cache_final[0]["count"] == 3  # Same 3 timestamps, aggregated per user
