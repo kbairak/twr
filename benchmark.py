@@ -151,6 +151,72 @@ class Benchmark:
             f"max={results['ut_query_max_before'] * 1000:.2f}ms\n"
         )
 
+        # Step 3: Cache refresh
+        self.console.print(
+            "[bold]Step 3: Refreshing cache...[/bold]"
+        )
+        start = time.time()
+        cur.execute("SELECT refresh_timeline_cache()")
+        conn.commit()
+        cache_refresh_time = time.time() - start
+        results["cache_refresh_time"] = cache_refresh_time
+        self.console.print(f"✓ Cache refreshed in {cache_refresh_time:.2f}s\n")
+
+        # Step 4: Query performance after cache refresh
+        self.console.print(
+            "[bold]Step 4: Measuring query performance (after cache refresh)...[/bold]"
+        )
+
+        # Query the same user-products again
+        upt_query_times_after = []
+        for user_id, product_id in user_product_pairs:
+            start = time.time()
+            cur.execute(
+                """
+                SELECT * FROM user_product_timeline
+                WHERE user_id = %s AND product_id = %s
+                ORDER BY timestamp
+            """,
+                (user_id, product_id),
+            )
+            rows = cur.fetchall()
+            upt_query_times_after.append(time.time() - start)
+
+        results["upt_query_avg_after"] = (
+            sum(upt_query_times_after) / len(upt_query_times_after) if upt_query_times_after else 0
+        )
+        results["upt_query_min_after"] = min(upt_query_times_after) if upt_query_times_after else 0
+        results["upt_query_max_after"] = max(upt_query_times_after) if upt_query_times_after else 0
+        self.console.print(
+            f"✓ user_product queries (n={len(upt_query_times_after)}): "
+            f"avg={results['upt_query_avg_after'] * 1000:.2f}ms, "
+            f"min={results['upt_query_min_after'] * 1000:.2f}ms, "
+            f"max={results['upt_query_max_after'] * 1000:.2f}ms\n"
+        )
+
+        # Query the same users again
+        ut_query_times_after = []
+        for user_id in user_ids:
+            start = time.time()
+            cur.execute(
+                "SELECT * FROM user_timeline WHERE user_id = %s ORDER BY timestamp",
+                (user_id,),
+            )
+            rows = cur.fetchall()
+            ut_query_times_after.append(time.time() - start)
+
+        results["ut_query_avg_after"] = (
+            sum(ut_query_times_after) / len(ut_query_times_after) if ut_query_times_after else 0
+        )
+        results["ut_query_min_after"] = min(ut_query_times_after) if ut_query_times_after else 0
+        results["ut_query_max_after"] = max(ut_query_times_after) if ut_query_times_after else 0
+        self.console.print(
+            f"✓ user queries (n={len(ut_query_times_after)}): "
+            f"avg={results['ut_query_avg_after'] * 1000:.2f}ms, "
+            f"min={results['ut_query_min_after'] * 1000:.2f}ms, "
+            f"max={results['ut_query_max_after'] * 1000:.2f}ms\n"
+        )
+
         conn.close()
 
         # Display summary
@@ -165,19 +231,47 @@ class Benchmark:
         # Table 1: Query Performance Comparison
         table1 = Table(title="Query Performance")
         table1.add_column("Query Type", style="cyan")
+        table1.add_column("Before Cache", style="yellow")
+        table1.add_column("After Cache", style="green")
+        table1.add_column("Speedup", style="magenta")
 
+        # User-product queries
+        speedup_upt = results['upt_query_avg_before'] / results['upt_query_avg_after'] if results.get('upt_query_avg_after', 0) > 0 else 0
         table1.add_row(
             "user_product (avg)",
             f"{results['upt_query_avg_before'] * 1000:.2f}ms",
+            f"{results.get('upt_query_avg_after', 0) * 1000:.2f}ms",
+            f"{speedup_upt:.2f}x",
         )
 
+        # User queries
+        speedup_ut = results['ut_query_avg_before'] / results['ut_query_avg_after'] if results.get('ut_query_avg_after', 0) > 0 else 0
         table1.add_row(
             "user (avg)",
             f"{results['ut_query_avg_before'] * 1000:.2f}ms",
+            f"{results.get('ut_query_avg_after', 0) * 1000:.2f}ms",
+            f"{speedup_ut:.2f}x",
         )
 
         self.console.print(table1)
         self.console.print()
+
+        # Table 2: Cache refresh time
+        if 'cache_refresh_time' in results:
+            table2 = Table(title="Cache Refresh")
+            table2.add_column("Metric", style="cyan")
+            table2.add_column("Value", style="yellow")
+
+            cache_time = results['cache_refresh_time']
+            if cache_time >= 60:
+                cache_time_str = f"{int(cache_time // 60)}m {cache_time % 60:.1f}s"
+            else:
+                cache_time_str = f"{cache_time:.2f}s"
+
+            table2.add_row("Cache refresh time", cache_time_str)
+
+            self.console.print(table2)
+            self.console.print()
 
 
 if __name__ == "__main__":

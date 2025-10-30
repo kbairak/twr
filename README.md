@@ -126,6 +126,7 @@ portfolio_twr = SUM(product_twr × product_value) / SUM(product_value)
 ```
 
 **Example:** Alice holds two products:
+
 - AAPL: $10,000 value, +30% TWR
 - NVDA: $1,000 value, +80% TWR
 
@@ -189,43 +190,45 @@ uv run event_generator.py --num-events 1000 --num-users 50 --num-products 100
 
 Performance on Apple M1 MacBook Pro:
 
-| Events | Users | Products | Avg user-product query | Avg user query |
-|--------|-------|----------|------------------------|----------------|
-| 10k    | 100   | 500      | 0.40ms                 | 0.47ms         |
-| 100k   | 1k    | 500      | 0.79ms                 | 4.76ms         |
-| 500k   | 3k    | 500      | 2.42ms                 | 35.20ms        |
-| 1M     | 5k    | 1k       | 2.46ms                 | 64.58ms        |
-| 2M     | 10k   | 1k       | 4.19ms                 | 237.72ms       |
-| 5M     | 50k   | 1k       | 10.13ms                | 80.06ms        |
+| Events | Users | Products | Avg user-product query (before cache) | Avg user query (before cache) | Cache refresh | Avg user-product query (after cache) | Avg user query (after cache) |
+|--------|-------|----------|---------------------------------------|-------------------------------|---------------|--------------------------------------|------------------------------|
+| 10k    | 100   | 1k       | 0.5ms                                 | 0.6ms                         | 0.02s         | 0.5ms                                | 0.6ms                        |
+| 100k   | 1k    | 500      | 2.0ms                                 | 2.4ms                         | 3.2s          | 1.9ms                                | 2.2ms                        |
+| 100k   | 1k    | 1k       | 2.1ms                                 | 2.2ms                         | 1.1s          | 1.8ms                                | 1.8ms                        |
+| 200k   | 1k    | 500      | 3.6ms                                 | 5.7ms                         | 5.8s          | 3.3ms                                | 3.7ms                        |
+| 200k   | 2k    | 1k       | 3.3ms                                 | 3.9ms                         | 6.1s          | 3.4ms                                | 4.5ms                        |
+| 300k   | 1k    | 500      | 4.9ms                                 | 9.6ms                         | 11.9s         | 5.1ms                                | 11.4ms                       |
+| 300k   | 3k    | 1k       | 4.5ms                                 | 5.1ms                         | 11.6s         | 5.2ms                                | 6.1ms                        |
+| 400k   | 1k    | 500      | 6.8ms                                 | 13.2ms                        | 20.7s         | 6.6ms                                | 20.8ms                       |
+| 400k   | 4k    | 1k       | 6.9ms                                 | 7.4ms                         | 21.8s         | 7.3ms                                | 16.7ms                       |
+| 500k   | 1k    | 500      | 7.5ms                                 | 17.2ms                        | 41.3s         | 11.5ms                               | 34.4ms                       |
+| 500k   | 3k    | 500      | 8.7ms                                 | 15.1ms                        | 1m 7.5s       | 12.9ms                               | 47.1ms                       |
+| 500k   | 3k    | 1k       | 10.0ms                                | 11.7ms                        | 40.5s         | 10.1ms                               | 20.6ms                       |
+| 600k   | 1k    | 500      | 11.5ms                                | 31.0ms                        | 55.7s         | 11.9ms                               | 42.9ms                       |
+| 600k   | 6k    | 1k       | 10.6ms                                | 12.0ms                        | 1m 4.2s       | 10.3ms                               | 27.0ms                       |
+| 700k   | 1k    | 500      | 13.5ms                                | 34.1ms                        | 1m 44.8s      | 18.2ms                               | 97.0ms                       |
+| 700k   | 7k    | 1k       | 12.3ms                                | 13.4ms                        | 1m 48.5s      | 16.1ms                               | 59.6ms                       |
+| 800k   | 1k    | 500      | 19.9ms                                | 54.6ms                        | 3m 6.3s       | 26.5ms                               | 206.8ms                      |
+| 800k   | 8k    | 1k       | 16.3ms                                | 18.6ms                        | 3m 9.4s       | 22.0ms                               | 99.5ms                       |
+| 900k   | 1k    | 500      | 17.2ms                                | 70.6ms                        | 3m 48.3s      | 28.9ms                               | 285.5ms                      |
+| 900k   | 9k    | 1k       | 17.7ms                                | 36.4ms                        | 3m 16.6s      | 23.1ms                               | 111.9ms                      |
+| 1M     | 1k    | 500      | 17.9ms                                | 52.9ms                        | 4m 15.0s      | 31.2ms                               | 355.8ms                      |
+| 1M     | 10k   | 500      | 24.8ms                                | 90.1ms                        | 18m 46.3s     | 23.4ms                               | 313.3ms                      |
+| 1M     | 10k   | 1k       | 16.6ms                                | 31.2ms                        | 3m 26.9s      | 19.3ms                               | 69.2ms                       |
 
 **Key observations:**
 
-- Sub-10ms user-product queries even at 5M events
-- User query performance improves with more products (less data per product to aggregate)
-- Concentrated portfolios (probability-based product selection) significantly improve aggregation performance
-
-### Cache Refresh Performance
-
-Performance of `refresh_timeline_cache()` with 500 products:
-
-| Events | Users | Cache Refresh Time |
-|--------|-------|-------------------|
-| 100k   | 1k    | 2.1s              |
-| 200k   | 2k    | 5.9s              |
-| 300k   | 3k    | 19.2s             |
-| 400k   | 4k    | 35.0s             |
-| 500k   | 5k    | 52.4s             |
-| 600k   | 6k    | 1m 21s            |
-| 700k   | 7k    | 1m 58s            |
-| 800k   | 8k    | 3m 14s            |
-| 900k   | 9k    | 6m 22s            |
-
-**Key observations:**
-
-- Cache refresh scales roughly quadratically
-- Practical limit: ~800k events for sub-5-minute refresh
-- At production scale (billions of events), requires partitioning
-- Uses MATERIALIZED CTE to avoid duplicate sequential scans on user_cash_flow table
+- Sub-20ms user-product queries up to 1M events
+- User-level aggregation queries scale less favorably (grow from 0.6ms to 313ms at 1M/10k/500)
+- More products generally improves performance (1M/10k/1k: 31.2ms vs 1M/10k/500: 90.1ms)
+  - Fewer products means users hold more products each, requiring heavier aggregation
+- Cache refresh performance varies dramatically with product count:
+  - 1M/10k/500: 18m 46s (concentrated portfolios create complex aggregations)
+  - 1M/10k/1k: 3m 27s (distributed portfolios are more efficient to cache)
+- Post-cache query performance can be slower than pre-cache due to:
+  - Larger materialized cache tables requiring more disk I/O
+  - Cold cache immediately after refresh (production usage would show benefits over time)
+  - Small raw tables fitting entirely in buffer cache
 
 ### Running Benchmarks
 
