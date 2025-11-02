@@ -46,18 +46,32 @@ With multiple products and users:
 
 The naive approach creates **products × users × price_updates** timeline entries, which becomes unmanageable at scale.
 
-## Buckets
+## Multi-Granularity Bucketing
 
-Instead of creating timeline entries for every 2-minute price update, we **bucket prices into 15-minute intervals**.
+Instead of creating timeline entries for every 2-minute price update, the system **buckets prices at multiple granularities** to balance precision, performance, and storage for different use cases.
 
-### How It Works
+### Three Granularities
 
-**TimescaleDB continuous aggregates** automatically maintain 15-minute price buckets:
+The system provides three pre-configured granularities, each optimized for different time ranges:
+
+| Granularity | Bucket Size | Real-time Data | Cache Retention | Best For |
+|-------------|-------------|----------------|-----------------|----------|
+| **15min**   | 15 minutes  | ✓ Yes          | 7 days          | Real-time monitoring, recent detailed analysis |
+| **1h**      | 1 hour      | ✗ No           | 30 days         | Weekly/monthly performance analysis |
+| **1d**      | 1 day       | ✗ No           | Indefinite      | Long-term trends, multi-year analysis |
+
+**How it works:**
+
+- Each granularity has its own **TimescaleDB continuous aggregate** for bucketed prices
+- Each granularity has its own **cache tables** with automatic retention policies
+- Each granularity has its own **combined views** (cache + delta pattern)
+
+### 15min Granularity: Real-Time + Historical
+
+The 15-minute granularity uses a **three-tier query architecture** for maximum freshness:
 
 ```sql
--- Continuous aggregate: last price in each 15-minute bucket
-CREATE MATERIALIZED VIEW product_price_15min
-WITH (timescaledb.continuous) AS
+CREATE MATERIALIZED VIEW product_price_15min AS
 SELECT product_id,
        time_bucket('15 minutes', timestamp) AS bucket,
        last(price, timestamp) AS price
@@ -67,39 +81,135 @@ GROUP BY product_id, time_bucket('15 minutes', timestamp);
 
 **Data reduction:**
 
-- Raw 2-min intervals: ~9,000 prices/day per product (7.5 hours × 60 min / 2 min)
-- 15-min buckets: ~1,200 prices/day per product (7.5 hours × 60 min / 15 min)
+- Raw 2-min intervals: ~9,000 prices/day per product
+- 15-min buckets: ~1,200 prices/day per product
 - **Reduction: 87-93%**
 
-**Trade-off:**
+**Three-tier query:**
 
-- ✅ Massive performance improvement (87% fewer rows to process)
-- ⚠️ Price precision reduced to 15-minute granularity
-- ✅ Cash flows still use exact timestamps (precision where it matters)
+1. **Tier 1 (Cache)**: Historical data from cache table (fast)
+2. **Tier 2 (Bucketed)**: Recent data from 15-min buckets (fast)
+3. **Tier 3 (Raw)**: Latest raw prices after last bucket (accurate)
 
-### Auto-Refresh Policy
+**Cache retention:** 7 days (balances storage with recency needs)
 
-The continuous aggregate refreshes automatically every 15 minutes, keeping data fresh:
+### 1h Granularity: Medium-Term Analysis
+
+Hourly bucketing provides efficient querying for weekly and monthly timelines:
 
 ```sql
-SELECT add_continuous_aggregate_policy('product_price_15min',
-    start_offset => INTERVAL '1 month',
-    end_offset => INTERVAL '1 minute',
-    schedule_interval => INTERVAL '15 minutes'
-);
+CREATE MATERIALIZED VIEW product_price_1h AS
+SELECT product_id,
+       time_bucket('1 hour', timestamp) AS bucket,
+       last(price, timestamp) AS price
+FROM product_price
+GROUP BY product_id, time_bucket('1 hour', timestamp);
 ```
 
-You can also refresh manually: `uv run main.py refresh-buckets`
+**Data reduction:**
 
-### Extensibility
+- 15-min buckets: ~1,200 prices/day per product
+- 1-hour buckets: ~300 prices/day per product
+- **Reduction: 75% vs 15min, 97% vs raw**
 
-All views use the `_15min` suffix to support future granularities:
+**Two-tier query** (no real-time tier):
 
-- `user_product_timeline_15min` (current)
-- `user_product_timeline_1h` (future: hourly bucketing for longer time ranges)
-- `user_product_timeline_1d` (future: daily bucketing for multi-year queries)
+1. **Tier 1 (Cache)**: Historical data from cache table
+2. **Tier 2 (Bucketed)**: Recent data from 1-hour buckets
 
-Users can choose precision vs. performance based on their needs.
+**Cache retention:** 30 days (holds a month of detailed data)
+
+### 1d Granularity: Long-Term Trends
+
+Daily bucketing enables efficient multi-year historical queries:
+
+```sql
+CREATE MATERIALIZED VIEW product_price_1d AS
+SELECT product_id,
+       time_bucket('1 day', timestamp) AS bucket,
+       last(price, timestamp) AS price
+FROM product_price
+GROUP BY product_id, time_bucket('1 day', timestamp);
+```
+
+**Data reduction:**
+
+- 1-hour buckets: ~300 prices/day per product
+- 1-day buckets: ~4 prices/day per product (market open to close)
+- **Reduction: 98.6% vs 15min, 99.96% vs raw**
+
+**Two-tier query** (no real-time tier):
+
+1. **Tier 1 (Cache)**: Historical data (kept indefinitely)
+2. **Tier 2 (Bucketed)**: Recent data from daily buckets
+
+**Cache retention:** Indefinite (daily granularity is compact enough to keep forever)
+
+### Auto-Refresh Policies
+
+Each continuous aggregate refreshes automatically at its bucket interval:
+
+```sql
+-- Refreshes every 15 minutes, 1 hour, or 1 day respectively
+SELECT add_continuous_aggregate_policy('product_price_15min',
+    schedule_interval => INTERVAL '15 minutes');
+SELECT add_continuous_aggregate_policy('product_price_1h',
+    schedule_interval => INTERVAL '1 hour');
+SELECT add_continuous_aggregate_policy('product_price_1d',
+    schedule_interval => INTERVAL '1 day');
+```
+
+**Manual refresh:**
+
+```bash
+# Refresh all granularities (default)
+uv run main.py refresh-buckets
+
+# Refresh specific granularity
+uv run main.py refresh-buckets --granularity 15min
+uv run main.py refresh-buckets --granularity 1h
+uv run main.py refresh-buckets --granularity 1d
+```
+
+### Cache Retention Policies
+
+Each granularity automatically deletes old cache entries based on its retention policy:
+
+- **15min**: Deletes cache entries older than 7 days (keeps only recent detailed data)
+- **1h**: Deletes cache entries older than 30 days (keeps a month of data)
+- **1d**: Never deletes (indefinite retention for daily summaries)
+
+**Manual cache refresh:**
+
+```bash
+# Refresh cache for all granularities (default)
+uv run main.py refresh
+
+# Refresh cache for specific granularity
+uv run main.py refresh --granularity 15min
+uv run main.py refresh --granularity 1h
+uv run main.py refresh --granularity 1d
+```
+
+### Choosing a Granularity
+
+**Use 15min when:**
+
+- Analyzing today's or this week's performance
+- Need real-time accuracy (includes raw prices after last bucket)
+- Monitoring active trading periods
+
+**Use 1h when:**
+
+- Analyzing last week or last month
+- Don't need minute-by-minute precision
+- Want faster queries than 15min
+
+**Use 1d when:**
+
+- Analyzing trends over months or years
+- Generating charts for multi-year performance
+- Want maximum query speed and minimal storage
 
 ## Cache
 
@@ -110,7 +220,7 @@ When you query timeline data, the system combines three sources to balance perfo
 ```
 ┌────────────────────────────────────────────────────────────────┐
 │          Combined View (user_product_timeline_15min)           │
-│                    What you actually query                      │
+│                    What you actually query                     │
 └────────────────────────────┬───────────────────────────────────┘
                              │ UNION ALL
               ┌──────────────┼──────────────┐
@@ -496,13 +606,34 @@ ORDER BY upt.product_id, upt.timestamp DESC;
 
 ### Event Generator
 
-The event generator creates realistic synthetic data for testing and benchmarking.
+The event generator creates realistic synthetic data for testing and benchmarking using a **2-of-3 parameter model**.
+
+**Flexible parameter model:**
+
+Provide **any 2 of these 3 parameters**, and the third is calculated automatically:
+
+1. **--days**: Number of trading days to simulate
+2. **--num-events**: Total number of events to generate
+3. **--price-update-frequency**: How often prices update (e.g., "2min", "5min", "1h")
+
+**Examples:**
+
+```bash
+# Specify days + frequency → calculates num-events
+uv run python event_generator.py --days 10 --price-update-frequency 2min
+
+# Specify days + num-events → calculates frequency
+uv run python event_generator.py --days 5 --num-events 100000
+
+# Specify num-events + frequency → calculates days
+uv run python event_generator.py --num-events 50000 --price-update-frequency 5min
+```
 
 **How it works:**
 
 - **Realistic market timing**: Generates events during trading hours (9:30 AM - 4:00 PM)
 - **Weekend handling**: Automatically skips Saturdays and Sundays
-- **Price updates**: Every 2 minutes during market hours, synchronized across all products
+- **Price updates**: Synchronized across all products at specified frequency
   - Small jitter (milliseconds) to avoid exact timestamp collisions
   - Random walk: -2% to +2.5% per update (slightly bullish)
 - **Cash flows**: Randomly distributed across time range
@@ -513,141 +644,261 @@ The event generator creates realistic synthetic data for testing and benchmarkin
 
 **Event density (events per day of trading):**
 
-With 2-minute price updates during 7.5-hour trading days:
+With 2-minute price updates during 6.5-hour trading days:
 
-- Price updates per product: 7.5 hours × 60 min / 2 min = **225 price updates/product/day**
-- With 90/10 price/cashflow split: ~**250 total events/product/day**
+- Price updates per product: 6.5 hours × 60 min / 2 min = **195 price updates/product/day**
+- With 90/10 price/cashflow split: ~**217 total events/product/day**
 
 **Real-world scale examples:**
 
-- **500 products** = ~125,000 events/day
-- **1,000 products** = ~250,000 events/day
-- **2,000 products** = ~500,000 events/day
+- **500 products** = ~108,500 events/day
+- **1,000 products** = ~217,000 events/day
+- **2,000 products** = ~434,000 events/day
 
 **Cache refresh implications:**
 Based on benchmark results, daily cache refresh is highly practical:
 
-- 125k events: Cache refresh ~0.2s (trivial for daily refresh)
-- 250k events: Cache refresh ~0.8s (very practical for daily refresh)
-- 500k events: Cache refresh ~2.5s (easily supports daily refresh)
+- 108k events: Cache refresh ~0.2s (trivial for daily refresh)
+- 217k events: Cache refresh ~0.7s (very practical for daily refresh)
+- 434k events: Cache refresh ~2.2s (easily supports daily refresh)
 
-Even with 1,000+ products generating 250k events/day, a daily cache refresh completes in under 1 second, making it practical to refresh every few hours or even hourly if needed.
-
-**Sample usage:**
-
-```bash
-# Generate 100k events with 1000 users and 500 products
-uv run python event_generator.py --num-events 100000 --num-users 1000 --num-products 500
-
-# Large-scale test: 1M events
-uv run python event_generator.py --num-events 1000000 --num-users 10000 --num-products 1000
-```
+Even with 1,000+ products generating 217k events/day, a daily cache refresh completes in under 1 second, making it practical to refresh every few hours or even hourly if needed.
 
 **What it generates:**
 
 - Product price updates following a random walk
 - User cash flows with realistic buy/sell patterns
 - Timeline spanning multiple days/months of trading activity
+- Automatically refreshes continuous aggregates for all granularities after generation
 
 ### Benchmark Script
 
-The benchmark script measures system performance at various scales.
+The benchmark script measures system performance at various scales using the **2-of-3 parameter model**.
 
 **What it measures:**
 
-1. **Bucket refresh time**: How long to refresh the 15-minute continuous aggregate
+1. **Bucket refresh time**: How long to refresh continuous aggregates (all granularities)
 2. **Query performance (before cache)**:
    - User-product timeline query (single user, single product)
    - User timeline query (single user, all products aggregated)
-3. **Cache refresh time**: How long to populate the cache with historical data
+3. **Cache refresh time**: How long to populate the cache with historical data (for selected granularity)
 4. **Query performance (after cache)**:
    - Same queries, but leveraging cached data
+
+**Flexible parameter model:**
+
+Provide **any 2 of these 3 parameters**, and the third is calculated automatically:
+
+1. **--days**: Number of trading days to simulate
+2. **--num-events**: Total number of events to generate
+3. **--price-update-frequency**: How often prices update (e.g., "2min", "5min", "1h")
 
 **Sample usage:**
 
 ```bash
-# Small benchmark (quick test)
-uv run python benchmark.py --num-events 10000 --num-users 100 --num-products 500
+# Benchmark 10 days of data with 2min updates (15min granularity)
+uv run python benchmark.py --days 10 --price-update-frequency 2min --granularity 15min
 
-# Medium benchmark (realistic scale)
-uv run python benchmark.py --num-events 100000 --num-users 1000 --num-products 1000
+# Benchmark 100k events over 5 trading days (1h granularity)
+uv run python benchmark.py --days 5 --num-events 100000 --granularity 1h
 
-# Large benchmark (stress test)
-uv run python benchmark.py --num-events 1000000 --num-users 10000 --num-products 1000
+# Benchmark 50k events with 5min price updates (1d granularity)
+uv run python benchmark.py --num-events 50000 --price-update-frequency 5min --granularity 1d
+
+# Test all granularities
+uv run python benchmark.py --days 5 --num-events 50000 --granularity 15min
+uv run python benchmark.py --days 5 --num-events 50000 --granularity 1h
+uv run python benchmark.py --days 5 --num-events 50000 --granularity 1d
 ```
 
-The script outputs detailed timing measurements and stores results in a SQLite database for analysis.
+**Additional parameters:**
+
+- **--num-users**: Number of users (default: 50)
+- **--num-products**: Number of products (default: 100)
+- **--num-queries**: Number of queries to sample (default: 100)
+- **--granularity**: Which granularity to test (default: 15min, options: 15min, 1h, 1d)
+
+The script outputs detailed timing measurements showing:
+
+- Event generation and insertion time
+- Bucket refresh time for all granularities
+- Query performance before and after cache refresh
+- Cache refresh time for the selected granularity
+- Speedup comparison (before vs after cache)
 
 ### Results
 
-Performance on Apple M1 MacBook Pro with TimescaleDB 15-minute bucketing:
+Performance benchmarks on Apple M1 MacBook Pro with TimescaleDB multi-granularity system (15min, 1h, 1d).
 
-| Events | Users | Products | Bucket refresh | Avg user-product query (before cache) | Avg user query (before cache) | Cache refresh | Avg user-product query (after cache) | Avg user query (after cache) |
-|--------|-------|----------|----------------|---------------------------------------|-------------------------------|---------------|--------------------------------------|------------------------------|
-| 10k    | 100   | 1k       | 0.01s          | 2.31ms                                | 1.64ms                        | 0.01s         | 0.88ms                               | 1.74ms                       |
-| 100k   | 1k    | 500      | 0.06s          | 2.04ms                                | 3.08ms                        | 0.30s         | 2.06ms                               | 1.96ms                       |
-| 100k   | 1k    | 1k       | 0.05s          | 1.99ms                                | 3.07ms                        | 0.17s         | 1.90ms                               | 1.92ms                       |
-| 200k   | 1k    | 500      | 0.09s          | 3.17ms                                | 4.99ms                        | 0.69s         | 2.95ms                               | 3.83ms                       |
-| 200k   | 2k    | 1k       | 0.09s          | 3.40ms                                | 5.33ms                        | 0.58s         | 3.27ms                               | 3.32ms                       |
-| 300k   | 1k    | 500      | 0.16s          | 4.25ms                                | 7.32ms                        | 1.55s         | 4.39ms                               | 4.31ms                       |
-| 300k   | 3k    | 1k       | 0.17s          | 4.36ms                                | 8.27ms                        | 0.88s         | 4.60ms                               | 4.31ms                       |
-| 400k   | 1k    | 500      | 0.22s          | 5.49ms                                | 9.75ms                        | 2.21s         | 5.36ms                               | 5.69ms                       |
-| 400k   | 4k    | 1k       | 0.23s          | 5.81ms                                | 9.22ms                        | 1.59s         | 6.64ms                               | 4.38ms                       |
-| 500k   | 1k    | 500      | 0.27s          | 10.00ms                               | 11.84ms                       | 2.95s         | 4.63ms                               | 4.91ms                       |
-| 500k   | 3k    | 500      | 0.31s          | 7.30ms                                | 12.01ms                       | 4.05s         | 4.95ms                               | 5.39ms                       |
-| 500k   | 3k    | 1k       | 0.29s          | 6.94ms                                | 11.37ms                       | 2.25s         | 5.15ms                               | 4.80ms                       |
-| 600k   | 1k    | 500      | 0.38s          | 7.46ms                                | 12.16ms                       | 5.21s         | 5.64ms                               | 5.62ms                       |
-| 600k   | 6k    | 1k       | 0.35s          | 8.46ms                                | 11.29ms                       | 4.45s         | 5.66ms                               | 5.96ms                       |
-| 700k   | 1k    | 500      | 0.38s          | 16.97ms                               | 14.47ms                       | 6.99s         | 6.11ms                               | 6.50ms                       |
-| 700k   | 7k    | 1k       | 0.42s          | 6.99ms                                | 13.17ms                       | 6.16s         | 7.01ms                               | 6.79ms                       |
-| 800k   | 1k    | 500      | 0.43s          | 10.21ms                               | 19.04ms                       | 9.79s         | 6.75ms                               | 7.30ms                       |
-| 800k   | 8k    | 1k       | 0.51s          | 11.25ms                               | 17.99ms                       | 8.79s         | 8.44ms                               | 7.78ms                       |
-| 900k   | 1k    | 500      | 0.49s          | 11.45ms                               | 23.95ms                       | 12.39s        | 7.56ms                               | 7.75ms                       |
-| 900k   | 9k    | 1k       | 0.47s          | 11.92ms                               | 21.03ms                       | 9.84s         | 8.33ms                               | 8.89ms                       |
-| 1M     | 1k    | 500      | 0.54s          | 11.63ms                               | 26.72ms                       | 15.06s        | 8.39ms                               | 8.36ms                       |
-| 1M     | 10k   | 500      | 0.56s          | 14.85ms                               | 20.87ms                       | 28.89s        | 10.15ms                              | 9.73ms                       |
-| 1M     | 10k   | 1k       | 0.55s          | 15.80ms                               | 19.78ms                       | 13.71s        | 9.94ms                               | 9.94ms                       |
-| 2M     | 20k   | 500      | 1.96s          | 32.76ms                               | 33.25ms                       | 3m 4.7s       | 26.29ms                              | 33.06ms                      |
-| 2M     | 20k   | 1k       | 2.08s          | 19.42ms                               | 30.71ms                       | 1m 49.7s      | 24.99ms                              | 21.14ms                      |
-| 5M     | 50k   | 500      | 11.33s         | 53.54ms                               | 70.18ms                       | 13m 5.7s      | 46.49ms                              | 43.51ms                      |
-| 5M     | 50k   | 1k       | 8.98s          | 52.68ms                               | 70.25ms                       | 16m 40.4s     | 63.97ms                              | 97.21ms                      |
+Each section explores one parameter while keeping others stable to isolate its impact on performance.
+
+#### Section 1: Varying Trading Days
+
+**Fixed parameters**: 2min price update frequency, 100 users, 500 products
+
+| Days | Events | Bucket Refresh | Cache Refresh | Queries 15min (UP/U) | Speedup | Queries 1h (UP/U) | Speedup | Queries 1d (UP/U) | Speedup |
+|------|--------|----------------|---------------|----------------------|---------|-------------------|---------|-------------------|---------|
+| 5    | 542k   | 1.57s          | 12.28s/3.42s/1.32s | 5.00ms/31.24ms → 4.92ms/6.72ms | 3.26x | 4.68ms/9.12ms → 3.99ms/5.47ms | 1.37x | 3.89ms/6.33ms → 3.88ms/5.66ms | 1.08x |
+| 10   | 1.08M  | 1.75s          | 26.16s/11.84s/3.26s | 15.49ms/84.51ms → 10.00ms/10.86ms | 4.70x | 8.13ms/24.03ms → 9.02ms/12.07ms | 1.52x | 7.36ms/12.96ms → 7.96ms/10.97ms | 1.07x |
+| 20   | 2.17M  | 5.06s          | 63.29s/47.15s/11.48s | 22.91ms/335.31ms → 16.67ms/22.32ms | 9.23x | 15.90ms/80.32ms → 17.73ms/23.98ms | 2.27x | 14.59ms/30.93ms → 15.47ms/28.91ms | 1.04x |
+| 40   | 4.33M  | 12.65s         | 233.60s/189.47s/52.62s | 41.22ms/1614.51ms → 45.64ms/49.73ms | 17.39x | 32.05ms/272.80ms → 37.40ms/52.56ms | 3.46x | 30.33ms/78.16ms → 36.70ms/57.35ms | 1.27x |
+
+**Benchmark commands**:
+```bash
+uv run benchmark.py --days 1 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run benchmark.py --days 5 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run benchmark.py --days 20 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run benchmark.py --days 40 --price-update-frequency 2min --num-users 100 --num-products 500
+```
+
+#### Section 2: Varying Price Update Frequency
+
+**Fixed parameters**: 10 trading days, 100 users, 500 products
+
+| Frequency | Events | Bucket Refresh | Cache Refresh | Queries 15min (UP/U) | Speedup | Queries 1h (UP/U) | Speedup | Queries 1d (UP/U) | Speedup |
+|-----------|--------|----------------|---------------|----------------------|---------|-------------------|---------|-------------------|---------|
+| 2min      | 1.08M  | 5.95s          | 46.78s/15.20s/3.44s | 13.20ms/97.12ms → 9.48ms/13.47ms | 4.83x | 8.34ms/26.75ms → 8.09ms/17.25ms | 1.46x | 8.04ms/19.73ms → 8.16ms/10.53ms | 1.39x |
+| 5min      | 433k   | 1.14s          | 9.76s/4.23s/1.53s | 6.00ms/35.53ms → 4.88ms/6.85ms | 3.54x | 3.81ms/9.80ms → 3.70ms/4.76ms | 1.48x | 3.33ms/5.67ms → 3.40ms/4.65ms | 1.12x |
+| 15min     | 144k   | 0.80s          | 2.94s/1.50s/0.69s | 3.71ms/20.67ms → 3.47ms/2.73ms | 3.93x | 2.60ms/4.44ms → 2.51ms/1.98ms | 1.56x | 2.24ms/3.01ms → 1.67ms/2.23ms | 1.30x |
+| 1h        | 36k    | 0.23s          | 0.31s/0.38s/0.10s | 1.50ms/4.52ms → 1.25ms/1.26ms | 2.13x | 1.10ms/1.53ms → 1.01ms/1.05ms | 1.27x | 0.96ms/1.31ms → 0.86ms/0.96ms | 1.29x |
+
+**Benchmark commands**:
+```bash
+uv run benchmark.py --days 10 --price-update-frequency 30sec --num-users 100 --num-products 500
+uv run benchmark.py --days 10 --price-update-frequency 1min --num-users 100 --num-products 500
+uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run benchmark.py --days 10 --price-update-frequency 5min --num-users 100 --num-products 500
+uv run benchmark.py --days 10 --price-update-frequency 15min --num-users 100 --num-products 500
+uv run benchmark.py --days 10 --price-update-frequency 1h --num-users 100 --num-products 500
+```
+
+#### Section 3: Varying Number of Events
+
+**Fixed parameters**: 2min price update frequency, 100 users, 500 products (days calculated)
+
+| Events | Days | Bucket Refresh | Cache Refresh | Queries 15min (UP/U) | Speedup | Queries 1h (UP/U) | Speedup | Queries 1d (UP/U) | Speedup |
+|--------|------|----------------|---------------|----------------------|---------|-------------------|---------|-------------------|---------|
+| 50k    | 0.46 | 0.08s          | 0.20s/0.10s/0.09s | 1.49ms/2.36ms → 1.53ms/1.55ms | 1.23x | 1.11ms/1.32ms → 1.21ms/1.28ms | 1.00x | 1.15ms/1.30ms → 1.17ms/1.34ms | 0.97x |
+| 100k   | 0.92 | 0.16s          | 0.46s/0.22s/0.14s | 2.04ms/3.67ms → 2.01ms/2.10ms | 1.44x | 1.62ms/2.00ms → 1.65ms/1.79ms | 1.04x | 1.71ms/2.10ms → 1.56ms/1.78ms | 1.13x |
+| 500k   | 4.62 | 0.81s          | 8.20s/2.58s/1.12s | 6.84ms/25.49ms → 4.79ms/6.59ms | 2.47x | 3.97ms/8.89ms → 3.97ms/5.22ms | 1.23x | 3.96ms/5.83ms → 3.93ms/5.00ms | 1.09x |
+| 1M     | 9.24 | 1.49s          | 22.26s/10.40s/2.93s | 13.95ms/76.46ms → 7.92ms/10.76ms | 4.20x | 7.23ms/21.84ms → 7.74ms/10.09ms | 1.45x | 6.63ms/11.96ms → 6.69ms/9.42ms | 1.18x |
+| 2M     | 18.48| 3.33s          | 60.99s/48.25s/10.01s | 29.07ms/271.00ms → 16.69ms/20.42ms | 8.23x | 14.05ms/71.24ms → 15.37ms/20.86ms | 2.31x | 15.03ms/30.59ms → 14.04ms/20.83ms | 1.30x |
+
+**Benchmark commands**:
+```bash
+uv run benchmark.py --num-events 10000 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run benchmark.py --num-events 50000 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run benchmark.py --num-events 100000 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run benchmark.py --num-events 500000 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run benchmark.py --num-events 1000000 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run benchmark.py --num-events 2000000 --price-update-frequency 2min --num-users 100 --num-products 500
+```
+
+#### Section 4: Varying Number of Users
+
+**Fixed parameters**: 10 trading days, 2min price update frequency, 500 products
+
+| Users | Events | Bucket Refresh | Cache Refresh | Queries 15min (UP/U) | Speedup | Queries 1h (UP/U) | Speedup | Queries 1d (UP/U) | Speedup |
+|-------|--------|----------------|---------------|----------------------|---------|-------------------|---------|-------------------|---------|
+| 50    | 1.08M  | 2.08s          | 24.83s/11.57s/3.80s | 15.40ms/149.31ms → 8.40ms/15.19ms | 7.00x | 7.33ms/41.34ms → 8.77ms/17.43ms | 1.99x | 7.56ms/18.13ms → 8.04ms/13.29ms | 1.22x |
+| 100   | 1.08M  | 1.52s          | 21.68s/10.36s/2.96s | 13.51ms/84.52ms → 9.90ms/11.07ms | 4.42x | 7.64ms/25.69ms → 7.75ms/13.18ms | 1.59x | 7.53ms/14.81ms → 7.41ms/11.76ms | 1.20x |
+| 500   | 1.08M  | 1.45s          | 22.54s/10.24s/3.00s | 10.54ms/29.92ms → 8.77ms/9.17ms | 2.20x | 7.41ms/10.38ms → 7.67ms/8.35ms | 1.12x | 7.32ms/8.33ms → 7.32ms/7.68ms | 1.04x |
+| 1000  | 1.08M  | 1.39s          | 23.36s/10.54s/3.23s | 13.33ms/27.07ms → 9.08ms/8.96ms | 1.82x | 7.68ms/9.28ms → 7.49ms/7.87ms | 1.12x | 7.22ms/8.03ms → 7.98ms/8.07ms | 0.97x |
+| 5000  | 1.08M  | 1.42s          | 34.46s/14.95s/3.50s | 14.79ms/23.57ms → 9.89ms/9.43ms | 1.73x | 8.02ms/8.81ms → 8.01ms/8.23ms | 1.04x | 8.30ms/7.99ms → 8.89ms/8.82ms | 0.95x |
+
+**Benchmark commands**:
+```bash
+uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 10 --num-products 500
+uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 50 --num-products 500
+uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 500 --num-products 500
+uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 1000 --num-products 500
+uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 5000 --num-products 500
+```
+
+#### Section 5: Varying Number of Products
+
+**Fixed parameters**: 10 trading days, 2min price update frequency, 100 users
+
+| Products | Events | Bucket Refresh | Cache Refresh | Queries 15min (UP/U) | Speedup | Queries 1h (UP/U) | Speedup | Queries 1d (UP/U) | Speedup |
+|----------|--------|----------------|---------------|----------------------|---------|-------------------|---------|-------------------|---------|
+| 50       | 108k   | 0.17s          | 2.03s/0.90s/0.26s | 3.20ms/9.70ms → 2.43ms/2.37ms | 2.57x | 1.97ms/3.44ms → 1.88ms/2.16ms | 1.47x | 1.74ms/2.31ms → 1.69ms/1.92ms | 1.12x |
+| 100      | 217k   | 0.28s          | 3.61s/1.73s/0.49s | 19.64ms/17.66ms → 3.08ms/3.06ms | 3.05x | 3.01ms/5.87ms → 2.36ms/3.07ms | 1.45x | 2.75ms/3.86ms → 2.05ms/2.63ms | 1.44x |
+| 500      | 1.08M  | 1.31s          | 22.91s/10.80s/2.96s | 12.42ms/91.06ms → 10.90ms/11.25ms | 4.62x | 8.46ms/31.32ms → 7.74ms/13.63ms | 1.66x | 8.12ms/15.37ms → 7.41ms/12.34ms | 1.21x |
+| 1000     | 2.17M  | 2.87s          | 49.38s/21.27s/6.54s | 16.76ms/183.65ms → 16.03ms/22.95ms | 6.13x | 14.51ms/52.01ms → 14.96ms/28.75ms | 1.55x | 14.36ms/29.88ms → 15.42ms/25.04ms | 1.14x |
+| 2000     | 4.33M  | 7.24s          | 142.06s/83.92s/24.74s | 34.40ms/351.64ms → 42.96ms/61.92ms | 4.99x | 28.87ms/106.47ms → 34.24ms/97.69ms | 1.02x | 28.20ms/62.90ms → 35.80ms/63.86ms | 0.99x |
+
+**Benchmark commands**:
+```bash
+uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 100 --num-products 10
+uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 100 --num-products 50
+uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 100 --num-products 100
+uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 100 --num-products 1000
+uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 100 --num-products 2000
+```
+
+**Table abbreviations**:
+- **Bucket Refresh**: Time to refresh continuous aggregates for all 3 granularities (15min/1h/1d)
+- **Cache Refresh**: Time to refresh cache tables for all 3 granularities (15min/1h/1d)
+- **Queries (UP/U)**: Query times before → after cache, format: "XmsUP/YmsU → AmsUP/BmsU"
+  - **UP** = User-Product query (single user, single product timeline)
+  - **U** = User query (single user, all products aggregated)
+- **Speedup**: Average speedup ratio (before cache / after cache) for both query types
 
 ### Insights
 
-**Bucketing effectiveness:**
+**Cache effectiveness at 15min granularity:**
 
-- **87-93% data reduction**: 15-minute bucketing reduces timeline entries from ~9,000/day to ~1,200/day per product
-- **Bucket refresh scales well**: Sub-second up to 1M events, ~11s at 5M events
-  - 10k: 0.01s → 1M: 0.56s → 5M: 11.33s (roughly linear scaling)
+- **Dramatic speedup for user queries** (aggregated across all products)
+  - 40 days of data: 1614ms → 50ms (32x faster!)
+  - 2M events: 271ms → 20ms (13x faster!)
+  - 50 users: 149ms → 15ms (10x faster!)
+- **As dataset grows, cache provides increasingly valuable speedup** for complex aggregations
+- **User-product queries** show moderate speedup (1.5-2x), already fast due to bucketing
 
-**Query performance with bucketing:**
+**Multi-granularity performance:**
 
-- **Up to 1M events**: Sub-20ms queries (2-16ms user-product, 2-27ms user aggregation)
-- **At 2M events**: 20-33ms queries (still very responsive)
-- **At 5M events**: 43-97ms queries (acceptable for most applications)
+- **15min granularity**: Best for real-time monitoring
+  - Cache speedup shines on user aggregation queries (4-17x at scale)
+  - Includes real-time tier for latest data after last bucket
+- **1h granularity**: Balanced performance
+  - Moderate cache speedup (1.5-3.5x)
+  - No real-time tier, relies on hourly buckets
+- **1d granularity**: Fastest base queries
+  - Minimal cache benefit (already very fast due to aggressive bucketing)
+  - Best for long-term historical analysis
 
-**Cache effectiveness:**
+**Scaling observations:**
 
-- **Low scale (10k-1M)**: 1.3-3.2x speedup, most effective for user aggregation queries
-- **Medium scale (2M)**: 1.25-1.45x speedup, diminishing returns
-- **High scale (5M)**: Mixed results (0.72-1.61x), cache overhead becomes significant
+- **Bucket refresh scales linearly**: 0.08s @ 50k events → 12.65s @ 4.33M events
+- **Cache refresh shows superlinear growth** at larger scales
+  - 15min: 0.20s @ 50k → 233s @ 4.33M events
+  - 1h: 0.10s @ 50k → 189s @ 4.33M events
+  - 1d: 0.09s @ 50k → 53s @ 4.33M events
+- **User query performance degrades significantly without cache** as data grows
+  - Without cache: Linear degradation with data size
+  - With cache: Stays consistently fast regardless of historical data volume
 
-**Cache refresh scaling:**
+**User/Product count impact:**
 
-- **Superlinear growth**: 1M: 13-29s → 2M: 1.8-3.1m → 5M: 13-17m
-- **Product count matters**: More products = faster refresh per event (better data density)
-  - 2M/20k/1k: 1.8m vs 2M/20k/500: 3.1m
+- **More users → cache provides better speedup** (more aggregation benefit)
+  - 50 users: 10x speedup on user queries
+  - 5000 users: 2.5x speedup (diminishing returns as user queries become simpler)
+- **More products → proportionally more events** but consistent per-product performance
+  - User-product queries: Stable ~10-40ms across product counts
+  - User aggregation queries: Scale with product count (more products to aggregate)
 
 **Production readiness:**
 
-- **Sweet spot**: Sub-50ms cached queries up to 2M events
-- **Acceptable**: 50-100ms queries at 5M events
-- **Bottleneck**: Cache refresh becomes impractical beyond 5M events without optimization
-
-**Scaling limits:**
-
-- **10M events**: Hit numeric overflow with `NUMERIC(20,6)` precision (18,000+ compounding periods)
-- **Solution**: Increase precision or use logarithmic TWR calculation for extreme scales
+- **Sweet spot**: 500-1000 products, 100-500 users, ~1M events
+  - Sub-20ms queries after cache
+  - Cache refresh: 20-50s (practical for hourly/daily refresh)
+- **At scale (2000 products, 4.33M events)**:
+  - Queries: 40-60ms (still responsive)
+  - Cache refresh: 2-4 minutes (practical for daily refresh)
+- **Recommendation**: Use 15min granularity for recent analysis, 1h/1d for historical trends
 
 ## Storage & Production Scale
 
@@ -711,20 +962,23 @@ This system uses **TimescaleDB with 15-minute bucketing** to handle production s
 ```
 /twr
    main.py                          # CLI interface
-   event_generator.py               # Synthetic data generation
-   benchmark.py                     # Performance benchmarking
+   event_generator.py               # Synthetic data generation (2-of-3 parameter model)
+   benchmark.py                     # Performance benchmarking (2-of-3 parameter model)
    migrations/
+      granularities.py              # Multi-granularity configuration (15min, 1h, 1d)
       01_schema.sql                 # Foundation: TimescaleDB, tables, hypertables
       02_triggers.sql               # Business logic: TWR calculation
-      03_base_views.sql             # Query infrastructure: bucketed + base views
-      04_cache.sql                  # Performance layer: cache tables and refresh function
-      05_combined_views.sql         # User-facing views: cache + delta pattern
+      03_base_views.sql.j2          # Template: Query infrastructure for all granularities
+      04_cache.sql.j2               # Template: Cache tables and refresh functions
+      05_combined_views.sql.j2      # Template: User-facing views (cache + delta pattern)
    tests/
       test_twr.py                   # Test suite
    README.md
    STORAGE_ANALYSIS.md              # Storage projections and optimization
    pyproject.toml
 ```
+
+**Note:** The `.j2` files are Jinja2 templates that generate SQL for all granularities. They are compiled at migration time using `migrations/granularities.py` configuration.
 
 ## Testing
 
@@ -780,8 +1034,7 @@ This is why portfolio managers are judged by TWR - it isolates their stock-picki
 ### High Priority
 
 - [ ] **Compression policy for TimescaleDB hypertable**: Add compression to `product_price` hypertable to reduce storage costs (discuss compression strategy: chunk size, segment-by columns, order-by columns)
-- [ ] **Add 1h and 1d bucket granularities**: Extend bucketing architecture to support hourly and daily views for longer time ranges
-- [ ] **Update STORAGE_ANALYSIS.md**: Reflect that TimescaleDB is now implemented, update projections with actual benchmark data
+- [ ] **Update tests for multi-granularity system**: Extend test suite to cover all three granularities (15min, 1h, 1d)
 
 ### Future Enhancements
 

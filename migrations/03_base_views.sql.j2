@@ -1,50 +1,59 @@
 -- =============================================================================
--- BASE VIEWS: Query Infrastructure
+-- BASE VIEWS: Query Infrastructure (Jinja2 Template)
 -- =============================================================================
--- This migration creates the base view system including:
--- - TimescaleDB continuous aggregates (15-minute price bucketing)
--- - Base computation views (compute timeline from raw data)
+-- This migration creates the base view system for multiple granularities.
+-- For each granularity defined in granularities.py:
+-- - TimescaleDB continuous aggregate (bucketed price data)
+-- - Base computation view (compute timeline from raw data + buckets)
 -- Note: Combined views are created in a later migration after cache tables exist
 -- =============================================================================
 
--- -----------------------------------------------------------------------------
--- TimescaleDB Continuous Aggregates (15-minute bucketing)
--- -----------------------------------------------------------------------------
--- Create continuous aggregate for 15-minute price buckets
--- This dramatically reduces timeline row count (93% reduction)
--- Architecture supports easy addition of 1h/1d buckets later
+{% for g in GRANULARITIES %}
+-- =============================================================================
+-- {{ g.suffix }} GRANULARITY: {{ g.description }}
+-- Use case: {{ g.use_case }}
+-- Cache retention: {{ g.cache_retention or 'indefinite' }}
+-- Real-time tier: {{ 'enabled' if g.include_realtime else 'disabled' }}
+-- =============================================================================
 
-CREATE MATERIALIZED VIEW product_price_15min
+-- -----------------------------------------------------------------------------
+-- TimescaleDB Continuous Aggregate ({{ g.suffix }})
+-- -----------------------------------------------------------------------------
+-- Create continuous aggregate for {{ g.interval }} price buckets
+-- This dramatically reduces timeline row count
+
+CREATE MATERIALIZED VIEW product_price_{{ g.suffix }}
 WITH (timescaledb.continuous) AS
 SELECT product_id,
-       time_bucket('15 minutes', timestamp) AS bucket,
+       time_bucket('{{ g.interval }}', timestamp) AS bucket,
        last(price, timestamp) AS price
 FROM product_price
-GROUP BY product_id, time_bucket('15 minutes', timestamp)
+GROUP BY product_id, time_bucket('{{ g.interval }}', timestamp)
 WITH NO DATA;
 
--- Auto-refresh policy: refresh every 15 minutes, keeping data up to 1 minute ago fresh
-SELECT add_continuous_aggregate_policy('product_price_15min',
+-- Auto-refresh policy: refresh every {{ g.interval }}, keeping data up to 1 minute ago fresh
+SELECT add_continuous_aggregate_policy('product_price_{{ g.suffix }}',
     start_offset => INTERVAL '1 month',
     end_offset => INTERVAL '1 minute',
-    schedule_interval => INTERVAL '15 minutes'
+    schedule_interval => INTERVAL '{{ g.interval }}'
 );
 
 -- Index for fast lookups by product and time range
-CREATE INDEX ON product_price_15min (product_id, bucket DESC);
+CREATE INDEX ON product_price_{{ g.suffix }} (product_id, bucket DESC);
 
 -- -----------------------------------------------------------------------------
--- Base Computation Views (compute from raw data)
+-- Base Computation View ({{ g.suffix }})
 -- -----------------------------------------------------------------------------
--- Base timeline view (15-minute granularity): Portfolio state at each point in time when something changed
+-- Base timeline view ({{ g.suffix }} granularity): Portfolio state at each point in time when something changed
 -- For each user-product pair, only includes relevant events:
 -- - Cash flows for that specific user-product (exact timestamps)
--- - Price changes for that product using THREE-TIER approach:
---   1. Bucketed historical data from continuous aggregate (15-min buckets)
---   2. Recent raw data with exact timestamps (after last materialized bucket)
--- This avoids creating redundant rows for products a user doesn't hold
+-- - Price changes for that product using {% if g.include_realtime %}THREE-TIER{% else %}TWO-TIER{% endif %} approach:
+--   Tier 1: Cash flows (exact timestamps)
+--   Tier 2: Bucketed data from continuous aggregate ({{ g.interval }} buckets)
+{% if g.include_realtime %}--   Tier 3: Recent raw data with exact timestamps (after last materialized bucket)
+{% endif %}-- This avoids creating redundant rows for products a user doesn't hold
 -- This is the "base" view that computes everything - used by the cache system
-CREATE VIEW user_product_timeline_base_15min AS
+CREATE VIEW user_product_timeline_base_{{ g.suffix }} AS
 WITH
   -- Get user-product pairs with their first cash flow timestamp
   -- MATERIALIZED to avoid duplicate sequential scans on user_cash_flow
@@ -53,17 +62,19 @@ WITH
       FROM user_cash_flow
       GROUP BY user_id, product_id
   ),
+{% if g.include_realtime %}
   -- Find the last materialized bucket per product in the continuous aggregate
   -- This is the boundary between bucketed historical data and raw recent data
   last_materialized_bucket AS (
       SELECT product_id, MAX(bucket) AS last_bucket
-      FROM product_price_15min
+      FROM product_price_{{ g.suffix }}
       GROUP BY product_id
   ),
+{% endif %}
   -- Combine cash flows and relevant price changes into events
   -- Use UNION ALL since we know there are no duplicates (cash flows and prices have different sources)
   user_product_events AS (
-      -- Cash flow events with all their data
+      -- TIER 1: Cash flow events with all their data
       SELECT
           user_id,
           product_id,
@@ -77,8 +88,8 @@ WITH
 
       UNION ALL
 
-      -- TIER 1: Price change events from continuous aggregate (bucketed timestamps, historical)
-      -- Uses 15-minute bucketed prices for 93% row reduction
+      -- TIER 2: Price change events from continuous aggregate (bucketed timestamps)
+      -- Uses {{ g.interval }} bucketed prices for data reduction
       SELECT
           uff.user_id,
           uff.product_id,
@@ -86,15 +97,16 @@ WITH
           NULL::NUMERIC AS holdings,
           NULL::NUMERIC AS net_deposits,
           NULL::NUMERIC AS twr_factor_at_last_flow,
-          pp.price,  -- Price at this price change event (last price in 15min bucket)
+          pp.price,  -- Price at this price change event (last price in {{ g.interval }} bucket)
           FALSE AS is_cash_flow
       FROM user_product_first_flow uff
-      JOIN product_price_15min pp ON pp.product_id = uff.product_id
+      JOIN product_price_{{ g.suffix }} pp ON pp.product_id = uff.product_id
       WHERE pp.bucket > uff.first_ts  -- Only prices AFTER first flow
+{% if g.include_realtime %}
 
       UNION ALL
 
-      -- TIER 2: Price change events from raw data (exact timestamps, recent)
+      -- TIER 3: Price change events from raw data (exact timestamps, recent)
       -- Captures real-time price updates that haven't been materialized yet
       SELECT
           uff.user_id,
@@ -113,9 +125,10 @@ WITH
             -- Include if no materialized buckets exist yet (new product)
             lmb.last_bucket IS NULL
             -- Or if timestamp is after the last materialized bucket's interval
-            -- Buckets are [bucket, bucket+15min), so raw data starts at bucket+15min
-            OR pp.timestamp >= lmb.last_bucket + INTERVAL '15 minutes'
+            -- Buckets are [bucket, bucket+interval), so raw data starts at bucket+interval
+            OR pp.timestamp >= lmb.last_bucket + INTERVAL '{{ g.interval }}'
         )
+{% endif %}
   ),
 
   -- For each event, get the latest cash flow data using LATERAL join
@@ -181,9 +194,9 @@ WHERE
     AND holdings != 0  -- Exclude times when user has no holdings
 ORDER BY user_id, product_id, timestamp;
 
--- Base user-level timeline (15-minute granularity): Aggregated portfolio value over time
--- Computes aggregations from user_product_timeline_base_15min (not the combined view)
-CREATE VIEW user_timeline_base_15min AS
+-- Base user-level timeline ({{ g.suffix }} granularity): Aggregated portfolio value over time
+-- Computes aggregations from user_product_timeline_base_{{ g.suffix }} (not the combined view)
+CREATE VIEW user_timeline_base_{{ g.suffix }} AS
 SELECT
     user_id,
     timestamp,
@@ -197,6 +210,8 @@ SELECT
         ELSE
             0
     END AS value_weighted_twr
-FROM user_product_timeline_base_15min
+FROM user_product_timeline_base_{{ g.suffix }}
 GROUP BY user_id, timestamp
 ORDER BY user_id, timestamp;
+
+{% endfor %}

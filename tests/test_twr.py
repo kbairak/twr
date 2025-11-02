@@ -532,8 +532,8 @@ def test_cache_refresh(twr, at):
     )
     assert len(timeline) == 2  # Two timeline entries (at(1) and at(2))
 
-    # Refresh the cache
-    twr.refresh_cache()
+    # Refresh the cache (specify granularity to test specific cache)
+    twr.refresh_cache(granularity="15min")
 
     # After refresh: cache should have data
     cache_after = twr._execute_query(
@@ -584,7 +584,7 @@ def test_cache_refresh(twr, at):
     assert len(timeline_new) == 3  # 2 cached + 1 delta
 
     # Refresh again - should be incremental
-    twr.refresh_cache()
+    twr.refresh_cache(granularity="15min")
 
     # Now cache should have 3 entries
     cache_final = twr._execute_query(

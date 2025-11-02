@@ -11,6 +11,22 @@ import psycopg2.extras
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
+import sys
+
+# Import granularities configuration
+migrations_dir = Path(__file__).parent / "migrations"
+sys.path.insert(0, str(migrations_dir))
+try:
+    from granularities import GRANULARITIES
+except ImportError:
+    # Graceful fallback if granularities.py doesn't exist yet
+    GRANULARITIES = []
+finally:
+    if str(migrations_dir) in sys.path:
+        sys.path.remove(str(migrations_dir))
+
+# Build list of valid granularity suffixes
+VALID_GRANULARITIES = [g['suffix'] for g in GRANULARITIES]
 
 
 class TWRDatabase:
@@ -103,13 +119,45 @@ class TWRDatabase:
 
     def run_migrations(self):
         """Run database migrations."""
+        import jinja2
+        import sys
+
         migrations_dir = Path(__file__).parent / "migrations"
 
-        # Get all SQL files in order
-        sql_files = sorted(migrations_dir.glob("*.sql"))
+        # Add migrations to Python path to import granularities
+        sys.path.insert(0, str(migrations_dir))
+        try:
+            from granularities import GRANULARITIES
+        except ImportError:
+            raise FileNotFoundError(f"Could not import granularities from {migrations_dir}/granularities.py")
+        finally:
+            sys.path.remove(str(migrations_dir))
 
-        if not sql_files:
+        # Get all SQL files (regular) and templates (.j2)
+        sql_files = sorted(migrations_dir.glob("*.sql"))
+        template_files = sorted(migrations_dir.glob("*.sql.j2"))
+
+        if not sql_files and not template_files:
             raise FileNotFoundError(f"No SQL migration files found in {migrations_dir}")
+
+        # Render templates to temporary files
+        compiled_files = []
+        if template_files:
+            self.console.print(f"Compiling {len(template_files)} Jinja2 templates...")
+            env = jinja2.Environment(loader=jinja2.FileSystemLoader(migrations_dir))
+
+            for template_file in template_files:
+                template = env.get_template(template_file.name)
+                rendered = template.render(GRANULARITIES=GRANULARITIES)
+
+                # Write to temporary file (same name without .j2 extension)
+                compiled_file = migrations_dir / template_file.stem
+                compiled_file.write_text(rendered)
+                compiled_files.append(compiled_file)
+                self.console.print(f"  Compiled {template_file.name} -> {compiled_file.name}")
+
+        # Get all SQL files to execute (original + compiled)
+        all_sql_files = sorted(sql_files + compiled_files)
 
         conn = self._get_connection()
         conn.autocommit = True  # Use autocommit to support TimescaleDB continuous aggregates
@@ -117,7 +165,7 @@ class TWRDatabase:
         try:
             cur = conn.cursor()
 
-            for sql_file in sql_files:
+            for sql_file in all_sql_files:
                 self.console.print(f"Executing {sql_file.name}...")
 
                 # Read the SQL file
@@ -139,6 +187,14 @@ class TWRDatabase:
         finally:
             conn.close()
 
+            # Clean up compiled files
+            for compiled_file in compiled_files:
+                try:
+                    compiled_file.unlink()
+                    self.console.print(f"Cleaned up {compiled_file.name}")
+                except Exception:
+                    pass  # Ignore cleanup errors
+
     def clear(self):
         """Clear all data from tables while preserving schema."""
         # Truncate in reverse order of dependencies
@@ -146,19 +202,34 @@ class TWRDatabase:
         self._execute_query("TRUNCATE TABLE product_price CASCADE")
         self._execute_query('TRUNCATE TABLE "user" CASCADE')
         self._execute_query("TRUNCATE TABLE product CASCADE")
-        # Reset caches (watermark is implicit from MAX(timestamp) in cache)
-        self._execute_query("TRUNCATE TABLE user_product_timeline_cache_15min")
-        self._execute_query("TRUNCATE TABLE user_timeline_cache_15min")
+        # Reset cache tables (no watermark table anymore - using MAX(timestamp) instead)
+        for g in GRANULARITIES:
+            self._execute_query(f"TRUNCATE TABLE user_product_timeline_cache_{g['suffix']}")
+            self._execute_query(f"TRUNCATE TABLE user_timeline_cache_{g['suffix']}")
 
-    def refresh_cache(self):
-        """Refresh the timeline cache with new data."""
-        self._execute_query("SELECT refresh_timeline_cache_15min()")
-        self.console.print("[green]✓[/green] Cache refreshed successfully!")
+    def refresh_cache(self, granularity="all"):
+        """Refresh the timeline cache with new data.
 
-    def refresh_buckets(self):
-        """Refresh the 15-minute continuous aggregate (buckets)."""
-        self._execute_query("CALL refresh_continuous_aggregate('product_price_15min', NULL, NULL)")
-        self.console.print("[green]✓[/green] 15-minute buckets refreshed successfully!")
+        Args:
+            granularity: Which granularity to refresh ('all' or specific suffix like '15min', '1h', '1d')
+        """
+        granularities_to_refresh = VALID_GRANULARITIES if granularity == "all" else [granularity]
+
+        for gran in granularities_to_refresh:
+            self._execute_query(f"SELECT refresh_timeline_cache_{gran}()")
+            self.console.print(f"[green]✓[/green] Cache for {gran} granularity refreshed successfully!")
+
+    def refresh_buckets(self, granularity="all"):
+        """Refresh continuous aggregates (buckets).
+
+        Args:
+            granularity: Which granularity to refresh ('all' or specific suffix like '15min', '1h', '1d')
+        """
+        granularities_to_refresh = VALID_GRANULARITIES if granularity == "all" else [granularity]
+
+        for gran in granularities_to_refresh:
+            self._execute_query(f"CALL refresh_continuous_aggregate('product_price_{gran}', NULL, NULL)")
+            self.console.print(f"[green]✓[/green] Buckets for {gran} granularity refreshed successfully!")
 
     def add_price(self, product_name, price, timestamp=None):
         """Add a price record for a product."""
@@ -541,10 +612,22 @@ def main():
     subparsers.add_parser("migrate", help="Run database migrations")
 
     # refresh subcommand
-    subparsers.add_parser("refresh", help="Refresh the timeline cache")
+    refresh_parser = subparsers.add_parser("refresh", help="Refresh the timeline cache")
+    refresh_parser.add_argument(
+        "--granularity",
+        choices=VALID_GRANULARITIES + ["all"],
+        default="all",
+        help=f"Which granularity to refresh (default: all). Options: {', '.join(VALID_GRANULARITIES + ['all'])}"
+    )
 
     # refresh-buckets subcommand
-    subparsers.add_parser("refresh-buckets", help="Refresh the 15-minute continuous aggregate")
+    refresh_buckets_parser = subparsers.add_parser("refresh-buckets", help="Refresh continuous aggregates (buckets)")
+    refresh_buckets_parser.add_argument(
+        "--granularity",
+        choices=VALID_GRANULARITIES + ["all"],
+        default="all",
+        help=f"Which granularity to refresh (default: all). Options: {', '.join(VALID_GRANULARITIES + ['all'])}"
+    )
 
     # add-price subcommand
     price_parser = subparsers.add_parser("add-price", help="Add a price record")
@@ -587,9 +670,9 @@ def main():
     elif args.command == "migrate":
         db.run_migrations()
     elif args.command == "refresh":
-        db.refresh_cache()
+        db.refresh_cache(granularity=args.granularity)
     elif args.command == "refresh-buckets":
-        db.refresh_buckets()
+        db.refresh_buckets(granularity=args.granularity)
     elif args.command == "add-price":
         db.add_price(args.product, args.price, args.timestamp)
     elif args.command == "add-cashflow":
