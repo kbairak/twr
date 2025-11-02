@@ -1,2 +1,3 @@
 - run the tests after each change to the code, command is `uv run pytest`. only run the tests when the code that the tests actually cover is changed
 - you can connect to the database with `PGPASSWORD=twr_password psql --host 127.0.0.1 twr twr_user`
+- you can drop and recreate the database with `uv run main.py drop` and `uv run main.py migrate`

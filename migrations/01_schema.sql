@@ -80,6 +80,20 @@ SELECT create_hypertable('product_price', 'timestamp',
     if_not_exists => TRUE
 );
 
--- TODO: Add compression policy later (discuss compression strategy)
--- Example: ALTER TABLE product_price SET (timescaledb.compress, timescaledb.compress_segmentby = 'product_id');
--- Example: SELECT add_compression_policy('product_price', INTERVAL '7 days');
+-- -----------------------------------------------------------------------------
+-- TimescaleDB Compression
+-- -----------------------------------------------------------------------------
+-- Enable compression on product_price hypertable for 5-10x storage reduction
+-- Compression strategy:
+--   - segment_by product_id: Groups all price updates for same product together
+--   - order_by timestamp DESC: Sorts within segments for better delta compression
+--   - Compress chunks older than 7 days (keeps recent data writable)
+
+ALTER TABLE product_price SET (
+    timescaledb.compress,
+    timescaledb.compress_segmentby = 'product_id',
+    timescaledb.compress_orderby = 'timestamp DESC'
+);
+
+-- Automatically compress chunks older than 7 days
+SELECT add_compression_policy('product_price', INTERVAL '7 days');

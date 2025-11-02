@@ -920,15 +920,18 @@ This system uses **TimescaleDB with 15-minute bucketing** to handle production s
 **Key optimizations already implemented:**
 
 - ✅ TimescaleDB hypertables with 1-month chunks
-- ✅ 15-minute continuous aggregates (87% data reduction)
-- ✅ Auto-refresh policy for continuous aggregates
+- ✅ Multi-granularity continuous aggregates: 15min, 1h, 1d (87-99% data reduction)
+- ✅ Auto-refresh policies for continuous aggregates
 - ✅ Cache + delta architecture for fast queries
+- ✅ TimescaleDB compression on old chunks (5-10x additional reduction)
+  - Automatic compression of chunks older than 7 days
+  - Columnar storage with delta encoding for timestamps and prices
+  - Dictionary encoding for product_ids (eliminates UUID redundancy)
 
 **Still needed for multi-year production:**
 
-- [ ] Enable TimescaleDB compression on old chunks (5-10x additional reduction)
 - [ ] Data retention policies (e.g., keep raw prices for 90 days, bucketed data for 7 years)
-- [ ] Optional: Add hourly/daily bucket granularities for long-term historical queries
+- [ ] Monitoring and alerting for compression job failures
 
 **Scalability:** With current architecture, the system can comfortably handle 1,000-2,000 products with years of historical data before requiring additional optimization.
 
@@ -1033,15 +1036,14 @@ This is why portfolio managers are judged by TWR - it isolates their stock-picki
 
 ### High Priority
 
-- [ ] **Compression policy for TimescaleDB hypertable**: Add compression to `product_price` hypertable to reduce storage costs (discuss compression strategy: chunk size, segment-by columns, order-by columns)
 - [ ] **Update tests for multi-granularity system**: Extend test suite to cover all three granularities (15min, 1h, 1d)
+- [ ] **Data retention policies**: Implement automatic cleanup of old data (e.g., keep raw prices for 90 days, bucketed data for 7 years)
 
 ### Future Enhancements
 
 - [ ] Add period return column to timeline display (show price change % between events)
 - [ ] Decouple money and units for cash flows (provider fees)
 - [ ] Table partitioning for price table (in addition to TimescaleDB chunks)
-- [ ] Data retention policies (automatic cleanup of old data)
 - [ ] Bulk insert optimization using COPY protocol
 - [ ] Money-Weighted Return (MWR/IRR) calculation
 - [ ] Web dashboard for visualizing TWR over time
