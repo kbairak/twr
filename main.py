@@ -277,13 +277,18 @@ class TWRDatabase:
         )
 
     def add_cashflow(
-        self, user_name, product_name, units=None, money=None, timestamp=None
+        self, user_name, product_name, units=None, money=None, fee=0, timestamp=None
     ):
-        """Add a cash flow (buy or sell) for a user."""
+        """Add a cash flow (buy or sell) for a user.
+
+        User can provide:
+        - Just money (trigger calculates units)
+        - Just units (trigger calculates money)
+        - Both (captures slippage/spread)
+        - Optional fee (defaults to 0)
+        """
         if units is None and money is None:
-            raise ValueError("Either --units or --money must be specified")
-        if units is not None and money is not None:
-            raise ValueError("Cannot specify both --units and --money")
+            raise ValueError("Must provide at least one of: --units or --money")
 
         if timestamp is None:
             timestamp = datetime.now(timezone.utc)
@@ -335,39 +340,43 @@ class TWRDatabase:
             result_product = self._execute_query(query_insert_product, (product_name,), fetch=True)
             product_id = result_product[0]["id"]
 
-        # If money was specified, get current price and convert to units
-        if money is not None:
-            query_price = """
-                SELECT price
-                FROM product_price
-                WHERE product_id = %s
-                  AND timestamp <= %s
-                ORDER BY timestamp DESC
-                LIMIT 1
-            """
-            price_result = self._execute_query(
-                query_price, (product_id, timestamp), fetch=True
-            )
-            if not price_result:
-                self.console.print(
-                    f"[red]✗[/red] No price found for [cyan]{product_name}[/cyan] at or before {timestamp.isoformat()}"
-                )
-                return
-            current_price = float(price_result[0]["price"])
-            units = money / current_price
-
-        # Insert cash flow
+        # Insert cash flow - trigger will derive missing field and calculate all totals
         query = """
-            INSERT INTO user_cash_flow (user_id, product_id, units, timestamp)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO user_cash_flow (user_id, product_id, units, money, fee, timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """
-        self._execute_query(query, (user_id, product_id, units, timestamp))
+        self._execute_query(query, (user_id, product_id, units, money, fee, timestamp))
 
-        action = "bought" if units > 0 else "sold"
-        color = "green" if units > 0 else "red"
-        self.console.print(
-            f"[green]✓[/green] [cyan]{user_name}[/cyan] [{color}]{action}[/{color}] {abs(units):.6f} units of [cyan]{product_name}[/cyan] at {timestamp.isoformat()}"
-        )
+        # Display confirmation
+        if units is not None and money is not None:
+            # Both provided - show effective price
+            effective_price = abs(money / units) if units != 0 else 0
+            action = "bought" if units > 0 else "sold"
+            color = "green" if units > 0 else "red"
+            fee_str = f" (fee: ${fee:.2f})" if fee > 0 else ""
+            self.console.print(
+                f"[green]✓[/green] [cyan]{user_name}[/cyan] [{color}]{action}[/{color}] "
+                f"{abs(units):.6f} units for ${abs(money):.2f} "
+                f"(effective price: ${effective_price:.2f}){fee_str} at {timestamp.isoformat()}"
+            )
+        elif money is not None:
+            # Money provided
+            action_desc = "invested" if money > 0 else "withdrew"
+            color = "green" if money > 0 else "red"
+            fee_str = f" (fee: ${fee:.2f})" if fee > 0 else ""
+            self.console.print(
+                f"[green]✓[/green] [cyan]{user_name}[/cyan] [{color}]{action_desc}[/{color}] "
+                f"${abs(money):.2f} in [cyan]{product_name}[/cyan]{fee_str} at {timestamp.isoformat()}"
+            )
+        else:
+            # Units provided
+            action = "bought" if units > 0 else "sold"
+            color = "green" if units > 0 else "red"
+            fee_str = f" (fee: ${fee:.2f})" if fee > 0 else ""
+            self.console.print(
+                f"[green]✓[/green] [cyan]{user_name}[/cyan] [{color}]{action}[/{color}] "
+                f"{abs(units):.6f} units of [cyan]{product_name}[/cyan]{fee_str} at {timestamp.isoformat()}"
+            )
 
     def show_all(self):
         """Display all tables and views."""
@@ -411,10 +420,15 @@ class TWRDatabase:
                 u.name as user_name,
                 p.name as product_name,
                 ucf.units,
-                ucf.deposit as money_flow,
+                ucf.money,
+                ucf.fee,
+                ucf.bank_flow,
                 ucf.timestamp,
                 ucf.cumulative_units - ucf.units AS units_before_flow,
                 ucf.cumulative_units AS units_after_flow,
+                ucf.total_deposits,
+                ucf.total_withdrawals,
+                ucf.cumulative_fees,
                 ucf.period_return,
                 ucf.cumulative_twr_factor,
                 (ucf.cumulative_twr_factor - 1) * 100 as cumulative_twr_pct
@@ -431,38 +445,34 @@ class TWRDatabase:
             table.add_column("product")
             table.add_column("units", justify="right")
             table.add_column("money", justify="right")
+            table.add_column("fee", justify="right")
+            table.add_column("bank_flow", justify="right")
             table.add_column("timestamp")
-            table.add_column("units_before", justify="right")
-            table.add_column("units_after", justify="right")
-            table.add_column("period_return", justify="right")
-            table.add_column("cumulative_twr_factor", justify="right")
             table.add_column("cumulative_twr_pct", justify="right")
 
             for row in cash_flows:
                 money_color = (
-                    "green" if row["money_flow"] and row["money_flow"] >= 0 else "red"
+                    "green" if row["money"] and row["money"] >= 0 else "red"
                 )
-                money_sign = "+" if row["money_flow"] and row["money_flow"] >= 0 else ""
+                money_sign = "+" if row["money"] and row["money"] >= 0 else ""
+
+                bank_color = (
+                    "red" if row["bank_flow"] and row["bank_flow"] < 0 else "green"
+                )
+                bank_sign = "+" if row["bank_flow"] and row["bank_flow"] >= 0 else ""
+
                 table.add_row(
                     str(row["user_name"]),
                     str(row["product_name"]),
                     f"{row['units']:.2f}",
-                    f"[{money_color}]{money_sign}${row['money_flow']:.2f}[/{money_color}]"
-                    if row["money_flow"] is not None
+                    f"[{money_color}]{money_sign}${row['money']:.2f}[/{money_color}]"
+                    if row["money"] is not None
+                    else "N/A",
+                    f"${row['fee']:.2f}" if row["fee"] is not None else "N/A",
+                    f"[{bank_color}]{bank_sign}${row['bank_flow']:.2f}[/{bank_color}]"
+                    if row["bank_flow"] is not None
                     else "N/A",
                     str(row["timestamp"]),
-                    f"{row['units_before_flow']:.2f}"
-                    if row["units_before_flow"] is not None
-                    else "N/A",
-                    f"{row['units_after_flow']:.2f}"
-                    if row["units_after_flow"] is not None
-                    else "N/A",
-                    f"{row['period_return']:.6f}"
-                    if row["period_return"] is not None
-                    else "N/A",
-                    f"{row['cumulative_twr_factor']:.6f}"
-                    if row["cumulative_twr_factor"] is not None
-                    else "N/A",
                     f"[green]{row['cumulative_twr_pct']:.2f}%[/green]"
                     if row["cumulative_twr_pct"] and row["cumulative_twr_pct"] >= 0
                     else f"[red]{row['cumulative_twr_pct']:.2f}%[/red]"
@@ -642,17 +652,22 @@ def main():
     cashflow_parser.add_argument("--user", required=True, help="User name")
     cashflow_parser.add_argument("--product", required=True, help="Product name")
 
-    # Create mutually exclusive group for units or money
-    units_or_money = cashflow_parser.add_mutually_exclusive_group(required=True)
-    units_or_money.add_argument(
+    # Allow either units, money, or both (at least one required)
+    cashflow_parser.add_argument(
         "--units",
         type=float,
         help="Units (positive for buy, negative for sell)",
     )
-    units_or_money.add_argument(
+    cashflow_parser.add_argument(
         "--money",
         type=float,
-        help="Money amount (positive for buy, negative for sell) - will be converted to units using current price",
+        help="Money amount (positive for buy, negative for sell)",
+    )
+    cashflow_parser.add_argument(
+        "--fee",
+        type=float,
+        default=0,
+        help="Transaction fee (default: 0)",
     )
 
     cashflow_parser.add_argument("--timestamp", help="ISO timestamp (default: now)")
@@ -681,6 +696,7 @@ def main():
             args.product,
             units=args.units if hasattr(args, "units") else None,
             money=args.money if hasattr(args, "money") else None,
+            fee=args.fee if hasattr(args, "fee") else 0,
             timestamp=args.timestamp,
         )
     elif args.command == "show":

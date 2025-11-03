@@ -45,25 +45,29 @@ CREATE TABLE user_cash_flow (
     product_id UUID NOT NULL,
     "timestamp" TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    -- positive for buys, negative for sells
-    units NUMERIC(20, 6) NOT NULL,
+    -- Transaction details (user provides at least one of units/money)
+    units NUMERIC(20, 6) NOT NULL,           -- positive for buys, negative for sells
+    money NUMERIC(20, 6) NOT NULL,           -- portfolio flow, negative for sells
+    fee NUMERIC(20, 6) NOT NULL DEFAULT 0,   -- transaction fee (defaults to 0)
 
-    -- price at the time of transaction
-    price NUMERIC(20, 6) NOT NULL,
+    -- Market reference price (from product_price table at timestamp)
+    market_price NUMERIC(20, 6) NOT NULL,
 
-    -- money amount for this transaction (units * price)
-    deposit NUMERIC(20, 6) NOT NULL,
+    -- Bank account impact (calculated by trigger)
+    bank_flow NUMERIC(20, 6) NOT NULL,       -- negative for buys, positive for sells
 
-    -- running total of units held after this transaction
+    -- Running totals - Portfolio tracking (for TWR)
     cumulative_units NUMERIC(20, 6),
+    cumulative_money NUMERIC(20, 6),         -- cost basis
 
-    -- running total of net cash deposited (invested - withdrawn)
-    cumulative_deposits NUMERIC(20, 6),
+    -- Running totals - Bank account tracking (for reporting)
+    cumulative_bank_flow NUMERIC(20, 6),     -- net bank flow
+    total_deposits NUMERIC(20, 6),           -- sum of money OUT of bank (investments)
+    total_withdrawals NUMERIC(20, 6),        -- sum of money INTO bank (realized returns)
+    cumulative_fees NUMERIC(20, 6),          -- total fees paid
 
-    -- return since last cash flow
+    -- TWR calculation
     period_return NUMERIC(20, 6),
-
-    -- (1 + TWR) compounded, starts at 1.0
     cumulative_twr_factor NUMERIC(20, 6),
 
     PRIMARY KEY (user_id, product_id, timestamp)

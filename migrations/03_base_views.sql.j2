@@ -80,9 +80,9 @@ WITH
           product_id,
           timestamp,
           cumulative_units AS holdings,
-          cumulative_deposits AS net_deposits,
+          cumulative_money AS net_deposits,
           cumulative_twr_factor AS twr_factor_at_last_flow,
-          price,  -- Price at this cash flow (already stored)
+          market_price AS price,  -- Market price at this cash flow
           TRUE AS is_cash_flow
       FROM user_cash_flow
 
@@ -141,14 +141,14 @@ WITH
           upe.price AS current_price,  -- Price at this event (already known)
           -- For cash flow events, use their own data; for price events, get latest cash flow
           COALESCE(upe.holdings, cf_latest.cumulative_units) AS holdings,
-          COALESCE(upe.net_deposits, cf_latest.cumulative_deposits) AS net_deposits,
+          COALESCE(upe.net_deposits, cf_latest.cumulative_money) AS net_deposits,
           COALESCE(upe.twr_factor_at_last_flow, cf_latest.cumulative_twr_factor) AS twr_factor_at_last_flow,
           -- Price at the last cash flow (for TWR calculation)
           -- For both event types, we need the price from the PREVIOUS cash flow
-          cf_latest.price AS price_at_last_flow
+          cf_latest.market_price AS price_at_last_flow
       FROM user_product_events upe
       LEFT JOIN LATERAL (
-          SELECT cumulative_units, cumulative_deposits, cumulative_twr_factor, price
+          SELECT cumulative_units, cumulative_money, cumulative_twr_factor, market_price
           FROM user_cash_flow cf
           WHERE cf.user_id = upe.user_id
             AND cf.product_id = upe.product_id

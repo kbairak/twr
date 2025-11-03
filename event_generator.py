@@ -311,21 +311,43 @@ class EventGenerator:
             # Sell between 10% and 80% of holdings
             sell_fraction = Decimal(str(random.uniform(0.1, 0.8)))
             units = -(current_holdings * sell_fraction)
-            money = units * current_price
+            # For sells, calculate money from units (50% of time)
+            # Other 50% of time, provide both to simulate slippage
+            if random.random() < 0.5:
+                # Just units - trigger calculates money
+                money = None
+            else:
+                # Both units and money - simulate slippage
+                slippage = Decimal(str(random.uniform(0.999, 1.001)))
+                money = units * current_price * slippage
         else:
-            # Buy: convert money to units
-            units = money / current_price
+            # Buy: 50% of time just money, 50% both (slippage)
+            if random.random() < 0.5:
+                # Just money - trigger calculates units
+                units = None
+            else:
+                # Both units and money - simulate slippage
+                slippage = Decimal(str(random.uniform(0.999, 1.001)))
+                units = money / (current_price * slippage)
+
+        # Calculate expected units for holdings tracking
+        if units is None:
+            # Money-only transaction
+            calc_units = money / current_price
+        else:
+            calc_units = units
 
         # Update holdings
-        new_holdings = current_holdings + units
+        new_holdings = current_holdings + calc_units
         if new_holdings < 0:
             return None
 
         self.holdings[key] = new_holdings
         self.user_products[user].add(product)
 
-        # Return tuple for batch insertion
-        return (self.user_ids[user], self.product_ids[product], units, timestamp)
+        # Return tuple for batch insertion (units, money, fee=0, timestamp)
+        # fee defaults to 0 in database
+        return (self.user_ids[user], self.product_ids[product], units, money, timestamp)
 
     def _batch_insert_all_events(self, price_events, cashflow_events, batch_size, progress):
         """Sort and batch insert all price and cashflow events"""
@@ -351,14 +373,14 @@ class EventGenerator:
 
         # Insert cashflow events
         if cashflow_events:
-            cashflow_events.sort(key=lambda x: (x[0], x[1], x[3]))
+            cashflow_events.sort(key=lambda x: (x[0], x[1], x[4]))  # Sort by user, product, timestamp
             insert_task = progress.add_task("Inserting cashflow events", total=len(cashflow_events))
 
             for i in range(0, len(cashflow_events), batch_size):
                 batch = cashflow_events[i:i + batch_size]
                 execute_values(
                     cur,
-                    "INSERT INTO user_cash_flow (user_id, product_id, units, timestamp) VALUES %s",
+                    "INSERT INTO user_cash_flow (user_id, product_id, units, money, timestamp) VALUES %s",
                     batch,
                     page_size=100,
                 )
