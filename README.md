@@ -163,12 +163,12 @@ SELECT add_continuous_aggregate_policy('product_price_1d',
 
 ```bash
 # Refresh all granularities (default)
-uv run main.py refresh-buckets
+uv run main.py db refresh-buckets
 
 # Refresh specific granularity
-uv run main.py refresh-buckets --granularity 15min
-uv run main.py refresh-buckets --granularity 1h
-uv run main.py refresh-buckets --granularity 1d
+uv run main.py db refresh-buckets --granularity 15min
+uv run main.py db refresh-buckets --granularity 1h
+uv run main.py db refresh-buckets --granularity 1d
 ```
 
 ### Cache Retention Policies
@@ -183,12 +183,12 @@ Each granularity automatically deletes old cache entries based on its retention 
 
 ```bash
 # Refresh cache for all granularities (default)
-uv run main.py refresh
+uv run main.py db refresh
 
 # Refresh cache for specific granularity
-uv run main.py refresh --granularity 15min
-uv run main.py refresh --granularity 1h
-uv run main.py refresh --granularity 1d
+uv run main.py db refresh --granularity 15min
+uv run main.py db refresh --granularity 1h
+uv run main.py db refresh --granularity 1d
 ```
 
 ### Choosing a Granularity
@@ -357,15 +357,15 @@ docker compose up -d
 uv sync
 
 # 3. Setup database
-uv run main.py drop && uv run main.py migrate
+uv run main.py db reset
 ```
 
 Now let's simulate real trading activity:
 
 ```bash
 # 4. Set initial price for AAPL
-uv run main.py add-price --product AAPL --price 100.00
-uv run main.py show
+uv run main.py add price --product AAPL --price 100.00
+uv run main.py query all
 ```
 
 **Output after initial price:**
@@ -378,8 +378,8 @@ PRODUCT PRICES
 
 ```bash
 # 5. Alice buys $10,000 worth of AAPL
-uv run main.py add-cashflow --user alice --product AAPL --money 10000
-uv run main.py show
+uv run main.py add cashflow --user alice --product AAPL --money 10000
+uv run main.py query all
 ```
 
 **Timeline after first buy:**
@@ -392,8 +392,8 @@ USER-PRODUCT TIMELINE
 
 ```bash
 # 6. Price rises to $120
-uv run main.py add-price --product AAPL --price 120.00
-uv run main.py show
+uv run main.py add price --product AAPL --price 120.00
+uv run main.py query all
 ```
 
 **Timeline after price increase:**
@@ -407,8 +407,8 @@ USER-PRODUCT TIMELINE
 
 ```bash
 # 7. Alice buys $6,000 more
-uv run main.py add-cashflow --user alice --product AAPL --money 6000
-uv run main.py show
+uv run main.py add cashflow --user alice --product AAPL --money 6000
+uv run main.py query all
 ```
 
 **Timeline after second buy:**
@@ -423,9 +423,9 @@ USER-PRODUCT TIMELINE
 
 ```bash
 # 8. Add more price updates
-uv run main.py add-price --product AAPL --price 125.00
-uv run main.py add-price --product AAPL --price 130.00
-uv run main.py show
+uv run main.py add price --product AAPL --price 125.00
+uv run main.py add price --product AAPL --price 130.00
+uv run main.py query all
 ```
 
 **Timeline grows with price changes:**
@@ -444,8 +444,8 @@ Now let's see bucketing in action:
 
 ```bash
 # 9. Refresh the 15-minute buckets (simulates continuous aggregate refresh)
-uv run main.py refresh-buckets
-uv run main.py show
+uv run main.py db refresh-buckets
+uv run main.py query all
 ```
 
 **After bucket refresh:**
@@ -453,8 +453,8 @@ If the price updates happened within the same 15-minute window, they get merged 
 
 ```bash
 # 10. Refresh the cache (pre-compute timeline)
-uv run main.py refresh
-uv run main.py show
+uv run main.py db refresh
+uv run main.py query all
 ```
 
 **Timeline showing cached data:**
@@ -470,8 +470,8 @@ USER-PRODUCT TIMELINE
 
 ```bash
 # 11. Add new price after cache (demonstrates delta)
-uv run main.py add-price --product AAPL --price 140.00
-uv run main.py show
+uv run main.py add price --product AAPL --price 140.00
+uv run main.py query all
 ```
 
 **Timeline showing cache + delta:**
@@ -620,13 +620,13 @@ Provide **any 2 of these 3 parameters**, and the third is calculated automatical
 
 ```bash
 # Specify days + frequency → calculates num-events
-uv run python event_generator.py --days 10 --price-update-frequency 2min
+uv run main.py generate --days 10 --price-update-frequency 2min
 
 # Specify days + num-events → calculates frequency
-uv run python event_generator.py --days 5 --num-events 100000
+uv run main.py generate --days 5 --num-events 100000
 
 # Specify num-events + frequency → calculates days
-uv run python event_generator.py --num-events 50000 --price-update-frequency 5min
+uv run main.py generate --num-events 50000 --price-update-frequency 5min
 ```
 
 **How it works:**
@@ -696,19 +696,14 @@ Provide **any 2 of these 3 parameters**, and the third is calculated automatical
 **Sample usage:**
 
 ```bash
-# Benchmark 10 days of data with 2min updates (15min granularity)
-uv run python benchmark.py --days 10 --price-update-frequency 2min --granularity 15min
+# Benchmark 10 days of data with 2min updates
+uv run main.py benchmark --days 10 --price-update-frequency 2min
 
-# Benchmark 100k events over 5 trading days (1h granularity)
-uv run python benchmark.py --days 5 --num-events 100000 --granularity 1h
+# Benchmark 100k events over 5 trading days
+uv run main.py benchmark --days 5 --num-events 100000
 
-# Benchmark 50k events with 5min price updates (1d granularity)
-uv run python benchmark.py --num-events 50000 --price-update-frequency 5min --granularity 1d
-
-# Test all granularities
-uv run python benchmark.py --days 5 --num-events 50000 --granularity 15min
-uv run python benchmark.py --days 5 --num-events 50000 --granularity 1h
-uv run python benchmark.py --days 5 --num-events 50000 --granularity 1d
+# Benchmark 50k events with 5min price updates
+uv run main.py benchmark --num-events 50000 --price-update-frequency 5min
 ```
 
 **Additional parameters:**
@@ -716,7 +711,6 @@ uv run python benchmark.py --days 5 --num-events 50000 --granularity 1d
 - **--num-users**: Number of users (default: 50)
 - **--num-products**: Number of products (default: 100)
 - **--num-queries**: Number of queries to sample (default: 100)
-- **--granularity**: Which granularity to test (default: 15min, options: 15min, 1h, 1d)
 
 The script outputs detailed timing measurements showing:
 
@@ -745,11 +739,11 @@ Each section explores one parameter while keeping others stable to isolate its i
 
 **Benchmark commands**:
 ```bash
-uv run benchmark.py --days 1 --price-update-frequency 2min --num-users 100 --num-products 500
-uv run benchmark.py --days 5 --price-update-frequency 2min --num-users 100 --num-products 500
-uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 100 --num-products 500
-uv run benchmark.py --days 20 --price-update-frequency 2min --num-users 100 --num-products 500
-uv run benchmark.py --days 40 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run main.py benchmark --days 1 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run main.py benchmark --days 5 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run main.py benchmark --days 10 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run main.py benchmark --days 20 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run main.py benchmark --days 40 --price-update-frequency 2min --num-users 100 --num-products 500
 ```
 
 #### Section 2: Varying Price Update Frequency
@@ -765,12 +759,12 @@ uv run benchmark.py --days 40 --price-update-frequency 2min --num-users 100 --nu
 
 **Benchmark commands**:
 ```bash
-uv run benchmark.py --days 10 --price-update-frequency 30sec --num-users 100 --num-products 500
-uv run benchmark.py --days 10 --price-update-frequency 1min --num-users 100 --num-products 500
-uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 100 --num-products 500
-uv run benchmark.py --days 10 --price-update-frequency 5min --num-users 100 --num-products 500
-uv run benchmark.py --days 10 --price-update-frequency 15min --num-users 100 --num-products 500
-uv run benchmark.py --days 10 --price-update-frequency 1h --num-users 100 --num-products 500
+uv run main.py benchmark --days 10 --price-update-frequency 30sec --num-users 100 --num-products 500
+uv run main.py benchmark --days 10 --price-update-frequency 1min --num-users 100 --num-products 500
+uv run main.py benchmark --days 10 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run main.py benchmark --days 10 --price-update-frequency 5min --num-users 100 --num-products 500
+uv run main.py benchmark --days 10 --price-update-frequency 15min --num-users 100 --num-products 500
+uv run main.py benchmark --days 10 --price-update-frequency 1h --num-users 100 --num-products 500
 ```
 
 #### Section 3: Varying Number of Events
@@ -787,12 +781,12 @@ uv run benchmark.py --days 10 --price-update-frequency 1h --num-users 100 --num-
 
 **Benchmark commands**:
 ```bash
-uv run benchmark.py --num-events 10000 --price-update-frequency 2min --num-users 100 --num-products 500
-uv run benchmark.py --num-events 50000 --price-update-frequency 2min --num-users 100 --num-products 500
-uv run benchmark.py --num-events 100000 --price-update-frequency 2min --num-users 100 --num-products 500
-uv run benchmark.py --num-events 500000 --price-update-frequency 2min --num-users 100 --num-products 500
-uv run benchmark.py --num-events 1000000 --price-update-frequency 2min --num-users 100 --num-products 500
-uv run benchmark.py --num-events 2000000 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run main.py benchmark --num-events 10000 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run main.py benchmark --num-events 50000 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run main.py benchmark --num-events 100000 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run main.py benchmark --num-events 500000 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run main.py benchmark --num-events 1000000 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run main.py benchmark --num-events 2000000 --price-update-frequency 2min --num-users 100 --num-products 500
 ```
 
 #### Section 4: Varying Number of Users
@@ -809,12 +803,12 @@ uv run benchmark.py --num-events 2000000 --price-update-frequency 2min --num-use
 
 **Benchmark commands**:
 ```bash
-uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 10 --num-products 500
-uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 50 --num-products 500
-uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 100 --num-products 500
-uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 500 --num-products 500
-uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 1000 --num-products 500
-uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 5000 --num-products 500
+uv run main.py benchmark --days 10 --price-update-frequency 2min --num-users 10 --num-products 500
+uv run main.py benchmark --days 10 --price-update-frequency 2min --num-users 50 --num-products 500
+uv run main.py benchmark --days 10 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run main.py benchmark --days 10 --price-update-frequency 2min --num-users 500 --num-products 500
+uv run main.py benchmark --days 10 --price-update-frequency 2min --num-users 1000 --num-products 500
+uv run main.py benchmark --days 10 --price-update-frequency 2min --num-users 5000 --num-products 500
 ```
 
 #### Section 5: Varying Number of Products
@@ -831,12 +825,12 @@ uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 5000 --n
 
 **Benchmark commands**:
 ```bash
-uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 100 --num-products 10
-uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 100 --num-products 50
-uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 100 --num-products 100
-uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 100 --num-products 500
-uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 100 --num-products 1000
-uv run benchmark.py --days 10 --price-update-frequency 2min --num-users 100 --num-products 2000
+uv run main.py benchmark --days 10 --price-update-frequency 2min --num-users 100 --num-products 10
+uv run main.py benchmark --days 10 --price-update-frequency 2min --num-users 100 --num-products 50
+uv run main.py benchmark --days 10 --price-update-frequency 2min --num-users 100 --num-products 100
+uv run main.py benchmark --days 10 --price-update-frequency 2min --num-users 100 --num-products 500
+uv run main.py benchmark --days 10 --price-update-frequency 2min --num-users 100 --num-products 1000
+uv run main.py benchmark --days 10 --price-update-frequency 2min --num-users 100 --num-products 2000
 ```
 
 **Table abbreviations**:
@@ -964,9 +958,12 @@ This system uses **TimescaleDB with 15-minute bucketing** to handle production s
 
 ```
 /twr
-   main.py                          # CLI interface
-   event_generator.py               # Synthetic data generation (2-of-3 parameter model)
-   benchmark.py                     # Performance benchmarking (2-of-3 parameter model)
+   main.py                          # Unified CLI interface
+   twr/
+      __init__.py                   # Package initialization
+      database.py                   # TWRDatabase class
+      event_generator.py            # Synthetic data generation (2-of-3 parameter model)
+      benchmark.py                  # Performance benchmarking (2-of-3 parameter model)
    migrations/
       granularities.py              # Multi-granularity configuration (15min, 1h, 1d)
       01_schema.sql                 # Foundation: TimescaleDB, tables, hypertables

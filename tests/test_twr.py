@@ -9,7 +9,7 @@ from decimal import Decimal
 
 from testcontainers.postgres import PostgresContainer
 
-from main import TWRDatabase
+from twr import TWRDatabase
 
 # Disable ryuk to avoid port conflicts
 os.environ["TESTCONTAINERS_RYUK_DISABLED"] = "true"
