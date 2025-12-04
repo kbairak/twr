@@ -127,7 +127,7 @@ class Benchmark:
         cur.execute(
             """
             SELECT DISTINCT user_id, product_id
-            FROM user_cash_flow
+            FROM cash_flow
             LIMIT %s
         """,
             (num_queries,),
@@ -136,7 +136,7 @@ class Benchmark:
 
         # Get sample users
         cur.execute(
-            "SELECT DISTINCT user_id FROM user_cash_flow LIMIT %s", (num_queries,)
+            "SELECT DISTINCT user_id FROM cash_flow LIMIT %s", (num_queries,)
         )
         user_ids = [row[0] for row in cur.fetchall()]
 

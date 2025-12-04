@@ -56,10 +56,10 @@ CREATE INDEX ON product_price_{{ g.suffix }} (product_id, bucket DESC);
 CREATE VIEW user_product_timeline_base_{{ g.suffix }} AS
 WITH
   -- Get user-product pairs with their first cash flow timestamp
-  -- MATERIALIZED to avoid duplicate sequential scans on user_cash_flow
+  -- MATERIALIZED to avoid duplicate sequential scans on cash_flow
   user_product_first_flow AS MATERIALIZED (
       SELECT user_id, product_id, MIN(timestamp) AS first_ts
-      FROM user_cash_flow
+      FROM cash_flow
       GROUP BY user_id, product_id
   ),
 {% if g.include_realtime %}
@@ -84,7 +84,7 @@ WITH
           cumulative_twr_factor AS twr_factor_at_last_flow,
           market_price AS price,  -- Market price at this cash flow
           TRUE AS is_cash_flow
-      FROM user_cash_flow
+      FROM cash_flow
 
       UNION ALL
 
@@ -149,7 +149,7 @@ WITH
       FROM user_product_events upe
       LEFT JOIN LATERAL (
           SELECT cumulative_units, cumulative_money, cumulative_twr_factor, market_price
-          FROM user_cash_flow cf
+          FROM cash_flow cf
           WHERE cf.user_id = upe.user_id
             AND cf.product_id = upe.product_id
             AND cf.timestamp < upe.timestamp  -- Strictly before (not <=)

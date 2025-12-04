@@ -3,7 +3,7 @@
 -- =============================================================================
 -- This migration sets up the core database schema including:
 -- - TimescaleDB extension
--- - Core tables (product, product_price, user, user_cash_flow)
+-- - Core tables (product, product_price, user, cash_flow)
 -- - Hypertable conversion for time-series optimization
 -- =============================================================================
 
@@ -39,8 +39,8 @@ CREATE TABLE "user" (
     "name" TEXT NOT NULL
 );
 
--- Table 2: User Cash Flows with TWR tracking
-CREATE TABLE user_cash_flow (
+-- Table 2: Cash Flows with TWR tracking
+CREATE TABLE cash_flow (
     user_id UUID NOT NULL,
     product_id UUID NOT NULL,
     "timestamp" TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -48,9 +48,10 @@ CREATE TABLE user_cash_flow (
     -- Transaction details (user provides at least one of units/money)
     units NUMERIC(20, 6) NOT NULL,           -- positive for buys, negative for sells
     money NUMERIC(20, 6) NOT NULL,           -- portfolio flow, negative for sells
-    fee NUMERIC(20, 6) NOT NULL DEFAULT 0,   -- transaction fee (defaults to 0)
+    outgoing_fees NUMERIC(20, 6) NOT NULL DEFAULT 0,  -- fees on buys (cost basis increase)
+    incoming_fees NUMERIC(20, 6) NOT NULL DEFAULT 0,  -- fees on sells (proceeds reduction)
 
-    -- Market reference price (from product_price table at timestamp)
+    -- Market reference price (from product_price table at timestamp; execution price is money / units)
     market_price NUMERIC(20, 6) NOT NULL,
 
     -- Bank account impact (calculated by trigger)
@@ -64,7 +65,8 @@ CREATE TABLE user_cash_flow (
     cumulative_bank_flow NUMERIC(20, 6),     -- net bank flow
     total_deposits NUMERIC(20, 6),           -- sum of money OUT of bank (investments)
     total_withdrawals NUMERIC(20, 6),        -- sum of money INTO bank (realized returns)
-    cumulative_fees NUMERIC(20, 6),          -- total fees paid
+    cumulative_outgoing_fees NUMERIC(20, 6), -- total fees paid on buys
+    cumulative_incoming_fees NUMERIC(20, 6), -- total fees paid on sells
 
     -- TWR calculation
     period_return NUMERIC(20, 6),
@@ -77,7 +79,7 @@ CREATE TABLE user_cash_flow (
 -- TimescaleDB Hypertables
 -- -----------------------------------------------------------------------------
 -- Convert product_price to hypertable for time-series optimization
--- Note: user_cash_flow remains a regular table (low volume, point lookups only)
+-- Note: cash_flow remains a regular table (low volume, point lookups only)
 
 SELECT create_hypertable('product_price', 'timestamp',
     chunk_time_interval => INTERVAL '1 month',

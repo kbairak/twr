@@ -101,7 +101,7 @@ def test_add_price(twr):
     users = twr._execute_query('SELECT * FROM "user"', fetch=True)
     assert users == []
 
-    cash_flows = twr._execute_query("SELECT * FROM user_cash_flow", fetch=True)
+    cash_flows = twr._execute_query("SELECT * FROM cash_flow", fetch=True)
     assert cash_flows == []
 
     # Verify views are empty
@@ -139,26 +139,28 @@ def test_one_price_one_cashflow(twr, at):
     users = twr._execute_query('SELECT name FROM "user"', fetch=True)
     assert users == [{"name": "Alice"}]
 
-    # Verify user_cash_flow table
+    # Verify cash_flow table
     cash_flows = twr._execute_query(
         """
         SELECT u.name as user_name,
                p.name as product_name,
-               ucf.units,
-               ucf.money,
-               ucf.fee,
-               ucf.bank_flow,
-               ucf.cumulative_units,
-               ucf.cumulative_money,
-               ucf.total_deposits,
-               ucf.total_withdrawals,
-               ucf.cumulative_fees,
-               ucf.period_return,
-               ucf.cumulative_twr_factor,
-               ucf.timestamp
-        FROM user_cash_flow ucf
-            JOIN "user" u ON ucf.user_id = u.id
-            JOIN product p ON ucf.product_id = p.id
+               cf.units,
+               cf.money,
+               cf.outgoing_fees,
+               cf.incoming_fees,
+               cf.bank_flow,
+               cf.cumulative_units,
+               cf.cumulative_money,
+               cf.total_deposits,
+               cf.total_withdrawals,
+               cf.cumulative_outgoing_fees,
+               cf.cumulative_incoming_fees,
+               cf.period_return,
+               cf.cumulative_twr_factor,
+               cf.timestamp
+        FROM cash_flow cf
+            JOIN "user" u ON cf.user_id = u.id
+            JOIN product p ON cf.product_id = p.id
         """,
         fetch=True,
     )
@@ -168,13 +170,15 @@ def test_one_price_one_cashflow(twr, at):
             "product_name": "nvidia",
             "units": Decimal("10.000000"),
             "money": Decimal("100.000000"),
-            "fee": Decimal("0.000000"),
+            "outgoing_fees": Decimal("0.000000"),
+            "incoming_fees": Decimal("0.000000"),
             "bank_flow": Decimal("-100.000000"),
             "cumulative_units": Decimal("10.000000"),
             "cumulative_money": Decimal("100.000000"),
             "total_deposits": Decimal("100.000000"),
             "total_withdrawals": Decimal("0.000000"),
-            "cumulative_fees": Decimal("0.000000"),
+            "cumulative_outgoing_fees": Decimal("0.000000"),
+            "cumulative_incoming_fees": Decimal("0.000000"),
             "period_return": Decimal("0.000000"),
             "cumulative_twr_factor": Decimal("1.000000"),
             "timestamp": at(1),
@@ -259,26 +263,28 @@ def test_price_increase_50_percent(twr, at):
     users = twr._execute_query('SELECT name FROM "user"', fetch=True)
     assert users == [{"name": "Alice"}]
 
-    # Verify user_cash_flow table
+    # Verify cash_flow table
     cash_flows = twr._execute_query(
         """
         SELECT u.name as user_name,
                p.name as product_name,
-               ucf.units,
-               ucf.money,
-               ucf.fee,
-               ucf.bank_flow,
-               ucf.cumulative_units,
-               ucf.cumulative_money,
-               ucf.total_deposits,
-               ucf.total_withdrawals,
-               ucf.cumulative_fees,
-               ucf.period_return,
-               ucf.cumulative_twr_factor,
-               ucf.timestamp
-        FROM user_cash_flow ucf
-            JOIN "user" u ON ucf.user_id = u.id
-            JOIN product p ON ucf.product_id = p.id
+               cf.units,
+               cf.money,
+               cf.outgoing_fees,
+               cf.incoming_fees,
+               cf.bank_flow,
+               cf.cumulative_units,
+               cf.cumulative_money,
+               cf.total_deposits,
+               cf.total_withdrawals,
+               cf.cumulative_outgoing_fees,
+               cf.cumulative_incoming_fees,
+               cf.period_return,
+               cf.cumulative_twr_factor,
+               cf.timestamp
+        FROM cash_flow cf
+            JOIN "user" u ON cf.user_id = u.id
+            JOIN product p ON cf.product_id = p.id
         """,
         fetch=True,
     )
@@ -288,13 +294,15 @@ def test_price_increase_50_percent(twr, at):
             "product_name": "nvidia",
             "units": Decimal("10.000000"),
             "money": Decimal("100.000000"),
-            "fee": Decimal("0.000000"),
+            "outgoing_fees": Decimal("0.000000"),
+            "incoming_fees": Decimal("0.000000"),
             "bank_flow": Decimal("-100.000000"),
             "cumulative_units": Decimal("10.000000"),
             "cumulative_money": Decimal("100.000000"),
             "total_deposits": Decimal("100.000000"),
             "total_withdrawals": Decimal("0.000000"),
-            "cumulative_fees": Decimal("0.000000"),
+            "cumulative_outgoing_fees": Decimal("0.000000"),
+            "cumulative_incoming_fees": Decimal("0.000000"),
             "period_return": Decimal("0.000000"),
             "cumulative_twr_factor": Decimal("1.000000"),
             "timestamp": at(1),
@@ -402,26 +410,28 @@ def test_price_up_then_down(twr, at):
     users = twr._execute_query('SELECT name FROM "user"', fetch=True)
     assert users == [{"name": "Alice"}]
 
-    # Verify user_cash_flow table
+    # Verify cash_flow table
     cash_flows = twr._execute_query(
         """
         SELECT u.name as user_name,
                p.name as product_name,
-               ucf.units,
-               ucf.money,
-               ucf.fee,
-               ucf.bank_flow,
-               ucf.cumulative_units,
-               ucf.cumulative_money,
-               ucf.total_deposits,
-               ucf.total_withdrawals,
-               ucf.cumulative_fees,
-               ucf.period_return,
-               ucf.cumulative_twr_factor,
-               ucf.timestamp
-        FROM user_cash_flow ucf
-            JOIN "user" u ON ucf.user_id = u.id
-            JOIN product p ON ucf.product_id = p.id
+               cf.units,
+               cf.money,
+               cf.outgoing_fees,
+               cf.incoming_fees,
+               cf.bank_flow,
+               cf.cumulative_units,
+               cf.cumulative_money,
+               cf.total_deposits,
+               cf.total_withdrawals,
+               cf.cumulative_outgoing_fees,
+               cf.cumulative_incoming_fees,
+               cf.period_return,
+               cf.cumulative_twr_factor,
+               cf.timestamp
+        FROM cash_flow cf
+            JOIN "user" u ON cf.user_id = u.id
+            JOIN product p ON cf.product_id = p.id
         """,
         fetch=True,
     )
@@ -431,13 +441,15 @@ def test_price_up_then_down(twr, at):
             "product_name": "nvidia",
             "units": Decimal("10.000000"),
             "money": Decimal("100.000000"),
-            "fee": Decimal("0.000000"),
+            "outgoing_fees": Decimal("0.000000"),
+            "incoming_fees": Decimal("0.000000"),
             "bank_flow": Decimal("-100.000000"),
             "cumulative_units": Decimal("10.000000"),
             "cumulative_money": Decimal("100.000000"),
             "total_deposits": Decimal("100.000000"),
             "total_withdrawals": Decimal("0.000000"),
-            "cumulative_fees": Decimal("0.000000"),
+            "cumulative_outgoing_fees": Decimal("0.000000"),
+            "cumulative_incoming_fees": Decimal("0.000000"),
             "period_return": Decimal("0.000000"),
             "cumulative_twr_factor": Decimal("1.000000"),
             "timestamp": at(1),

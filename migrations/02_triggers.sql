@@ -1,6 +1,6 @@
 -- Function to calculate incremental TWR on cash flow insert
 --   User provides: user_id, product_id, timestamp, and at least one of (units, money)
---   Optional: fee (defaults to 0)
+--   Optional: outgoing_fees, incoming_fees (default to 0)
 --   Trigger calculates: market_price, derives missing units/money, bank_flow,
 --                      cumulative_units, cumulative_money, bank account totals,
 --                      period_return, cumulative_twr_factor
@@ -16,7 +16,8 @@ DECLARE
     v_prev_cumulative_bank_flow NUMERIC;
     v_prev_total_deposits NUMERIC;
     v_prev_total_withdrawals NUMERIC;
-    v_prev_cumulative_fees NUMERIC;
+    v_prev_cumulative_outgoing_fees NUMERIC;
+    v_prev_cumulative_incoming_fees NUMERIC;
     v_prev_value_after_flow NUMERIC;
     v_value_before_flow NUMERIC;
 BEGIN
@@ -52,33 +53,37 @@ BEGIN
     END IF;
     -- If both provided, use both as-is (captures slippage/spread)
 
-    -- Ensure fee is not NULL
-    IF NEW.fee IS NULL THEN
-        NEW.fee := 0;
+    -- Ensure fees are not NULL
+    IF NEW.outgoing_fees IS NULL THEN
+        NEW.outgoing_fees := 0;
+    END IF;
+    IF NEW.incoming_fees IS NULL THEN
+        NEW.incoming_fees := 0;
     END IF;
 
     -- Calculate bank flow
-    -- For buys (money > 0): bank_flow = -(money + fee) [money leaving bank]
-    -- For sells (money < 0): bank_flow = -(money - fee) = -money + fee [money entering bank]
+    -- For buys (money > 0): bank_flow = -(money + outgoing_fees) [money leaving bank]
+    -- For sells (money < 0): bank_flow = -(money - incoming_fees) = -money + incoming_fees [money entering bank]
     IF NEW.money >= 0 THEN
-        NEW.bank_flow := -(NEW.money + NEW.fee);
+        NEW.bank_flow := -(NEW.money + NEW.outgoing_fees);
     ELSE
-        NEW.bank_flow := -(NEW.money - NEW.fee);
+        NEW.bank_flow := -(NEW.money - NEW.incoming_fees);
     END IF;
 
     -- Get previous cash flow for this user-product pair
     SELECT cumulative_twr_factor, cumulative_units, cumulative_money,
            cumulative_bank_flow, total_deposits, total_withdrawals,
-           cumulative_fees, timestamp
+           cumulative_outgoing_fees, cumulative_incoming_fees, timestamp
     INTO v_prev_cumulative_twr_factor,
          v_prev_cumulative_units,
          v_prev_cumulative_money,
          v_prev_cumulative_bank_flow,
          v_prev_total_deposits,
          v_prev_total_withdrawals,
-         v_prev_cumulative_fees,
+         v_prev_cumulative_outgoing_fees,
+         v_prev_cumulative_incoming_fees,
          v_prev_timestamp
-    FROM user_cash_flow
+    FROM cash_flow
     WHERE user_id = NEW.user_id AND
           product_id = NEW.product_id AND
           timestamp < NEW.timestamp
@@ -101,7 +106,8 @@ BEGIN
         NEW.cumulative_units := NEW.units;
         NEW.cumulative_money := NEW.money;
         NEW.cumulative_bank_flow := NEW.bank_flow;
-        NEW.cumulative_fees := NEW.fee;
+        NEW.cumulative_outgoing_fees := NEW.outgoing_fees;
+        NEW.cumulative_incoming_fees := NEW.incoming_fees;
 
         -- Initialize bank account totals
         IF NEW.bank_flow < 0 THEN
@@ -121,7 +127,8 @@ BEGIN
         NEW.cumulative_units := v_prev_cumulative_units + NEW.units;
         NEW.cumulative_money := v_prev_cumulative_money + NEW.money;
         NEW.cumulative_bank_flow := v_prev_cumulative_bank_flow + NEW.bank_flow;
-        NEW.cumulative_fees := v_prev_cumulative_fees + NEW.fee;
+        NEW.cumulative_outgoing_fees := v_prev_cumulative_outgoing_fees + NEW.outgoing_fees;
+        NEW.cumulative_incoming_fees := v_prev_cumulative_incoming_fees + NEW.incoming_fees;
 
         -- Update bank account totals
         IF NEW.bank_flow < 0 THEN
@@ -160,6 +167,6 @@ $$ LANGUAGE plpgsql;
 
 -- Create trigger to calculate TWR on insert
 CREATE TRIGGER calculate_twr_trigger
-  BEFORE INSERT ON user_cash_flow
+  BEFORE INSERT ON cash_flow
   FOR EACH ROW
   EXECUTE FUNCTION calculate_incremental_twr();

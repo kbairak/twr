@@ -249,11 +249,12 @@ class EventGenerator:
             print(f"Calendar days: {calendar_days}")
             print(f"Time span: {time_range}")
 
-            # Generate cash flows randomly within time range
+            # Generate timestamps for cash flows first
             progress.remove_task(price_task)
-            cashflow_task = progress.add_task("Generating cash flows", total=num_cash_flow_events)
+            timestamp_task = progress.add_task("Generating timestamps", total=num_cash_flow_events)
 
-            cashflow_events = []
+            # Assign random timestamps to users
+            user_timestamps = {user: [] for user in self.users}
             for _ in range(num_cash_flow_events):
                 # Random timestamp within [start_time, end_time]
                 random_offset = time_range * random.random()
@@ -266,22 +267,44 @@ class EventGenerator:
                         # Shift to after market close
                         timestamp = timestamp.replace(hour=16, minute=random.randint(0, 59))
 
-                event = self._generate_cashflow_event(timestamp)
-                if event:
-                    cashflow_events.append(event)
+                # Assign to random user
+                user = random.choice(self.users)
+                user_timestamps[user].append(timestamp)
+                progress.update(timestamp_task, advance=1)
 
-                progress.update(cashflow_task, advance=1)
+            # Sort timestamps chronologically per user
+            for user in self.users:
+                user_timestamps[user].sort()
+
+            # Generate cash flows in chronological order per user
+            progress.remove_task(timestamp_task)
+            cashflow_task = progress.add_task("Generating cash flows", total=num_cash_flow_events)
+
+            cashflow_events = []
+            for user in self.users:
+                # Track per-user cumulative bank flow per product
+                user_cumulative_bank_flow = {}  # product -> cumulative bank flow
+
+                for timestamp in user_timestamps[user]:
+                    event = self._generate_cashflow_event(timestamp, user, user_cumulative_bank_flow)
+                    if event:
+                        cashflow_events.append(event)
+                    progress.update(cashflow_task, advance=1)
 
             # Sort and insert all events
             progress.remove_task(cashflow_task)
             self._batch_insert_all_events(price_events, cashflow_events, batch_size, progress)
 
-    def _generate_cashflow_event(self, timestamp: datetime):
-        """Generate a cashflow event at given timestamp"""
+    def _generate_cashflow_event(self, timestamp: datetime, user: str, user_cumulative_bank_flow: dict):
+        """Generate a cashflow event at given timestamp for a specific user
+
+        Args:
+            timestamp: When the cash flow occurs
+            user: The user name
+            user_cumulative_bank_flow: Dict tracking cumulative bank flow per product for this user
+        """
         if not self.current_prices:
             return None  # No products with prices yet
-
-        user = random.choice(self.users)
 
         # Initialize user's product set if not exists
         if user not in self.user_products:
@@ -306,33 +329,50 @@ class EventGenerator:
         current_price = self.current_prices[product]
         key = (user, product)
         current_holdings = self.holdings.get(key, Decimal("0"))
+        current_bank_flow = user_cumulative_bank_flow.get(product, Decimal("0"))
 
         # Generate money amount
         money = Decimal(str(random.uniform(*self.cashflow_money_range)))
 
-        # 20% chance of sell
+        # 20% chance of sell - but only if we have holdings AND it won't make net deposits negative
+        # Note: bank_flow is NEGATIVE for deposits (money leaving bank) and POSITIVE for withdrawals (money returning)
+        # So cumulative_bank_flow <= 0 means net deposits >= 0 (good)
+        # We need to ensure cumulative_bank_flow stays <= 0
         if random.random() < 0.2 and current_holdings > 0:
             # Sell between 10% and 80% of holdings
             sell_fraction = Decimal(str(random.uniform(0.1, 0.8)))
             units = -(current_holdings * sell_fraction)
+
             # For sells, calculate money from units (50% of time)
             # Other 50% of time, provide both to simulate slippage
             if random.random() < 0.5:
                 # Just units - trigger calculates money
                 money = None
+                # Estimate the bank flow change (positive for sells)
+                estimated_bank_flow_change = -(units * current_price)  # negative units, so this is positive
             else:
                 # Both units and money - simulate slippage
                 slippage = Decimal(str(random.uniform(0.999, 1.001)))
-                money = units * current_price * slippage
+                money = units * current_price * slippage  # negative money for sell
+                estimated_bank_flow_change = -money  # positive for sells
+
+            # Check if this would make cumulative bank flow positive (net deposits negative)
+            if current_bank_flow + estimated_bank_flow_change > 0:
+                # Convert to a buy instead
+                units = None
+                money = Decimal(str(random.uniform(*self.cashflow_money_range)))
+                estimated_bank_flow_change = -money  # negative for buys
         else:
             # Buy: 50% of time just money, 50% both (slippage)
             if random.random() < 0.5:
                 # Just money - trigger calculates units
                 units = None
+                estimated_bank_flow_change = -money  # negative for buys
             else:
                 # Both units and money - simulate slippage
                 slippage = Decimal(str(random.uniform(0.999, 1.001)))
                 units = money / (current_price * slippage)
+                estimated_bank_flow_change = -money  # negative for buys
 
         # Calculate expected units for holdings tracking
         if units is None:
@@ -348,6 +388,9 @@ class EventGenerator:
 
         self.holdings[key] = new_holdings
         self.user_products[user].add(product)
+
+        # Update cumulative bank flow tracking
+        user_cumulative_bank_flow[product] = current_bank_flow + estimated_bank_flow_change
 
         # Return tuple for batch insertion (units, money, fee=0, timestamp)
         # fee defaults to 0 in database
@@ -384,7 +427,7 @@ class EventGenerator:
                 batch = cashflow_events[i:i + batch_size]
                 execute_values(
                     cur,
-                    "INSERT INTO user_cash_flow (user_id, product_id, units, money, timestamp) VALUES %s",
+                    "INSERT INTO cash_flow (user_id, product_id, units, money, timestamp) VALUES %s",
                     batch,
                     page_size=100,
                 )

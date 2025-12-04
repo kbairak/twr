@@ -194,7 +194,7 @@ class TWRDatabase:
     def clear(self):
         """Clear all data from tables while preserving schema."""
         # Truncate in reverse order of dependencies
-        self._execute_query("TRUNCATE TABLE user_cash_flow CASCADE")
+        self._execute_query("TRUNCATE TABLE cash_flow CASCADE")
         self._execute_query("TRUNCATE TABLE product_price CASCADE")
         self._execute_query('TRUNCATE TABLE "user" CASCADE')
         self._execute_query("TRUNCATE TABLE product CASCADE")
@@ -281,7 +281,7 @@ class TWRDatabase:
         - Just money (trigger calculates units)
         - Just units (trigger calculates money)
         - Both (captures slippage/spread)
-        - Optional fee (defaults to 0)
+        - Optional fee (defaults to 0, will be assigned to outgoing_fees or incoming_fees based on transaction direction)
         """
         if units is None and money is None:
             raise ValueError("Must provide at least one of: --units or --money")
@@ -336,12 +336,19 @@ class TWRDatabase:
             result_product = self._execute_query(query_insert_product, (product_name,), fetch=True)
             product_id = result_product[0]["id"]
 
+        # Determine which fee field to use based on transaction direction
+        # For buys (positive units or money): outgoing_fees
+        # For sells (negative units or money): incoming_fees
+        is_buy = (units is not None and units >= 0) or (money is not None and money >= 0)
+        outgoing_fees = fee if is_buy else 0
+        incoming_fees = fee if not is_buy else 0
+
         # Insert cash flow - trigger will derive missing field and calculate all totals
         query = """
-            INSERT INTO user_cash_flow (user_id, product_id, units, money, fee, timestamp)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO cash_flow (user_id, product_id, units, money, outgoing_fees, incoming_fees, timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
-        self._execute_query(query, (user_id, product_id, units, money, fee, timestamp))
+        self._execute_query(query, (user_id, product_id, units, money, outgoing_fees, incoming_fees, timestamp))
 
         # Display confirmation
         if units is not None and money is not None:
@@ -465,10 +472,10 @@ class TWRDatabase:
             cf_conditions.append("p.name = %s")
             cf_params.append(product)
         if since:
-            cf_conditions.append("ucf.timestamp >= %s")
+            cf_conditions.append("cf.timestamp >= %s")
             cf_params.append(since)
         if until:
-            cf_conditions.append("ucf.timestamp <= %s")
+            cf_conditions.append("cf.timestamp <= %s")
             cf_params.append(until)
 
         cf_where = ""
@@ -480,24 +487,26 @@ class TWRDatabase:
             SELECT
                 u.name as user_name,
                 p.name as product_name,
-                ucf.units,
-                ucf.money,
-                ucf.fee,
-                ucf.bank_flow,
-                ucf.timestamp,
-                ucf.cumulative_units - ucf.units AS units_before_flow,
-                ucf.cumulative_units AS units_after_flow,
-                ucf.total_deposits,
-                ucf.total_withdrawals,
-                ucf.cumulative_fees,
-                ucf.period_return,
-                ucf.cumulative_twr_factor,
-                (ucf.cumulative_twr_factor - 1) * 100 as cumulative_twr_pct
-            FROM user_cash_flow ucf
-            JOIN "user" u ON ucf.user_id = u.id
-            JOIN product p ON ucf.product_id = p.id
+                cf.units,
+                cf.money,
+                cf.outgoing_fees,
+                cf.incoming_fees,
+                cf.bank_flow,
+                cf.timestamp,
+                cf.cumulative_units - cf.units AS units_before_flow,
+                cf.cumulative_units AS units_after_flow,
+                cf.total_deposits,
+                cf.total_withdrawals,
+                cf.cumulative_outgoing_fees,
+                cf.cumulative_incoming_fees,
+                cf.period_return,
+                cf.cumulative_twr_factor,
+                (cf.cumulative_twr_factor - 1) * 100 as cumulative_twr_pct
+            FROM cash_flow cf
+            JOIN "user" u ON cf.user_id = u.id
+            JOIN product p ON cf.product_id = p.id
             {cf_where}
-            ORDER BY ucf.timestamp, u.name, p.name
+            ORDER BY cf.timestamp, u.name, p.name
         """,
             tuple(cf_params),
             fetch=True,
@@ -508,7 +517,8 @@ class TWRDatabase:
             table.add_column("product")
             table.add_column("units", justify="right")
             table.add_column("money", justify="right")
-            table.add_column("fee", justify="right")
+            table.add_column("out_fees", justify="right")
+            table.add_column("in_fees", justify="right")
             table.add_column("bank_flow", justify="right")
             table.add_column("timestamp")
             table.add_column("cumulative_twr_pct", justify="right")
@@ -531,7 +541,8 @@ class TWRDatabase:
                     f"[{money_color}]{money_sign}${row['money']:.2f}[/{money_color}]"
                     if row["money"] is not None
                     else "N/A",
-                    f"${row['fee']:.2f}" if row["fee"] is not None else "N/A",
+                    f"${row['outgoing_fees']:.2f}" if row["outgoing_fees"] is not None else "N/A",
+                    f"${row['incoming_fees']:.2f}" if row["incoming_fees"] is not None else "N/A",
                     f"[{bank_color}]{bank_sign}${row['bank_flow']:.2f}[/{bank_color}]"
                     if row["bank_flow"] is not None
                     else "N/A",
@@ -781,10 +792,10 @@ class TWRDatabase:
             conditions.append("p.name = %s")
             params.append(product)
         if since:
-            conditions.append("ucf.timestamp >= %s")
+            conditions.append("cf.timestamp >= %s")
             params.append(since)
         if until:
-            conditions.append("ucf.timestamp <= %s")
+            conditions.append("cf.timestamp <= %s")
             params.append(until)
 
         where = ""
@@ -796,24 +807,26 @@ class TWRDatabase:
             SELECT
                 u.name as user_name,
                 p.name as product_name,
-                ucf.units,
-                ucf.money,
-                ucf.fee,
-                ucf.bank_flow,
-                ucf.timestamp,
-                ucf.cumulative_units - ucf.units AS units_before_flow,
-                ucf.cumulative_units AS units_after_flow,
-                ucf.total_deposits,
-                ucf.total_withdrawals,
-                ucf.cumulative_fees,
-                ucf.period_return,
-                ucf.cumulative_twr_factor,
-                (ucf.cumulative_twr_factor - 1) * 100 as cumulative_twr_pct
-            FROM user_cash_flow ucf
-            JOIN "user" u ON ucf.user_id = u.id
-            JOIN product p ON ucf.product_id = p.id
+                cf.units,
+                cf.money,
+                cf.outgoing_fees,
+                cf.incoming_fees,
+                cf.bank_flow,
+                cf.timestamp,
+                cf.cumulative_units - cf.units AS units_before_flow,
+                cf.cumulative_units AS units_after_flow,
+                cf.total_deposits,
+                cf.total_withdrawals,
+                cf.cumulative_outgoing_fees,
+                cf.cumulative_incoming_fees,
+                cf.period_return,
+                cf.cumulative_twr_factor,
+                (cf.cumulative_twr_factor - 1) * 100 as cumulative_twr_pct
+            FROM cash_flow cf
+            JOIN "user" u ON cf.user_id = u.id
+            JOIN product p ON cf.product_id = p.id
             {where}
-            ORDER BY ucf.timestamp, u.name, p.name
+            ORDER BY cf.timestamp, u.name, p.name
         """,
             tuple(params),
             fetch=True,
@@ -824,7 +837,8 @@ class TWRDatabase:
             table.add_column("product")
             table.add_column("units", justify="right")
             table.add_column("money", justify="right")
-            table.add_column("fee", justify="right")
+            table.add_column("out_fees", justify="right")
+            table.add_column("in_fees", justify="right")
             table.add_column("bank_flow", justify="right")
             table.add_column("timestamp")
             table.add_column("cumulative_twr_pct", justify="right")
@@ -843,7 +857,8 @@ class TWRDatabase:
                     f"[{money_color}]{money_sign}${row['money']:.2f}[/{money_color}]"
                     if row["money"] is not None
                     else "N/A",
-                    f"${row['fee']:.2f}" if row["fee"] is not None else "N/A",
+                    f"${row['outgoing_fees']:.2f}" if row["outgoing_fees"] is not None else "N/A",
+                    f"${row['incoming_fees']:.2f}" if row["incoming_fees"] is not None else "N/A",
                     f"[{bank_color}]{bank_sign}${row['bank_flow']:.2f}[/{bank_color}]"
                     if row["bank_flow"] is not None
                     else "N/A",
