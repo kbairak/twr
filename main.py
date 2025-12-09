@@ -11,7 +11,7 @@ from pathlib import Path
 
 # Import from twr package
 from twr import TWRDatabase
-from twr.event_generator import EventGenerator, calculate_missing_parameter, parse_time_interval
+from twr.generate import EventGenerator, calculate_missing_parameter, parse_time_interval
 from twr.benchmark import Benchmark
 
 # Import granularities for validation

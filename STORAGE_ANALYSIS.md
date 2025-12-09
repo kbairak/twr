@@ -20,7 +20,7 @@ This system uses **TimescaleDB with multi-granularity bucketing** (15min, 1h, 1d
 
 ## Annual Data Growth Calculations
 
-### Raw Price Data (product_price hypertable)
+### Raw Price Data (price_update hypertable)
 
 **Without bucketing:**
 - Updates per product per year: 225 × 250 trading days = 56,250 updates
@@ -82,7 +82,7 @@ This system uses **TimescaleDB with multi-granularity bucketing** (15min, 1h, 1d
 
 ## Row Size Estimates
 
-### product_price table (TimescaleDB hypertable)
+### price_update table (TimescaleDB hypertable)
 
 Based on schema in `migrations/01_schema.sql`:
 
@@ -92,7 +92,7 @@ Based on schema in `migrations/01_schema.sql`:
 - PostgreSQL row overhead: ~24 bytes
 - **Total per row**: ~60 bytes
 
-### product_price_15min (continuous aggregate)
+### price_update_15min (continuous aggregate)
 
 - `product_id`: UUID = 16 bytes
 - `bucket`: TIMESTAMPTZ = 8 bytes
@@ -226,8 +226,8 @@ From benchmark tests on Apple M1 MacBook Pro:
 ### ✅ TimescaleDB Hypertables
 
 ```sql
--- product_price is a hypertable with 1-month chunks
-SELECT create_hypertable('product_price', 'timestamp',
+-- price_update is a hypertable with 1-month chunks
+SELECT create_hypertable('price_update', 'timestamp',
     chunk_time_interval => INTERVAL '1 month');
 ```
 
@@ -241,13 +241,13 @@ SELECT create_hypertable('product_price', 'timestamp',
 
 ```sql
 -- 15-minute buckets for real-time analysis
-CREATE MATERIALIZED VIEW product_price_15min AS ...
+CREATE MATERIALIZED VIEW price_update_15min AS ...
 
 -- 1-hour buckets for weekly/monthly analysis
-CREATE MATERIALIZED VIEW product_price_1h AS ...
+CREATE MATERIALIZED VIEW price_update_1h AS ...
 
 -- 1-day buckets for long-term trends
-CREATE MATERIALIZED VIEW product_price_1d AS ...
+CREATE MATERIALIZED VIEW price_update_1d AS ...
 ```
 
 **Benefits:**
@@ -290,15 +290,15 @@ CREATE INDEX idx_user_product_timeline_cache_15min_timestamp
 #### 1. Enable TimescaleDB Compression
 
 ```sql
--- Enable compression on product_price hypertable
-ALTER TABLE product_price SET (
+-- Enable compression on price_update hypertable
+ALTER TABLE price_update SET (
     timescaledb.compress,
     timescaledb.compress_segmentby = 'product_id',
     timescaledb.compress_orderby = 'timestamp DESC'
 );
 
 -- Automatically compress chunks older than 7 days
-SELECT add_compression_policy('product_price', INTERVAL '7 days');
+SELECT add_compression_policy('price_update', INTERVAL '7 days');
 ```
 
 **Expected benefit:** 5-10x storage reduction on old chunks (reducing ~5 GB/year to ~500 MB/year)
@@ -310,7 +310,7 @@ SELECT add_compression_policy('product_price', INTERVAL '7 days');
 ```sql
 -- Automatically drop raw price chunks older than 90 days
 -- (Keep bucketed data indefinitely or with longer retention)
-SELECT add_retention_policy('product_price', INTERVAL '90 days');
+SELECT add_retention_policy('price_update', INTERVAL '90 days');
 ```
 
 **Rationale:**

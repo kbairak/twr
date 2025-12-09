@@ -1,0 +1,279 @@
+================================================================================
+Scenario 1: 6.6 days, 714,285 events
+================================================================================
+Refresh all caches: 400.2s
+Queries with 100% cache:
+    user-product-timeline-15min:  48ms
+    user-timeline-15min:          47ms
+    user-product-timeline-1h:  34ms
+    user-timeline-1h:          31ms
+    user-product-timeline-1d:  31ms
+    user-timeline-1d:          30ms
+Queries with 75% cache:
+    user-product-timeline-15min:  42ms
+    user-timeline-15min:          97ms
+    user-product-timeline-1h:  28ms
+    user-timeline-1h:          58ms
+    user-product-timeline-1d:  31ms
+    user-timeline-1d:          52ms
+Queries with 50% cache:
+    user-product-timeline-15min:  37ms
+    user-timeline-15min:          87ms
+    user-product-timeline-1h:  23ms
+    user-timeline-1h:          42ms
+    user-product-timeline-1d:  23ms
+    user-timeline-1d:          41ms
+Queries with 25% cache:
+    user-product-timeline-15min:  26ms
+    user-timeline-15min:          54ms
+    user-product-timeline-1h:  13ms
+    user-timeline-1h:          27ms
+    user-product-timeline-1d:  15ms
+    user-timeline-1d:          24ms
+Queries with 0% cache:
+    user-product-timeline-15min:  3ms
+    user-timeline-15min:          21ms
+    user-product-timeline-1h:  2ms
+    user-timeline-1h:          8ms
+    user-product-timeline-1d:  1ms
+    user-timeline-1d:          4ms
+
+================================================================================
+Scenario 2: 13.2 days, 1,428,571 events
+================================================================================
+Refresh all caches: 921.8s
+Queries with 100% cache:
+    user-product-timeline-15min:  113ms
+    user-timeline-15min:          103ms
+    user-product-timeline-1h:  78ms
+    user-timeline-1h:          72ms
+    user-product-timeline-1d:  71ms
+    user-timeline-1d:          66ms
+Queries with 75% cache:
+    user-product-timeline-15min:  96ms
+    user-timeline-15min:          198ms
+    user-product-timeline-1h:  61ms
+    user-timeline-1h:          118ms
+    user-product-timeline-1d:  60ms
+    user-timeline-1d:          100ms
+Queries with 50% cache:
+    user-product-timeline-15min:  72ms
+    user-timeline-15min:          153ms
+    user-product-timeline-1h:  46ms
+    user-timeline-1h:          91ms
+    user-product-timeline-1d:  42ms
+    user-timeline-1d:          68ms
+Queries with 25% cache:
+    user-product-timeline-15min:  47ms
+    user-timeline-15min:          111ms
+    user-product-timeline-1h:  41ms
+    user-timeline-1h:          68ms
+    user-product-timeline-1d:  40ms
+    user-timeline-1d:          56ms
+Queries with 0% cache:
+    user-product-timeline-15min:  4ms
+    user-timeline-15min:          41ms
+    user-product-timeline-1h:  4ms
+    user-timeline-1h:          34ms
+    user-product-timeline-1d:  1ms
+    user-timeline-1d:          3ms
+
+================================================================================
+Scenario 3: 19.8 days, 2,142,857 events
+================================================================================
+Refresh all caches: 1615.1s
+Queries with 100% cache:
+    user-product-timeline-15min:  182ms
+    user-timeline-15min:          181ms
+    user-product-timeline-1h:  113ms
+    user-timeline-1h:          115ms
+    user-product-timeline-1d:  107ms
+    user-timeline-1d:          121ms
+Queries with 75% cache:
+    user-product-timeline-15min:  164ms
+    user-timeline-15min:          362ms
+    user-product-timeline-1h:  104ms
+    user-timeline-1h:          221ms
+    user-product-timeline-1d:  94ms
+    user-timeline-1d:          169ms
+Queries with 50% cache:
+    user-product-timeline-15min:  105ms
+    user-timeline-15min:          228ms
+    user-product-timeline-1h:  76ms
+    user-timeline-1h:          160ms
+    user-product-timeline-1d:  68ms
+    user-timeline-1d:          114ms
+Queries with 25% cache:
+    user-product-timeline-15min:  69ms
+    user-timeline-15min:          158ms
+    user-product-timeline-1h:  52ms
+    user-timeline-1h:          108ms
+    user-product-timeline-1d:  46ms
+    user-timeline-1d:          66ms
+Queries with 0% cache:
+    user-product-timeline-15min:  6ms
+    user-timeline-15min:          58ms
+    user-product-timeline-1h:  3ms
+    user-timeline-1h:          37ms
+    user-product-timeline-1d:  1ms
+    user-timeline-1d:          4ms
+
+================================================================================
+Scenario 4: 26.4 days, 2,857,142 events
+================================================================================
+Refresh all caches: 2397.1s
+Queries with 100% cache:
+    user-product-timeline-15min:  7754ms
+    user-timeline-15min:          295ms
+    user-product-timeline-1h:  180ms
+    user-timeline-1h:          190ms
+    user-product-timeline-1d:  149ms
+    user-timeline-1d:          148ms
+Queries with 75% cache:
+    user-product-timeline-15min:  294ms
+    user-timeline-15min:          474ms
+    user-product-timeline-1h:  156ms
+    user-timeline-1h:          324ms
+    user-product-timeline-1d:  131ms
+    user-timeline-1d:          258ms
+Queries with 50% cache:
+    user-product-timeline-15min:  164ms
+    user-timeline-15min:          334ms
+    user-product-timeline-1h:  122ms
+    user-timeline-1h:          238ms
+    user-product-timeline-1d:  100ms
+    user-timeline-1d:          158ms
+Queries with 25% cache:
+    user-product-timeline-15min:  101ms
+    user-timeline-15min:          190ms
+    user-product-timeline-1h:  76ms
+    user-timeline-1h:          167ms
+    user-product-timeline-1d:  62ms
+    user-timeline-1d:          96ms
+Queries with 0% cache:
+    user-product-timeline-15min:  7ms
+    user-timeline-15min:          54ms
+    user-product-timeline-1h:  4ms
+    user-timeline-1h:          60ms
+    user-product-timeline-1d:  2ms
+    user-timeline-1d:          7ms
+
+================================================================================
+Scenario 5: 33.0 days, 3,571,428 events
+================================================================================
+Refresh all caches: 3167.7s
+Queries with 100% cache:
+    user-product-timeline-15min:  332ms
+    user-timeline-15min:          341ms
+    user-product-timeline-1h:  229ms
+    user-timeline-1h:          233ms
+    user-product-timeline-1d:  213ms
+    user-timeline-1d:          193ms
+Queries with 75% cache:
+    user-product-timeline-15min:  361ms
+    user-timeline-15min:          607ms
+    user-product-timeline-1h:  230ms
+    user-timeline-1h:          476ms
+    user-product-timeline-1d:  181ms
+    user-timeline-1d:          340ms
+Queries with 50% cache:
+    user-product-timeline-15min:  234ms
+    user-timeline-15min:          422ms
+    user-product-timeline-1h:  204ms
+    user-timeline-1h:          465ms
+    user-product-timeline-1d:  178ms
+    user-timeline-1d:          281ms
+Queries with 25% cache:
+    user-product-timeline-15min:  141ms
+    user-timeline-15min:          289ms
+    user-product-timeline-1h:  126ms
+    user-timeline-1h:          250ms
+    user-product-timeline-1d:  84ms
+    user-timeline-1d:          140ms
+Queries with 0% cache:
+    user-product-timeline-15min:  6ms
+    user-timeline-15min:          62ms
+    user-product-timeline-1h:  4ms
+    user-timeline-1h:          74ms
+    user-product-timeline-1d:  2ms
+    user-timeline-1d:          9ms
+
+================================================================================
+Scenario 6: 39.6 days, 4,285,714 events
+================================================================================
+Refresh all caches: 3650.3s
+Queries with 100% cache:
+    user-product-timeline-15min:  361ms
+    user-timeline-15min:          379ms
+    user-product-timeline-1h:  269ms
+    user-timeline-1h:          262ms
+    user-product-timeline-1d:  232ms
+    user-timeline-1d:          220ms
+Queries with 75% cache:
+    user-product-timeline-15min:  387ms
+    user-timeline-15min:          658ms
+    user-product-timeline-1h:  304ms
+    user-timeline-1h:          523ms
+    user-product-timeline-1d:  236ms
+    user-timeline-1d:          381ms
+Queries with 50% cache:
+    user-product-timeline-15min:  207ms
+    user-timeline-15min:          437ms
+    user-product-timeline-1h:  186ms
+    user-timeline-1h:          363ms
+    user-product-timeline-1d:  160ms
+    user-timeline-1d:          266ms
+Queries with 25% cache:
+    user-product-timeline-15min:  144ms
+    user-timeline-15min:          278ms
+    user-product-timeline-1h:  164ms
+    user-timeline-1h:          308ms
+    user-product-timeline-1d:  83ms
+    user-timeline-1d:          145ms
+Queries with 0% cache:
+    user-product-timeline-15min:  10ms
+    user-timeline-15min:          87ms
+    user-product-timeline-1h:  6ms
+    user-timeline-1h:          107ms
+    user-product-timeline-1d:  7ms
+    user-timeline-1d:          18ms
+
+================================================================================
+Scenario 7: 46.2 days, 5,000,000 events
+================================================================================
+Refresh all caches: 6395.3s
+Queries with 100% cache:
+    user-product-timeline-15min:  449ms
+    user-timeline-15min:          480ms
+    user-product-timeline-1h:  312ms
+    user-timeline-1h:          344ms
+    user-product-timeline-1d:  314ms
+    user-timeline-1d:          286ms
+Queries with 75% cache:
+    user-product-timeline-15min:  499ms
+    user-timeline-15min:          811ms
+    user-product-timeline-1h:  403ms
+    user-timeline-1h:          604ms
+    user-product-timeline-1d:  246ms
+    user-timeline-1d:          429ms
+Queries with 50% cache:
+    user-product-timeline-15min:  270ms
+    user-timeline-15min:          525ms
+    user-product-timeline-1h:  301ms
+    user-timeline-1h:          432ms
+    user-product-timeline-1d:  185ms
+    user-timeline-1d:          310ms
+Queries with 25% cache:
+    user-product-timeline-15min:  158ms
+    user-timeline-15min:          307ms
+    user-product-timeline-1h:  114ms
+    user-timeline-1h:          270ms
+    user-product-timeline-1d:  117ms
+    user-timeline-1d:          175ms
+Queries with 0% cache:
+    user-product-timeline-15min:  8ms
+    user-timeline-15min:          80ms
+    user-product-timeline-1h:  6ms
+    user-timeline-1h:          102ms
+    user-product-timeline-1d:  3ms
+    user-timeline-1d:          17ms

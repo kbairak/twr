@@ -1,5 +1,3 @@
-"""Event generator for TWR system - creates synthetic trading data."""
-
 from faker import Faker
 from decimal import Decimal
 from datetime import datetime, timedelta, timezone, time
@@ -8,9 +6,6 @@ import random
 import math
 import psycopg2
 from psycopg2.extras import execute_values
-from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
-from pathlib import Path
-import sys
 
 # Trading constants
 MARKET_OPEN = time(9, 30)  # 9:30 AM
@@ -19,7 +14,9 @@ PRICE_UPDATE_INTERVAL = timedelta(minutes=2)
 START_DATE = datetime(2024, 1, 2, 9, 30, tzinfo=timezone.utc)  # Tuesday Jan 2, 2024
 
 
-def generate_trading_timestamps(num_ticks: int, interval: timedelta = None, end_date: datetime = None) -> Iterator[datetime]:
+def generate_trading_timestamps(
+    num_ticks: int, interval: timedelta = None, end_date: datetime = None
+) -> Iterator[datetime]:
     """
     Generator that yields trading timestamps during market hours.
     Automatically skips weekends.
@@ -49,7 +46,7 @@ def generate_trading_timestamps(num_ticks: int, interval: timedelta = None, end_
                     hour=MARKET_CLOSE.hour,
                     minute=MARKET_CLOSE.minute,
                     second=0,
-                    microsecond=0
+                    microsecond=0,
                 )
 
             # If before market open, jump to previous day's market close
@@ -59,7 +56,7 @@ def generate_trading_timestamps(num_ticks: int, interval: timedelta = None, end_
                     hour=MARKET_CLOSE.hour,
                     minute=MARKET_CLOSE.minute,
                     second=0,
-                    microsecond=0
+                    microsecond=0,
                 )
 
             # Store this tick
@@ -85,7 +82,7 @@ def generate_trading_timestamps(num_ticks: int, interval: timedelta = None, end_
                     hour=MARKET_OPEN.hour,
                     minute=MARKET_OPEN.minute,
                     second=0,
-                    microsecond=0
+                    microsecond=0,
                 )
 
             # Yield this tick
@@ -102,7 +99,7 @@ def generate_trading_timestamps(num_ticks: int, interval: timedelta = None, end_
                     hour=MARKET_OPEN.hour,
                     minute=MARKET_OPEN.minute,
                     second=0,
-                    microsecond=0
+                    microsecond=0,
                 )
 
 
@@ -125,7 +122,11 @@ class EventGenerator:
     ):
         # Database connection
         self.conn = psycopg2.connect(
-            dbname=db_name, user=db_user, password=db_password, host=db_host, port=db_port
+            dbname=db_name,
+            user=db_user,
+            password=db_password,
+            host=db_host,
+            port=db_port,
         )
 
         self.faker = Faker()
@@ -173,11 +174,19 @@ class EventGenerator:
             cur.execute('INSERT INTO "user" (name) VALUES (%s) RETURNING id', (user,))
             self.user_ids[user] = cur.fetchone()[0]
         for product in self.products:
-            cur.execute("INSERT INTO product (name) VALUES (%s) RETURNING id", (product,))
+            cur.execute(
+                "INSERT INTO product (name) VALUES (%s) RETURNING id", (product,)
+            )
             self.product_ids[product] = cur.fetchone()[0]
         self.conn.commit()
 
-    def generate_and_insert(self, num_events: int, batch_size: int = 10000, price_update_interval: timedelta = None, end_date: datetime = None):
+    def generate_and_insert(
+        self,
+        num_events: int,
+        batch_size: int = 10000,
+        price_update_interval: timedelta = None,
+        end_date: datetime = None,
+    ):
         """Generate events with realistic market timing and insert into DB
 
         Args:
@@ -196,7 +205,7 @@ class EventGenerator:
         # Calculate number of ticks needed
         num_ticks = math.ceil(num_price_events / len(self.products))
 
-        print(f"\n=== Event Generation Plan ===")
+        print("\n=== Event Generation Plan ===")
         print(f"Total events: {num_events:,}")
         print(f"Price events: {num_price_events:,} (90%)")
         print(f"  - Ticks: {num_ticks:,}")
@@ -209,116 +218,92 @@ class EventGenerator:
 
         price_events = []
 
-        with Progress(
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            TextColumn("({task.completed}/{task.total})"),
-            TimeElapsedColumn(),
-        ) as progress:
-            # Generate synchronized price updates
-            price_task = progress.add_task("Generating price ticks", total=num_ticks)
+        # Generate synchronized price updates
+        print(f"Generating {num_ticks:,} price ticks...")
+        for i, tick_time in enumerate(generate_trading_timestamps(
+            num_ticks, interval=price_update_interval, end_date=end_date
+        )):
+            # All products update at this tick (with millisecond jitter)
+            for product in self.products:
+                jitter_ms = random.randint(0, 100)
+                timestamp = tick_time + timedelta(milliseconds=jitter_ms)
 
-            for tick_time in generate_trading_timestamps(num_ticks, interval=price_update_interval, end_date=end_date):
-                # All products update at this tick (with millisecond jitter)
-                for product in self.products:
-                    jitter_ms = random.randint(0, 100)
-                    timestamp = tick_time + timedelta(milliseconds=jitter_ms)
+                # Update price
+                if product not in self.current_prices:
+                    price = Decimal(str(self.initial_price))
+                else:
+                    delta = random.uniform(*self.price_delta_range)
+                    price = self.current_prices[product] * (1 + Decimal(str(delta)))
+                    # Clamp price to prevent overflow
+                    price = max(self.min_price, min(self.max_price, price))
 
-                    # Update price
-                    if product not in self.current_prices:
-                        price = Decimal(str(self.initial_price))
-                    else:
-                        delta = random.uniform(*self.price_delta_range)
-                        price = self.current_prices[product] * (1 + Decimal(str(delta)))
-                        # Clamp price to prevent overflow
-                        price = max(self.min_price, min(self.max_price, price))
+                self.current_prices[product] = price
+                price_events.append((self.product_ids[product], timestamp, price))
 
-                    self.current_prices[product] = price
-                    price_events.append((self.product_ids[product], timestamp, price))
+        # Determine time range from price events
+        start_time = min(e[1] for e in price_events)
+        end_time = max(e[1] for e in price_events)
+        time_range = end_time - start_time
+        calendar_days = (end_time.date() - start_time.date()).days + 1
 
-                progress.update(price_task, advance=1)
+        print(f"\nTime range: {start_time.date()} to {end_time.date()}")
+        print(f"Calendar days: {calendar_days}")
+        print(f"Time span: {time_range}")
 
-            # Determine time range from price events
-            start_time = min(e[1] for e in price_events)
-            end_time = max(e[1] for e in price_events)
-            time_range = end_time - start_time
-            calendar_days = (end_time.date() - start_time.date()).days + 1
+        # Generate cash flows randomly within time range
+        print(f"\nGenerating {num_cash_flow_events:,} cash flows...")
+        cashflow_events = []
+        for i in range(num_cash_flow_events):
+            # Random timestamp within [start_time, end_time]
+            random_offset = time_range * random.random()
+            timestamp = start_time + random_offset
 
-            print(f"\nTime range: {start_time.date()} to {end_time.date()}")
-            print(f"Calendar days: {calendar_days}")
-            print(f"Time span: {time_range}")
+            # 80% during market hours, 20% after-hours
+            if random.random() > 0.8:
+                # Force to after-hours if not already
+                if MARKET_OPEN <= timestamp.time() <= MARKET_CLOSE:
+                    # Shift to after market close
+                    timestamp = timestamp.replace(
+                        hour=16, minute=random.randint(0, 59)
+                    )
 
-            # Generate timestamps for cash flows first
-            progress.remove_task(price_task)
-            timestamp_task = progress.add_task("Generating timestamps", total=num_cash_flow_events)
+            event = self._generate_cashflow_event(timestamp)
+            if event:
+                cashflow_events.append(event)
 
-            # Assign random timestamps to users
-            user_timestamps = {user: [] for user in self.users}
-            for _ in range(num_cash_flow_events):
-                # Random timestamp within [start_time, end_time]
-                random_offset = time_range * random.random()
-                timestamp = start_time + random_offset
+        # Sort and insert all events
+        print()
+        self._batch_insert_all_events(
+            price_events, cashflow_events, batch_size
+        )
 
-                # 80% during market hours, 20% after-hours
-                if random.random() > 0.8:
-                    # Force to after-hours if not already
-                    if MARKET_OPEN <= timestamp.time() <= MARKET_CLOSE:
-                        # Shift to after market close
-                        timestamp = timestamp.replace(hour=16, minute=random.randint(0, 59))
-
-                # Assign to random user
-                user = random.choice(self.users)
-                user_timestamps[user].append(timestamp)
-                progress.update(timestamp_task, advance=1)
-
-            # Sort timestamps chronologically per user
-            for user in self.users:
-                user_timestamps[user].sort()
-
-            # Generate cash flows in chronological order per user
-            progress.remove_task(timestamp_task)
-            cashflow_task = progress.add_task("Generating cash flows", total=num_cash_flow_events)
-
-            cashflow_events = []
-            for user in self.users:
-                # Track per-user cumulative bank flow per product
-                user_cumulative_bank_flow = {}  # product -> cumulative bank flow
-
-                for timestamp in user_timestamps[user]:
-                    event = self._generate_cashflow_event(timestamp, user, user_cumulative_bank_flow)
-                    if event:
-                        cashflow_events.append(event)
-                    progress.update(cashflow_task, advance=1)
-
-            # Sort and insert all events
-            progress.remove_task(cashflow_task)
-            self._batch_insert_all_events(price_events, cashflow_events, batch_size, progress)
-
-    def _generate_cashflow_event(self, timestamp: datetime, user: str, user_cumulative_bank_flow: dict):
-        """Generate a cashflow event at given timestamp for a specific user
-
-        Args:
-            timestamp: When the cash flow occurs
-            user: The user name
-            user_cumulative_bank_flow: Dict tracking cumulative bank flow per product for this user
-        """
+    def _generate_cashflow_event(self, timestamp: datetime):
+        """Generate a cashflow event at given timestamp"""
         if not self.current_prices:
             return None  # No products with prices yet
+
+        user = random.choice(self.users)
 
         # Initialize user's product set if not exists
         if user not in self.user_products:
             self.user_products[user] = set()
 
         # Choose product based on probability
-        user_existing_products = self.user_products[user] & set(self.current_prices.keys())
+        user_existing_products = self.user_products[user] & set(
+            self.current_prices.keys()
+        )
 
-        if user_existing_products and random.random() < self.existing_product_probability:
+        if (
+            user_existing_products
+            and random.random() < self.existing_product_probability
+        ):
             # 90% chance: pick from products the user already has
             product = random.choice(list(user_existing_products))
         else:
             # 10% chance: pick a new product
-            available_new_products = set(self.current_prices.keys()) - self.user_products[user]
+            available_new_products = (
+                set(self.current_prices.keys()) - self.user_products[user]
+            )
             if available_new_products:
                 product = random.choice(list(available_new_products))
             elif user_existing_products:
@@ -329,50 +314,33 @@ class EventGenerator:
         current_price = self.current_prices[product]
         key = (user, product)
         current_holdings = self.holdings.get(key, Decimal("0"))
-        current_bank_flow = user_cumulative_bank_flow.get(product, Decimal("0"))
 
         # Generate money amount
         money = Decimal(str(random.uniform(*self.cashflow_money_range)))
 
-        # 20% chance of sell - but only if we have holdings AND it won't make net deposits negative
-        # Note: bank_flow is NEGATIVE for deposits (money leaving bank) and POSITIVE for withdrawals (money returning)
-        # So cumulative_bank_flow <= 0 means net deposits >= 0 (good)
-        # We need to ensure cumulative_bank_flow stays <= 0
+        # 20% chance of sell
         if random.random() < 0.2 and current_holdings > 0:
             # Sell between 10% and 80% of holdings
             sell_fraction = Decimal(str(random.uniform(0.1, 0.8)))
             units = -(current_holdings * sell_fraction)
-
             # For sells, calculate money from units (50% of time)
             # Other 50% of time, provide both to simulate slippage
             if random.random() < 0.5:
                 # Just units - trigger calculates money
                 money = None
-                # Estimate the bank flow change (positive for sells)
-                estimated_bank_flow_change = -(units * current_price)  # negative units, so this is positive
             else:
                 # Both units and money - simulate slippage
                 slippage = Decimal(str(random.uniform(0.999, 1.001)))
-                money = units * current_price * slippage  # negative money for sell
-                estimated_bank_flow_change = -money  # positive for sells
-
-            # Check if this would make cumulative bank flow positive (net deposits negative)
-            if current_bank_flow + estimated_bank_flow_change > 0:
-                # Convert to a buy instead
-                units = None
-                money = Decimal(str(random.uniform(*self.cashflow_money_range)))
-                estimated_bank_flow_change = -money  # negative for buys
+                money = units * current_price * slippage
         else:
             # Buy: 50% of time just money, 50% both (slippage)
             if random.random() < 0.5:
                 # Just money - trigger calculates units
                 units = None
-                estimated_bank_flow_change = -money  # negative for buys
             else:
                 # Both units and money - simulate slippage
                 slippage = Decimal(str(random.uniform(0.999, 1.001)))
                 units = money / (current_price * slippage)
-                estimated_bank_flow_change = -money  # negative for buys
 
         # Calculate expected units for holdings tracking
         if units is None:
@@ -389,63 +357,69 @@ class EventGenerator:
         self.holdings[key] = new_holdings
         self.user_products[user].add(product)
 
-        # Update cumulative bank flow tracking
-        user_cumulative_bank_flow[product] = current_bank_flow + estimated_bank_flow_change
+        # Return tuple for batch insertion
+        # Provide units_delta, execution_price (from current price), fees (0)
+        # Trigger will calculate execution_money and user_money
+        return (
+            self.user_ids[user],
+            self.product_ids[product],
+            timestamp,
+            units if units is not None else calc_units,
+            current_price,
+            Decimal("0"),
+        )
 
-        # Return tuple for batch insertion (units, money, fee=0, timestamp)
-        # fee defaults to 0 in database
-        return (self.user_ids[user], self.product_ids[product], units, money, timestamp)
-
-    def _batch_insert_all_events(self, price_events, cashflow_events, batch_size, progress):
+    def _batch_insert_all_events(
+        self, price_events, cashflow_events, batch_size
+    ):
         """Sort and batch insert all price and cashflow events"""
         cur = self.conn.cursor()
 
         # Insert price events
         if price_events:
             price_events.sort(key=lambda x: (x[0], x[1]))
-            insert_task = progress.add_task("Inserting price events", total=len(price_events))
+            print(f"Inserting {len(price_events):,} price events...")
 
-            for i in range(0, len(price_events), batch_size):
-                batch = price_events[i:i + batch_size]
+            num_batches = (len(price_events) + batch_size - 1) // batch_size
+            for batch_idx, i in enumerate(range(0, len(price_events), batch_size)):
+                batch = price_events[i : i + batch_size]
                 execute_values(
                     cur,
-                    "INSERT INTO product_price (product_id, timestamp, price) VALUES %s",
+                    "INSERT INTO price_update (product_id, timestamp, price) VALUES %s",
                     batch,
                     page_size=1000,
                 )
                 self.conn.commit()
-                progress.update(insert_task, advance=len(batch))
-
-            progress.remove_task(insert_task)
 
         # Insert cashflow events
         if cashflow_events:
-            cashflow_events.sort(key=lambda x: (x[0], x[1], x[4]))  # Sort by user, product, timestamp
-            insert_task = progress.add_task("Inserting cashflow events", total=len(cashflow_events))
+            cashflow_events.sort(
+                key=lambda x: (x[0], x[1], x[2])
+            )  # Sort by user, product, timestamp
+            print(f"\nInserting {len(cashflow_events):,} cashflow events...")
 
-            for i in range(0, len(cashflow_events), batch_size):
-                batch = cashflow_events[i:i + batch_size]
+            num_batches = (len(cashflow_events) + batch_size - 1) // batch_size
+            for batch_idx, i in enumerate(range(0, len(cashflow_events), batch_size)):
+                batch = cashflow_events[i : i + batch_size]
                 execute_values(
                     cur,
-                    "INSERT INTO cash_flow (user_id, product_id, units, money, timestamp) VALUES %s",
+                    "INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, fees) VALUES %s",
                     batch,
                     page_size=100,
                 )
                 self.conn.commit()
-                progress.update(insert_task, advance=len(batch))
-
-            progress.remove_task(insert_task)
 
     def refresh_continuous_aggregate(self):
         """Refresh continuous aggregates for all granularities"""
         # Import granularities configuration
-        migrations_dir = Path(__file__).parent.parent / "migrations"
-        sys.path.insert(0, str(migrations_dir))
-        try:
-            from granularities import GRANULARITIES
-        finally:
-            if str(migrations_dir) in sys.path:
-                sys.path.remove(str(migrations_dir))
+        import json
+        from pathlib import Path
+
+        migrations_dir = Path(__file__).parent.parent.parent / "migrations"
+        granularities_file = migrations_dir / "granularities.json"
+
+        with open(granularities_file) as f:
+            GRANULARITIES = json.load(f)
 
         # Set autocommit to avoid transaction block error
         old_autocommit = self.conn.autocommit
@@ -454,7 +428,9 @@ class EventGenerator:
         cur = self.conn.cursor()
         for g in GRANULARITIES:
             print(f"  Refreshing {g['suffix']} buckets...")
-            cur.execute(f"CALL refresh_continuous_aggregate('product_price_{g['suffix']}', NULL, NULL)")
+            cur.execute(
+                f"CALL refresh_continuous_aggregate('price_update_{g['suffix']}', NULL, NULL)"
+            )
 
         # Restore autocommit setting
         self.conn.autocommit = old_autocommit
@@ -466,22 +442,27 @@ class EventGenerator:
 def parse_time_interval(interval_str: str) -> timedelta:
     """Parse time interval string like '2min', '5min', '1h' to timedelta"""
     import re
-    match = re.match(r'^(\d+)(min|h|d)$', interval_str.lower())
+
+    match = re.match(r"^(\d+)(min|h|d)$", interval_str.lower())
     if not match:
-        raise ValueError(f"Invalid interval format: {interval_str}. Use format like '2min', '1h', '1d'")
+        raise ValueError(
+            f"Invalid interval format: {interval_str}. Use format like '2min', '1h', '1d'"
+        )
 
     value = int(match.group(1))
     unit = match.group(2)
 
-    if unit == 'min':
+    if unit == "min":
         return timedelta(minutes=value)
-    elif unit == 'h':
+    elif unit == "h":
         return timedelta(hours=value)
-    elif unit == 'd':
+    elif unit == "d":
         return timedelta(days=value)
 
 
-def calculate_missing_parameter(days=None, num_events=None, price_update_frequency=None, num_products=10):
+def calculate_missing_parameter(
+    days=None, num_events=None, price_update_frequency=None, num_products=10
+):
     """
     Calculate the missing parameter from the 2-of-3 model.
 
@@ -505,10 +486,14 @@ def calculate_missing_parameter(days=None, num_events=None, price_update_frequen
     if isinstance(price_update_frequency, str):
         price_update_frequency = parse_time_interval(price_update_frequency)
 
-    params_provided = sum([days is not None, num_events is not None, price_update_frequency is not None])
+    params_provided = sum(
+        [days is not None, num_events is not None, price_update_frequency is not None]
+    )
 
     if params_provided != 2:
-        raise ValueError("Exactly 2 of 3 parameters (days, num-events, price-update-frequency) must be provided")
+        raise ValueError(
+            "Exactly 2 of 3 parameters (days, num-events, price-update-frequency) must be provided"
+        )
 
     if days is not None and num_events is not None:
         # Calculate frequency
@@ -544,3 +529,85 @@ def calculate_missing_parameter(days=None, num_events=None, price_update_frequen
         total_seconds = num_ticks * frequency_seconds
         days = total_seconds / (HOURS_PER_TRADING_DAY * 3600)
         return days, num_events, price_update_frequency
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Generate realistic trading events with 2-of-3 parameter model",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Generate 10 days of data with default 2min updates
+  %(prog)s --days 10 --price-update-frequency 2min
+
+  # Generate 100k events over 5 trading days
+  %(prog)s --days 5 --num-events 100000
+
+  # Generate 50k events with 5min price updates
+  %(prog)s --num-events 50000 --price-update-frequency 5min
+
+Note: Exactly 2 of the 3 parameters (days, num-events, price-update-frequency) must be provided.
+The third will be calculated automatically.
+        """,
+    )
+
+    # 2-of-3 parameter model
+    parser.add_argument("--days", type=float, help="Number of trading days to simulate")
+    parser.add_argument(
+        "--num-events", type=int, help="Total number of events to generate"
+    )
+    parser.add_argument(
+        "--price-update-frequency",
+        type=str,
+        help="Price update interval (e.g., '2min', '5min', '1h')",
+    )
+
+    # Standard parameters
+    parser.add_argument(
+        "--num-users", type=int, default=5, help="Number of users (default: 5)"
+    )
+    parser.add_argument(
+        "--num-products", type=int, default=10, help="Number of products (default: 10)"
+    )
+
+    args = parser.parse_args()
+
+    # Calculate missing parameter
+    try:
+        days, num_events, frequency = calculate_missing_parameter(
+            days=args.days,
+            num_events=args.num_events,
+            price_update_frequency=args.price_update_frequency,
+            num_products=args.num_products,
+        )
+    except ValueError as e:
+        parser.error(str(e))
+
+    # Calculate end_date as today at market close
+    end_date = datetime.now(timezone.utc).replace(
+        hour=16, minute=0, second=0, microsecond=0
+    )
+
+    # Display calculated parameters
+    print("\n=== Calculated Parameters ===")
+    print(f"Trading days: {days:.2f}")
+    print(f"Total events: {num_events:,}")
+    print(f"Price update frequency: {frequency}")
+    print(f"Number of users: {args.num_users}")
+    print(f"Number of products: {args.num_products}")
+    print(f"End date: {end_date.date()}")
+    print()
+
+    gen = EventGenerator(num_users=args.num_users, num_products=args.num_products)
+    try:
+        gen.generate_and_insert(
+            num_events, price_update_interval=frequency, end_date=end_date
+        )
+        print("\nRefreshing continuous aggregates for all granularities...")
+        gen.refresh_continuous_aggregate()
+    finally:
+        gen.close()
+
+    print("Done! Run './main.py show' to see results")
