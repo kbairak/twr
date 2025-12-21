@@ -131,7 +131,9 @@ class UserTimelineEntry:
     deposits: Decimal
     withdrawals: Decimal
     fees: Decimal
+    buy_units: Decimal
+    sell_units: Decimal
     buy_cost: Decimal
     sell_proceeds: Decimal
-    avg_buy_price: Decimal
-    avg_sell_price: Decimal
+    cost_basis: Decimal
+    sell_basis: Decimal

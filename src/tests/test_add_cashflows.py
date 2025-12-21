@@ -8,8 +8,18 @@ import pytest
 
 from performance.granularities import GRANULARITIES
 from performance.interface import add_cashflows
-from performance.models import Cashflow, CumulativeCashflow, PriceUpdate, UserProductTimelineEntry
-from performance.utils import refresh_cumulative_cashflows, refresh_user_product_timeline
+from performance.models import (
+    Cashflow,
+    CumulativeCashflow,
+    PriceUpdate,
+    UserProductTimelineEntry,
+    UserTimelineEntry,
+)
+from performance.utils import (
+    refresh_cumulative_cashflows,
+    refresh_user_product_timeline,
+    refresh_user_timeline,
+)
 from tests.utils import parse_time
 
 
@@ -55,7 +65,9 @@ async def test_invalidate_and_reresh(
     await make_data("""
                     11:59, 12:10, 12:20, 12:40, 12:50, 13:00
         AAPL:         100,      ,   110,   120
+        GOOGL:        200,      ,      ,   210
         Alice/AAPL:      ,    10,      ,      ,     8
+        Alice/GOOGL:     ,     5,      ,      ,
         Bob/AAPL:        ,      ,      ,      ,      ,     1
     """)
     cashflow_rows: list[asyncpg.Record] = await connection.fetch(f"""
@@ -79,6 +91,17 @@ async def test_invalidate_and_reresh(
     price_updates = [PriceUpdate(*pu) for pu in price_update_rows]
     sorted_events = sorted(cumulative_cashflows + price_updates, key=lambda e: e.timestamp)
     await refresh_user_product_timeline(connection, granularity, sorted_events)
+
+    # Also populate user_timeline_cache
+    upt_rows = await connection.fetch(
+        f"""
+            SELECT {", ".join(f.name for f in fields(UserProductTimelineEntry))}
+            FROM user_product_timeline_cache_{granularity.suffix}
+            ORDER BY "timestamp"
+        """
+    )
+    upt_entries = [UserProductTimelineEntry(*upt) for upt in upt_rows]
+    await refresh_user_timeline(connection, granularity, upt_entries, {})
 
     # act
     await add_cashflows(
@@ -140,4 +163,27 @@ async def test_invalidate_and_reresh(
         (parse_time("12:30"), Decimal("6.000000"), Decimal("660.000000")),
         (parse_time("12:45"), Decimal("6.000000"), Decimal("720.000000")),
         (parse_time("12:50"), Decimal("14.000000"), Decimal("1680.000000")),
+    ]
+
+    # assert user_timeline_cache was also invalidated and repaired
+    user_timeline_rows: list[asyncpg.Record] = await connection.fetch(
+        f"""
+            SELECT {", ".join(f.name for f in fields(UserTimelineEntry))}
+            FROM user_timeline_cache_{granularity.suffix}
+            WHERE user_id = $1
+            ORDER BY "timestamp"
+        """,
+        alice,
+    )
+    user_timeline_entries = [UserTimelineEntry(*ut) for ut in user_timeline_rows]
+
+    # Verify aggregation across AAPL and GOOGL
+    assert [
+        (ut.timestamp, ut.net_investment, ut.market_value) for ut in user_timeline_entries
+    ] == [
+        (parse_time("12:10"), Decimal("2000.000000"), Decimal("2000.000000")),  # 10×100 + 5×200
+        (parse_time("12:16"), Decimal("1600.000000"), Decimal("1600.000000")),  # Out-of-order insert
+        (parse_time("12:30"), Decimal("1600.000000"), Decimal("1660.000000")),  # Price updates
+        (parse_time("12:45"), Decimal("1600.000000"), Decimal("1770.000000")),  # AAPL:120, GOOGL:210
+        (parse_time("12:50"), Decimal("2560.000000"), Decimal("2730.000000")),  # Alice buys more AAPL
     ]

@@ -162,6 +162,14 @@ async def refresh_user_timeline(
                 sum(x.fees for x in seed_user_product_timeline[upt.user_id].values())
                 or Decimal("0.000000")
             ),
+            buy_units=(
+                sum(x.buy_units for x in seed_user_product_timeline[upt.user_id].values())
+                or Decimal("0.000000")
+            ),
+            sell_units=(
+                sum(x.sell_units for x in seed_user_product_timeline[upt.user_id].values())
+                or Decimal("0.000000")
+            ),
             buy_cost=(
                 sum(x.buy_cost for x in seed_user_product_timeline[upt.user_id].values())
                 or Decimal("0.000000")
@@ -170,16 +178,20 @@ async def refresh_user_timeline(
                 sum(x.sell_proceeds for x in seed_user_product_timeline[upt.user_id].values())
                 or Decimal("0.000000")
             ),
-            avg_buy_price=(
+            cost_basis=(
                 sum(
-                    x.buy_cost / x.buy_units
+                    x.units_held * (x.buy_cost / x.buy_units)
+                    if x.buy_units > Decimal("0.000000")
+                    else Decimal("0.000000")
                     for x in seed_user_product_timeline[upt.user_id].values()
                 )
                 or Decimal("0.000000")
             ),
-            avg_sell_price=(
+            sell_basis=(
                 sum(
-                    x.sell_proceeds / x.sell_units
+                    x.sell_units * (x.buy_cost / x.buy_units)
+                    if x.buy_units > Decimal("0.000000")
+                    else Decimal("0.000000")
                     for x in seed_user_product_timeline[upt.user_id].values()
                 )
                 or Decimal("0.000000")

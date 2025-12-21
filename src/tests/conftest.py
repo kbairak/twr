@@ -28,7 +28,7 @@ async def connection(postgres) -> AsyncGenerator[asyncpg.Connection, None]:
         yield conn
         await conn.execute(f"""
             TRUNCATE TABLE
-                "user", product, cashflow,
+                "user", product, cashflow, price_update, cumulative_cashflow_cache,
                 {", ".join(f"user_product_timeline_cache_{g.suffix}" for g in GRANULARITIES)},
                 {", ".join(f"user_timeline_cache_{g.suffix}" for g in GRANULARITIES)}
             CASCADE

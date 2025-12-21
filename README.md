@@ -417,3 +417,14 @@ PYTHONPATH=src uv run python -m twr.benchmark --days 10 --price-update-frequency
 # Generate specific number of events
 PYTHONPATH=src uv run python -m twr.benchmark --days 5 --num-events 100000 --num-users 500 --num-products 50
 ```
+
+# TODOs
+
+- [ ] What if cashflow and price update have the same timestamp?
+- [ ] Can we have gaps in the cache during concurrent usage?
+- [ ] Get rid of redundant fields, find ways for dataclasses to have everything (properties maybe?)
+- [ ] Finalize field names
+- [ ] Query interface (cache+delta)
+- [ ] Benchmarks
+- [ ] Dashboard
+- [ ] use asyncio.gather wherever to speed things up if possible
