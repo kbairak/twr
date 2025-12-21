@@ -1,91 +1,88 @@
-"""Pytest configuration and fixtures for TWR tests."""
+from typing import AsyncGenerator, Awaitable, Callable, cast
+from uuid import UUID
 
-from typing import Callable
-import pytest
-import psycopg2
+import asyncpg
+import pytest_asyncio
 from testcontainers.postgres import PostgresContainer
+
+from performance.granularities import GRANULARITIES
+from performance.migrate import run_all_migrations
 from tests.utils import parse_time
-from twr.migrate import run_all_migrations
 
 
-@pytest.fixture(scope="session")
-def postgres_container():
-    """Start PostgreSQL container with TimescaleDB for tests."""
-    with PostgresContainer("timescale/timescaledb:latest-pg16") as postgres:
+@pytest_asyncio.fixture(scope="session")
+async def postgres() -> AsyncGenerator[PostgresContainer, None]:
+    with PostgresContainer("timescale/timescaledb:latest-pg16", driver=None) as postgres:
+        conn: asyncpg.Connection = await asyncpg.connect(postgres.get_connection_url())
+        try:
+            await run_all_migrations(conn)
+        finally:
+            await conn.close()
         yield postgres
 
 
-@pytest.fixture(scope="session")
-def db_connection(postgres_container):
-    """Create database connection and run migrations."""
-    connection = psycopg2.connect(
-        host=postgres_container.get_container_host_ip(),
-        port=postgres_container.get_exposed_port(5432),
-        database=postgres_container.dbname,
-        user=postgres_container.username,
-        password=postgres_container.password,
-    )
-    connection.autocommit = True
-
-    # Run migrations
-    run_all_migrations(connection=connection)
-
-    yield connection
-    connection.close()
+@pytest_asyncio.fixture
+async def connection(postgres) -> AsyncGenerator[asyncpg.Connection, None]:
+    conn: asyncpg.Connection = await asyncpg.connect(postgres.get_connection_url())
+    try:
+        yield conn
+        await conn.execute(f"""
+            TRUNCATE TABLE
+                "user", product, cashflow,
+                {", ".join(f"user_product_timeline_cache_{g.suffix}" for g in GRANULARITIES)},
+                {", ".join(f"user_timeline_cache_{g.suffix}" for g in GRANULARITIES)}
+            CASCADE
+        """)
+    finally:
+        await conn.close()
 
 
-@pytest.fixture
-def query(db_connection):
-    """Execute query and return results as list of dicts (or empty list for statements without RETURNING)."""
+@pytest_asyncio.fixture
+async def user(connection: asyncpg.Connection) -> Callable[[str], Awaitable[UUID]]:
+    users: dict[str, UUID] = {}
 
-    with db_connection.cursor() as cursor:
-        # Truncate tables in dependency order (CASCADE handles foreign keys)
-        cursor.execute('TRUNCATE TABLE "user", product, cashflow CASCADE')
-
-    def fn(q, params=None):
-        with db_connection.cursor() as cursor:
-            cursor.execute(q, params or ())
-            # cursor.description is None for statements without RETURNING
-            if cursor.description is None:
-                return []
-            columns = [desc[0] for desc in cursor.description]
-            return [dict(zip(columns, row)) for row in cursor.fetchall()]
-
-    return fn
-
-
-@pytest.fixture
-def user(query) -> Callable[[str], str]:
-    users = {}
-
-    def fn(seed: str) -> str:
+    async def fn(seed: str) -> UUID:
         if seed not in users:
-            result = query(
-                """INSERT INTO "user" (name) VALUES (%s) RETURNING id""", (seed,)
+            user_id = await connection.fetchval(
+                'INSERT INTO "user" (name) VALUES ($1) RETURNING id', seed
             )
-            users[seed] = result[0]["id"]
+            users[seed] = cast(UUID, user_id)
         return users[seed]
 
     return fn
 
 
-@pytest.fixture
-def product(query) -> Callable[[str], str]:
-    products = {}
+@pytest_asyncio.fixture
+async def alice(user: Callable[[str], Awaitable[UUID]]) -> UUID:
+    return await user("Alice")
 
-    def fn(seed: str) -> str:
+
+@pytest_asyncio.fixture
+async def product(connection: asyncpg.Connection) -> Callable[[str], Awaitable[UUID]]:
+    products: dict[str, UUID] = {}
+
+    async def fn(seed: str) -> UUID:
         if seed not in products:
-            result = query(
-                "INSERT INTO product (name) VALUES (%s) RETURNING id", (seed,)
+            product_id = await connection.fetchval(
+                "INSERT INTO product (name) VALUES ($1) RETURNING id", seed
             )
-            products[seed] = result[0]["id"]
+            products[seed] = cast(UUID, product_id)
         return products[seed]
 
     return fn
 
 
-@pytest.fixture
-def make_data(query, product, user):
+@pytest_asyncio.fixture
+async def aapl(product: Callable[[str], Awaitable[UUID]]) -> UUID:
+    return await product("AAPL")
+
+
+@pytest_asyncio.fixture
+async def make_data(
+    connection: asyncpg.Connection,
+    product: Callable[[str], Awaitable[str]],
+    user: Callable[[str], Awaitable[str]],
+) -> Callable[[str], Awaitable[None]]:
     '''
     Usage:
 
@@ -101,7 +98,7 @@ def make_data(query, product, user):
     (at market prices).
     '''
 
-    def fn(text):
+    async def fn(text):
         price_updates = {}
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         timestamps = [parse_time(t.strip()) for t in lines[0].split(",")]
@@ -118,9 +115,11 @@ def make_data(query, product, user):
                     except ValueError:
                         continue
                     price_updates.setdefault(product_name, {})[timestamp] = price
-                    query(
-                        "INSERT INTO price_update (product_id, timestamp, price) VALUES (%s, %s, %s)",
-                        (product(product_name), timestamp, price),
+                    await connection.execute(
+                        "INSERT INTO price_update (product_id, timestamp, price) VALUES ($1, $2, $3)",
+                        await product(product_name),
+                        timestamp,
+                        price,
                     )
             else:
                 units_str = [u.strip() for u in values.split(",")]
@@ -130,29 +129,23 @@ def make_data(query, product, user):
                     except ValueError:
                         continue
                     price = sorted(
-                        [
-                            (t, p)
-                            for t, p in price_updates[product_name].items()
-                            if t <= timestamp
-                        ],
+                        [(t, p) for t, p in price_updates[product_name].items() if t <= timestamp],
                         key=lambda x: x[0],
                         reverse=True,
                     )[0][1]
-                    query(
+                    await connection.execute(
                         "INSERT INTO cashflow ("
                         "user_id, product_id, timestamp, units_delta, execution_price, "
                         "execution_money, user_money, fees"
-                        ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                        (
-                            user(user_name),
-                            product(product_name),
-                            timestamp,
-                            units,
-                            price,
-                            units * price,
-                            units * price,
-                            0,
-                        ),
+                        ") VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                        await user(user_name),
+                        await product(product_name),
+                        timestamp,
+                        units,
+                        price,
+                        units * price,
+                        units * price,
+                        0,
                     )
 
     return fn

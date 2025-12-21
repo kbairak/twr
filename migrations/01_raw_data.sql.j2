@@ -44,7 +44,7 @@ SELECT add_compression_policy('price_update', INTERVAL '7 days');
     CREATE MATERIALIZED VIEW price_update_{{ g.suffix }}
     WITH (timescaledb.continuous) AS
     SELECT product_id,
-           time_bucket('{{ g.interval }}', "timestamp") AS bucket,
+           time_bucket('{{ g.interval }}', "timestamp") + '{{ g.interval }}'::interval AS "timestamp",
            last(price, "timestamp") AS price  -- Closing price for the bucket
     FROM price_update
     GROUP BY product_id, time_bucket('{{ g.interval }}', "timestamp")
@@ -56,111 +56,6 @@ SELECT add_compression_policy('price_update', INTERVAL '7 days');
                                            schedule_interval => INTERVAL '{{ g.interval }}');
 
     CREATE INDEX idx_price_update_{{ g.suffix }}_product_bucket
-        ON price_update_{{ g.suffix }} (product_id, bucket DESC) INCLUDE (price);
+        ON price_update_{{ g.suffix }} (product_id, "timestamp" DESC) INCLUDE (price);
 
 {% endfor %}
-
-
--- This trigger ensures data integrity for the 5 interdependent cashflow fields:
---   units_delta, execution_price, execution_money, user_money, fees
-CREATE OR REPLACE FUNCTION validate_and_fill_cashflow()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NEW.units_delta IS NULL THEN
-        -- We can derive units from execution money and price
-        IF NEW.execution_money IS NOT NULL AND NEW.execution_price IS NOT NULL THEN
-            NEW.units_delta := NEW.execution_money / NEW.execution_price;
-        ELSE
-            RAISE EXCEPTION 'units_delta is NULL and cannot be derived';
-        END IF;
-    END IF;
-
-    IF NEW.execution_price IS NULL THEN
-        -- We can derive execution price from money and units
-        IF NEW.execution_money IS NOT NULL AND NEW.units_delta IS NOT NULL THEN
-            NEW.execution_price := NEW.execution_money / NEW.units_delta;
-        ELSE
-            RAISE EXCEPTION 'execution_price is NULL and cannot be derived';
-        END IF;
-    END IF;
-
-    IF NEW.execution_money IS NULL THEN
-        -- We can derive execution money from units and price
-        IF NEW.units_delta IS NOT NULL AND NEW.execution_price IS NOT NULL THEN
-            NEW.execution_money := NEW.units_delta * NEW.execution_price;
-        -- or from user money and fees
-        ELSIF NEW.user_money IS NOT NULL AND NEW.fees IS NOT NULL THEN
-            NEW.execution_money := NEW.user_money - NEW.fees;
-        ELSE
-            RAISE EXCEPTION 'execution_money is NULL and cannot be derived';
-        END IF;
-    END IF;
-
-    IF NEW.user_money IS NULL THEN
-        -- We can derive user money from execution money and fees
-        IF NEW.execution_money IS NOT NULL AND NEW.fees IS NOT NULL THEN
-            NEW.user_money := NEW.execution_money + NEW.fees;
-        ELSE
-            RAISE EXCEPTION 'user_money is NULL and cannot be derived';
-        END IF;
-    END IF;
-
-    IF NEW.fees IS NULL THEN
-        -- We can derive fees from user money and execution money
-        IF NEW.user_money IS NOT NULL AND NEW.execution_money IS NOT NULL THEN
-            NEW.fees := NEW.user_money - NEW.execution_money;
-        ELSE
-            RAISE EXCEPTION 'fees is NULL and cannot be derived';
-        END IF;
-    END IF;
-
-    -- Validate execution price = money / units
-    IF abs((NEW.units_delta * NEW.execution_price) - NEW.execution_money) > 0.01 THEN
-        RAISE EXCEPTION
-            'Inconsistent data: execution_money (%) != units_delta (%) × execution_price (%). Difference: %',
-            NEW.execution_money, NEW.units_delta, NEW.execution_price,
-            abs((NEW.units_delta * NEW.execution_price) - NEW.execution_money);
-    END IF;
-
-    -- Validate user money = execution money + fees
-    IF abs((NEW.execution_money + NEW.fees) - NEW.user_money) > 0.01 THEN
-        RAISE EXCEPTION 'Inconsistent data: user_money (%) != execution_money (%) + fees (%). Difference: %',
-            NEW.user_money, NEW.execution_money, NEW.fees,
-            abs((NEW.execution_money + NEW.fees) - NEW.user_money);
-    END IF;
-
-    -- Validate: fees must be non-negative
-    IF NEW.fees < 0 THEN
-        RAISE EXCEPTION 'Fees must be non-negative (>= 0), got %', NEW.fees;
-    END IF;
-
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Attach trigger to cashflow table
-CREATE TRIGGER cashflow_fill_and_validate
-    BEFORE INSERT OR UPDATE ON cashflow
-    FOR EACH ROW
-    EXECUTE FUNCTION validate_and_fill_cashflow();
-
-CREATE OR REPLACE FUNCTION invalidate_and_repair_all()
-RETURNS TRIGGER AS $$
-BEGIN
-    PERFORM invalidate_cumulative_cashflow_cache(NEW.user_id, NEW.product_id, NEW."timestamp");
-    PERFORM repair_cumulative_cashflow(NEW.user_id, NEW.product_id);
-
-    PERFORM invalidate_user_product_timeline_cache(NEW.user_id, NEW.product_id, NEW."timestamp");
-    PERFORM repair_user_product_timeline(NEW.user_id, NEW.product_id);
-
-    PERFORM invalidate_user_timeline_cache(NEW.user_id, NEW."timestamp");
-    PERFORM repair_user_timeline(NEW.user_id);
-
-    RETURN NEW;
-END
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER cashflow_auto_repair_caches
-    AFTER INSERT ON cashflow
-    FOR EACH ROW
-    EXECUTE FUNCTION invalidate_and_repair_all();

@@ -1,3 +1,5 @@
-- run the tests after each change to the code, command is `uv run pytest`. only run the tests when the code that the tests actually cover is changed
+- run the tests after each change to the code, command is `uv run pytest src/tests`. only run the tests when the code that the tests actually cover is changed
 - you can connect to the database with `PGPASSWORD=twr_password psql --host 127.0.0.1 twr twr_user`
 - uv run pytest can fail because of tetcontainers/macos issue. If this happens, simply rerun the tests
+- Whenever you are about to write a big chunk of code, don't do that. Instead show it to me one step at a time to give me a chance to offer feedback and/or corrections
+- This is a fin-tech app, use 6 digit precision whenever you define a decimal number
