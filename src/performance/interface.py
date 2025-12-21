@@ -198,7 +198,8 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow):
         )
         sorted_price_updates = [PriceUpdate(*pu) for pu in sorted_price_update_rows]
         sorted_events = sorted(
-            sorted_cumulative_cashflows + sorted_price_updates, key=lambda e: e.timestamp
+            sorted_cumulative_cashflows + sorted_price_updates,
+            key=lambda e: (e.timestamp, isinstance(e, CumulativeCashflow)),
         )
         seed_price_update_rows = await connection.fetch(
             f"""
@@ -281,6 +282,15 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow):
 
 
 @_transaction
+async def add_price_update(connection: asyncpg.Connection, *price_updates: PriceUpdate):
+    await connection.copy_records_to_table(
+        "price_update",
+        records=[astuple(pu) for pu in price_updates],
+        columns=[f.name for f in fields(PriceUpdate)],
+    )
+
+
+@_transaction
 async def refresh(connection: asyncpg.Connection):
     # Get last cumulative_cashflow per user-product
     seed_cumulative_cashflow_rows: list[asyncpg.Record] = await connection.fetch(f"""
@@ -329,7 +339,8 @@ async def refresh(connection: asyncpg.Connection):
         """)
         sorted_price_updates = [PriceUpdate(*pu) for pu in sorted_price_update_rows]
         sorted_events = sorted(
-            sorted_cumulative_cashflows + sorted_price_updates, key=lambda e: e.timestamp
+            sorted_cumulative_cashflows + sorted_price_updates,
+            key=lambda e: (e.timestamp, isinstance(e, CumulativeCashflow)),
         )
         await refresh_user_product_timeline(
             connection, granularity, sorted_events, seed_cumulative_cashflows, seed_price_updates

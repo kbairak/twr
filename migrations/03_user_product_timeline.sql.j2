@@ -7,7 +7,7 @@
         "timestamp" TIMESTAMPTZ NOT NULL,
 
         -- Portfolio state (all cumulative fields from cumulative_cashflow)
-        units_held NUMERIC(20, 6),
+        units NUMERIC(20, 6),
         net_investment NUMERIC(20, 6),
         deposits NUMERIC(20, 6),
         withdrawals NUMERIC(20, 6),
@@ -18,7 +18,7 @@
         sell_proceeds NUMERIC(20, 6),
 
         -- Market data
-        market_value NUMERIC(20, 6),  -- units_held × market_price
+        market_value NUMERIC(20, 6),  -- units × market_price
 
         PRIMARY KEY (user_id, product_id, "timestamp")
     );

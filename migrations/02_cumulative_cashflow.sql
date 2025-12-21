@@ -7,7 +7,7 @@ CREATE TABLE cumulative_cashflow_cache (
     "timestamp" TIMESTAMPTZ NOT NULL,
 
     -- Current state (net of all transactions up to this point)
-    units_held NUMERIC(20, 6),        -- current holdings (buys - sells)
+    units NUMERIC(20, 6),        -- current holdings (buys - sells)
     net_investment NUMERIC(20, 6),    -- net cash (deposits - withdrawals)
 
     -- Monotonic totals - cash flows (always increasing)

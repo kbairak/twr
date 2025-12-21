@@ -6,7 +6,7 @@ import asyncpg
 import pytest
 
 from performance.granularities import GRANULARITIES
-from performance.models import Cashflow, PriceUpdate, UserProductTimelineEntry, UserTimelineEntry
+from performance.models import Cashflow, CumulativeCashflow, PriceUpdate, UserProductTimelineEntry, UserTimelineEntry
 from performance.utils import (
     refresh_cumulative_cashflows,
     refresh_user_product_timeline,
@@ -61,7 +61,10 @@ async def test_multi_product_creates_timeline_events(
     price_updates = [PriceUpdate(*pu) for pu in price_update_rows]
 
     # Sort events
-    sorted_events = sorted(cumulative_cashflows + price_updates, key=lambda e: e.timestamp)
+    sorted_events = sorted(
+        cumulative_cashflows + price_updates,
+        key=lambda e: (e.timestamp, isinstance(e, CumulativeCashflow)),
+    )
 
     # Refresh user_product_timeline
     user_product_timeline_entries = await refresh_user_product_timeline(
@@ -166,7 +169,10 @@ async def test_refresh_only_a_few(
     price_updates = [PriceUpdate(*pu) for pu in price_update_rows]
 
     # Sort events
-    sorted_events = sorted(cumulative_cashflows + price_updates, key=lambda e: e.timestamp)
+    sorted_events = sorted(
+        cumulative_cashflows + price_updates,
+        key=lambda e: (e.timestamp, isinstance(e, CumulativeCashflow)),
+    )
 
     # Refresh user_product_timeline
     user_product_timeline_entries = await refresh_user_product_timeline(
@@ -246,7 +252,10 @@ async def test_with_seed_values(
     price_updates = [PriceUpdate(*pu) for pu in price_update_rows]
 
     # Sort events
-    sorted_events = sorted(cumulative_cashflows + price_updates, key=lambda e: e.timestamp)
+    sorted_events = sorted(
+        cumulative_cashflows + price_updates,
+        key=lambda e: (e.timestamp, isinstance(e, CumulativeCashflow)),
+    )
 
     # Refresh user_product_timeline
     user_product_timeline_entries = await refresh_user_product_timeline(

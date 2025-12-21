@@ -90,7 +90,7 @@ class CumulativeCashflow:
     product_id: UUID
     timestamp: datetime.datetime
 
-    units_held: Decimal = Decimal("0.000000")
+    units: Decimal = Decimal("0.000000")
     net_investment: Decimal = Decimal("0.000000")
     deposits: Decimal = Decimal("0.000000")
     withdrawals: Decimal = Decimal("0.000000")
@@ -107,7 +107,7 @@ class UserProductTimelineEntry:
     product_id: UUID
     timestamp: datetime.datetime
 
-    units_held: Decimal = Decimal("0.000000")
+    units: Decimal = Decimal("0.000000")
     net_investment: Decimal = Decimal("0.000000")
     deposits: Decimal = Decimal("0.000000")
     withdrawals: Decimal = Decimal("0.000000")

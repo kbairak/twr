@@ -37,7 +37,7 @@ async def test_refresh_cumulative_cashflows(
         ORDER BY "timestamp"
     """)
     cumulative_cashflows = [CumulativeCashflow(*ccf) for ccf in cumulative_cashflow_rows]
-    assert [ccf.units_held for ccf in cumulative_cashflows] == [
+    assert [ccf.units for ccf in cumulative_cashflows] == [
         Decimal("1.000000"),
         Decimal("3.000000"),
     ]
@@ -71,7 +71,7 @@ async def test_refresh_only_a_few(
         ORDER BY "timestamp"
     """)
     cumulative_cashflows = [CumulativeCashflow(*ccf) for ccf in cumulative_cashflow_rows]
-    assert [ccf.units_held for ccf in cumulative_cashflows] == [Decimal("1.000000")]
+    assert [ccf.units for ccf in cumulative_cashflows] == [Decimal("1.000000")]
 
 
 @pytest.mark.asyncio
@@ -118,4 +118,4 @@ async def test_with_seed_data(
         seed_cumulative_cashflows={alice: {aapl: ccf_1}},
     )
 
-    assert [ccf_1.units_held, ccf_2.units_held] == [Decimal("1.000000"), Decimal("3.000000")]
+    assert [ccf_1.units, ccf_2.units] == [Decimal("1.000000"), Decimal("3.000000")]

@@ -89,7 +89,10 @@ async def test_invalidate_and_reresh(
         ORDER BY "timestamp"
     """)
     price_updates = [PriceUpdate(*pu) for pu in price_update_rows]
-    sorted_events = sorted(cumulative_cashflows + price_updates, key=lambda e: e.timestamp)
+    sorted_events = sorted(
+        cumulative_cashflows + price_updates,
+        key=lambda e: (e.timestamp, isinstance(e, CumulativeCashflow)),
+    )
     await refresh_user_product_timeline(connection, granularity, sorted_events)
 
     # Also populate user_timeline_cache
@@ -135,7 +138,7 @@ async def test_invalidate_and_reresh(
         aapl,
     )
     cumulative_cashflows = [CumulativeCashflow(*ccf) for ccf in cumulative_cashflow_rows]
-    assert [(ccf.timestamp, ccf.units_held) for ccf in cumulative_cashflows] == [
+    assert [(ccf.timestamp, ccf.units) for ccf in cumulative_cashflows] == [
         (parse_time("12:10"), Decimal("10.000000")),
         (parse_time("12:16"), Decimal("6.000000")),
         (parse_time("12:50"), Decimal("14.000000")),
@@ -156,7 +159,7 @@ async def test_invalidate_and_reresh(
         UserProductTimelineEntry(*upt) for upt in user_product_timeline_rows
     ]
     assert [
-        (upt.timestamp, upt.units_held, upt.market_value) for upt in user_product_timeline_entries
+        (upt.timestamp, upt.units, upt.market_value) for upt in user_product_timeline_entries
     ] == [
         (parse_time("12:10"), Decimal("10.000000"), Decimal("1000.000000")),
         (parse_time("12:16"), Decimal("6.000000"), Decimal("600.000000")),

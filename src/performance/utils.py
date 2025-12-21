@@ -54,7 +54,7 @@ async def refresh_cumulative_cashflows(
             user_id=cf.user_id,
             product_id=cf.product_id,
             timestamp=cf.timestamp,
-            units_held=start.units_held + cf.units_delta,
+            units=start.units + cf.units_delta,
             net_investment=start.net_investment + cf.user_money,
             deposits=start.deposits
             + (cf.user_money if cf.units_delta > Decimal("0.000000") else Decimal("0.000000")),
@@ -107,7 +107,7 @@ async def refresh_user_product_timeline(
                 continue
             kwargs = asdict(ccf)
             del kwargs["cashflow_id"]
-            kwargs["market_value"] = ccf.units_held * pu.price
+            kwargs["market_value"] = ccf.units * pu.price
             upt = UserProductTimelineEntry(**kwargs)
             records[(upt.user_id, upt.product_id, upt.timestamp)] = upt
             seed_cumulative_cashflows.setdefault(ccf.product_id, {})[ccf.user_id] = ccf
@@ -116,7 +116,7 @@ async def refresh_user_product_timeline(
                 kwargs = asdict(ccf)
                 del kwargs["cashflow_id"]
                 kwargs["timestamp"] = pu.timestamp
-                kwargs["market_value"] = ccf.units_held * pu.price
+                kwargs["market_value"] = ccf.units * pu.price
                 upt = UserProductTimelineEntry(**kwargs)
                 records[(upt.user_id, upt.product_id, upt.timestamp)] = upt
                 seed_cumulative_cashflows.setdefault(pu.product_id, {})[ccf.user_id] = ccf
@@ -180,7 +180,7 @@ async def refresh_user_timeline(
             ),
             cost_basis=(
                 sum(
-                    x.units_held * (x.buy_cost / x.buy_units)
+                    x.units * (x.buy_cost / x.buy_units)
                     if x.buy_units > Decimal("0.000000")
                     else Decimal("0.000000")
                     for x in seed_user_product_timeline[upt.user_id].values()

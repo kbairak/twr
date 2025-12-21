@@ -2,7 +2,7 @@
 
 -- INSERT INTO cumulative_cashflows (
 --     cashflow_id, user_id, product_id, timestamp,
---     units_held, net_investment, deposits, withdrawals, fees,
+--     units, net_investment, deposits, withdrawals, fees,
 --     buy_units, sell_units, buy_cost, sell_proceeds
 -- )
 EXPLAIN ANALYZE
@@ -12,7 +12,7 @@ SELECT
     product_id,
     timestamp,
     -- 1. Simple Sums
-    SUM(units_delta) OVER w AS units_held,
+    SUM(units_delta) OVER w AS units,
     SUM(execution_money) OVER w AS net_investment, -- Assuming execution_money = net flow
     
     -- 2. Conditional Sums (Python: if units > 0 ...)
@@ -44,13 +44,13 @@ WITH
                LEAD("timestamp", 1, 'infinity'::timestamptz) OVER (
                    PARTITION BY user_id, product_id ORDER BY "timestamp", cashflow_id
                ) AS valid_to,
-               units_held, net_investment, deposits, withdrawals, fees, buy_units, sell_units,
+               units, net_investment, deposits, withdrawals, fees, buy_units, sell_units,
                buy_cost, sell_proceeds
         FROM cumulative_cashflow_cache
     )
-SELECT ccf.user_id, ccf.product_id, ccf."timestamp", ccf.units_held, ccf.net_investment,
+SELECT ccf.user_id, ccf.product_id, ccf."timestamp", ccf.units, ccf.net_investment,
        ccf.deposits, ccf.withdrawals, ccf.fees, ccf.buy_units, ccf.sell_units, ccf.buy_cost,
-       ccf.sell_proceeds, (ccf.units_held * pu.price) AS market_value
+       ccf.sell_proceeds, (ccf.units * pu.price) AS market_value
 FROM cumulative_cashflow_cache ccf
     CROSS JOIN LATERAL (
         SELECT price 
@@ -60,9 +60,9 @@ FROM cumulative_cashflow_cache ccf
         LIMIT 1
     ) pu
 UNION ALL
-SELECT ccf.user_id, ccf.product_id, pu.bucket, ccf.units_held, ccf.net_investment, ccf.deposits,
+SELECT ccf.user_id, ccf.product_id, pu.bucket, ccf.units, ccf.net_investment, ccf.deposits,
        ccf.withdrawals, ccf.fees, ccf.buy_units, ccf.sell_units, ccf.buy_cost, ccf.sell_proceeds,
-       (ccf.units_held * pu.price) AS market_value
+       (ccf.units * pu.price) AS market_value
 FROM cashflow_intervals ccf
     CROSS JOIN LATERAL (
         SELECT bucket, price

@@ -32,7 +32,7 @@ class CumulativeCashflow:
     product_id: UUID
     timestamp: datetime.datetime
 
-    units_held: float = 0.0
+    units: float = 0.0
     net_investment: float = 0.0
     deposits: float = 0.0
     withdrawals: float = 0.0
@@ -49,7 +49,7 @@ class UserProductTimelineEntry:
     product_id: UUID
     timestamp: datetime.datetime
 
-    units_held: float = 0.0
+    units: float = 0.0
     net_investment: float = 0.0
     deposits: float = 0.0
     withdrawals: float = 0.0
@@ -100,7 +100,7 @@ def generate_cumulative_cashflows(
             user_id=cf.user_id,
             product_id=cf.product_id,
             timestamp=cf.timestamp,
-            units_held=start.units_held + cf.units_delta,
+            units=start.units + cf.units_delta,
             net_investment=start.net_investment + cf.user_money,
             deposits=start.deposits + (cf.user_money if cf.units_delta > 0.0 else 0.0),
             withdrawals=start.withdrawals + (-cf.user_money if cf.units_delta < 0.0 else 0.0),
@@ -128,7 +128,7 @@ def generate_user_product_timeline(
                 continue
             kwargs = asdict(ccf)
             del kwargs["id"]
-            kwargs["market_value"] = ccf.units_held * pu.price
+            kwargs["market_value"] = ccf.units * pu.price
             result = UserProductTimelineEntry(**kwargs)
             yield result
             last_ccf_per_product_user.setdefault(ccf.product_id, {})[ccf.user_id] = ccf
@@ -136,7 +136,7 @@ def generate_user_product_timeline(
             for ccf in last_ccf_per_product_user.get(pu.product_id, {}).values():
                 kwargs = asdict(ccf)
                 del kwargs["id"]
-                kwargs["market_value"] = ccf.units_held * pu.price
+                kwargs["market_value"] = ccf.units * pu.price
                 result = UserProductTimelineEntry(**kwargs)
                 yield result
                 last_ccf_per_product_user.setdefault(pu.product_id, {})[ccf.user_id] = ccf

@@ -172,7 +172,7 @@ The timeline views provide fields for calculating investment performance metrics
 
 **Available fields in `user_product_timeline` (per-product level):**
 
-- Position: `units_held`, `market_value`
+- Position: `units`, `market_value`
 - Investment: `net_investment`, `deposits`, `withdrawals`, `fees`
 - Cost tracking: `buy_cost`, `buy_units`, `sell_proceeds`, `sell_units`
 
@@ -185,7 +185,7 @@ The timeline views provide fields for calculating investment performance metrics
 **Calculable metrics:**
 
 1. **Average cost basis** (per-product): `buy_cost / buy_units`
-2. **Unrealized returns** (per-product): `market_value - (average_cost_basis × units_held)`
+2. **Unrealized returns** (per-product): `market_value - (average_cost_basis × units)`
 3. **Unrealized returns** (portfolio): `market_value - cost_basis`
 4. **Realized returns** (portfolio): `sell_proceeds - sell_basis`
 5. **Total returns** (portfolio): `unrealized_returns + realized_returns`
@@ -199,7 +199,7 @@ For a specific product:
 ```sql
 SELECT
   timestamp,
-  market_value - (buy_cost / NULLIF(buy_units, 0) * units_held) AS unrealized_returns
+  market_value - (buy_cost / NULLIF(buy_units, 0) * units) AS unrealized_returns
 FROM user_product_timeline_1d
 WHERE user_id = %s
   AND product_id = %s
@@ -420,10 +420,9 @@ PYTHONPATH=src uv run python -m twr.benchmark --days 5 --num-events 100000 --num
 
 # TODOs
 
-- [ ] What if cashflow and price update have the same timestamp?
+- [x] What if cashflow and price update have the same timestamp? - Fixed: price updates are sorted before cashflows when timestamps are equal
 - [ ] Can we have gaps in the cache during concurrent usage?
 - [ ] Get rid of redundant fields, find ways for dataclasses to have everything (properties maybe?)
-- [ ] Finalize field names
 - [ ] Query interface (cache+delta)
 - [ ] Benchmarks
 - [ ] Dashboard
