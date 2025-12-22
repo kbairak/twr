@@ -420,10 +420,8 @@ PYTHONPATH=src uv run python -m twr.benchmark --days 5 --num-events 100000 --num
 
 # TODOs
 
-- [x] What if cashflow and price update have the same timestamp? - Fixed: price updates are sorted before cashflows when timestamps are equal
 - [ ] Can we have gaps in the cache during concurrent usage?
 - [ ] Get rid of redundant fields, find ways for dataclasses to have everything (properties maybe?)
-- [ ] Query interface (cache+delta)
 - [ ] Benchmarks
 - [ ] Dashboard
 - [ ] use asyncio.gather wherever to speed things up if possible

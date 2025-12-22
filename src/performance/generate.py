@@ -1,5 +1,5 @@
 from faker import Faker
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, timedelta, timezone, time
 from typing import Iterator
 import random
@@ -14,6 +14,14 @@ MARKET_OPEN = time(9, 30)  # 9:30 AM
 MARKET_CLOSE = time(16, 0)  # 4:00 PM
 PRICE_UPDATE_INTERVAL = timedelta(minutes=2)
 START_DATE = datetime(2024, 1, 2, 9, 30, tzinfo=timezone.utc)  # Tuesday Jan 2, 2024
+
+# Precision constant for fintech calculations (6 decimal places)
+PRECISION = Decimal("0.000001")
+
+
+def quantize(value: Decimal) -> Decimal:
+    """Quantize a Decimal to 6 decimal places for fintech precision"""
+    return value.quantize(PRECISION, rounding=ROUND_HALF_UP)
 
 
 def generate_trading_timestamps(
@@ -241,12 +249,14 @@ class EventGenerator:
 
                 # Update price
                 if product not in self.current_prices:
-                    price = Decimal(str(self.initial_price))
+                    price = quantize(Decimal(str(self.initial_price)))
                 else:
                     delta = random.uniform(*self.price_delta_range)
                     price = self.current_prices[product] * (1 + Decimal(str(delta)))
                     # Clamp price to prevent overflow
                     price = max(self.min_price, min(self.max_price, price))
+                    # Quantize to 6 decimal places
+                    price = quantize(price)
 
                 self.current_prices[product] = price
                 price_events.append(
@@ -333,21 +343,21 @@ class EventGenerator:
         current_holdings = self.holdings.get(key, Decimal("0.000000"))
 
         # Generate money amount
-        money = Decimal(str(random.uniform(*self.cashflow_money_range)))
+        money = quantize(Decimal(str(random.uniform(*self.cashflow_money_range))))
 
         # 20% chance of sell
         if random.random() < 0.2 and current_holdings > 0:
             # Sell between 10% and 80% of holdings
-            sell_fraction = Decimal(str(random.uniform(0.1, 0.8)))
-            units_delta = -(current_holdings * sell_fraction)
-            execution_money = units_delta * current_price  # Negative for sell
+            sell_fraction = quantize(Decimal(str(random.uniform(0.1, 0.8))))
+            units_delta = quantize(-(current_holdings * sell_fraction))
+            execution_money = quantize(units_delta * current_price)  # Negative for sell
         else:
             # Buy
-            units_delta = money / current_price
-            execution_money = units_delta * current_price  # Positive for buy
+            units_delta = quantize(money / current_price)
+            execution_money = quantize(units_delta * current_price)  # Positive for buy
 
         # Update holdings
-        new_holdings = current_holdings + units_delta
+        new_holdings = quantize(current_holdings + units_delta)
         if new_holdings < 0:
             return None
 

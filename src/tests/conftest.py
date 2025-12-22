@@ -78,6 +78,11 @@ async def aapl(product: Callable[[str], Awaitable[UUID]]) -> UUID:
 
 
 @pytest_asyncio.fixture
+async def googl(product: Callable[[str], Awaitable[UUID]]) -> UUID:
+    return await product("GOOGL")
+
+
+@pytest_asyncio.fixture
 async def make_data(
     connection: asyncpg.Connection,
     product: Callable[[str], Awaitable[str]],

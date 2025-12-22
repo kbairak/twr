@@ -14,22 +14,10 @@ from performance.models import (
 )
 
 
-async def refresh_cumulative_cashflows(
-    connection: asyncpg.Connection,
+async def compute_cumulative_cashflows(
     sorted_cashflows: list[Cashflow],
     seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]] | None = None,
 ) -> list[CumulativeCashflow]:
-    # Use cases:
-    # - refresh first time ever
-    # - refresh incrementally
-    # - repair
-    #
-    # in all cases, I need:
-    # - a list of cashflows to convert, contains information of:
-    #   - ending watermark
-    #   - which user-products to process
-    # - a starting seed_cumulative_cashflows
-
     if seed_cumulative_cashflows is None:
         seed_cumulative_cashflows = {}
 
@@ -78,6 +66,15 @@ async def refresh_cumulative_cashflows(
         )
         seed_cumulative_cashflows.setdefault(cf.user_id, {})[cf.product_id] = new
         records.append(new)
+    return records
+
+
+async def refresh_cumulative_cashflows(
+    connection: asyncpg.Connection,
+    sorted_cashflows: list[Cashflow],
+    seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]] | None = None,
+) -> list[CumulativeCashflow]:
+    records = await compute_cumulative_cashflows(sorted_cashflows, seed_cumulative_cashflows)
     await connection.copy_records_to_table(
         "cumulative_cashflow_cache",
         records=[astuple(r) for r in records],
@@ -86,9 +83,7 @@ async def refresh_cumulative_cashflows(
     return records
 
 
-async def refresh_user_product_timeline(
-    connection: asyncpg.Connection,
-    granularity: Granularity,
+async def compute_user_product_timeline(
     sorted_events: list[CumulativeCashflow | PriceUpdate],
     seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]] | None = None,
     seed_price_updates: dict[UUID, PriceUpdate] | None = None,
@@ -121,18 +116,28 @@ async def refresh_user_product_timeline(
                 records[(upt.user_id, upt.product_id, upt.timestamp)] = upt
                 seed_cumulative_cashflows.setdefault(pu.product_id, {})[ccf.user_id] = ccf
             seed_price_updates[pu.product_id] = pu
-    result = list(records.values())
-    await connection.copy_records_to_table(
-        f"user_product_timeline_cache_{granularity.suffix}",
-        records=[astuple(upt) for upt in result],
-        columns=[f.name for f in fields(UserProductTimelineEntry)],
-    )
-    return result
+    return list(records.values())
 
 
-async def refresh_user_timeline(
+async def refresh_user_product_timeline(
     connection: asyncpg.Connection,
     granularity: Granularity,
+    sorted_events: list[CumulativeCashflow | PriceUpdate],
+    seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]] | None = None,
+    seed_price_updates: dict[UUID, PriceUpdate] | None = None,
+) -> list[UserProductTimelineEntry]:
+    records = await compute_user_product_timeline(
+        sorted_events, seed_cumulative_cashflows, seed_price_updates
+    )
+    await connection.copy_records_to_table(
+        f"user_product_timeline_cache_{granularity.suffix}",
+        records=[astuple(upt) for upt in records],
+        columns=[f.name for f in fields(UserProductTimelineEntry)],
+    )
+    return records
+
+
+async def compute_user_timeline(
     sorted_user_product_timeline: list[UserProductTimelineEntry],
     seed_user_product_timeline: dict[UUID, dict[UUID, UserProductTimelineEntry]],
 ) -> list[UserTimelineEntry]:
@@ -197,10 +202,19 @@ async def refresh_user_timeline(
                 or Decimal("0.000000")
             ),
         )
-    result = list(records.values())
+    return list(records.values())
+
+
+async def refresh_user_timeline(
+    connection: asyncpg.Connection,
+    granularity: Granularity,
+    sorted_user_product_timeline: list[UserProductTimelineEntry],
+    seed_user_product_timeline: dict[UUID, dict[UUID, UserProductTimelineEntry]],
+) -> list[UserTimelineEntry]:
+    records = await compute_user_timeline(sorted_user_product_timeline, seed_user_product_timeline)
     await connection.copy_records_to_table(
         f"user_timeline_cache_{granularity.suffix}",
-        records=[astuple(ut) for ut in result],
+        records=[astuple(ut) for ut in records],
         columns=[f.name for f in fields(UserTimelineEntry)],
     )
-    return result
+    return records
