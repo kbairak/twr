@@ -8,42 +8,38 @@ from asyncpg.cursor import CursorFactory
 from performance.models import BasePerformanceEntry
 
 
-async def batch_insert(
+async def batch_insert[T: BasePerformanceEntry](
     connection: asyncpg.Connection,
     table_name: str,
-    records: AsyncIterator[BasePerformanceEntry],
+    entries: AsyncIterator[T],
     columns: list[str],
     batch_size: int = 10000,
-) -> int:
-    """Insert records into database table in batches.
+) -> AsyncIterator[T]:
+    """Insert entries into database table in batches.
 
     Args:
         connection: Database connection
         table_name: Table name to insert into
-        records: Async iterator of BasePerformanceEntry objects
+        entries: Async iterator of BasePerformanceEntry objects
         columns: Column names for insertion
-        batch_size: Number of records per batch
-
-    Returns:
-        Total number of records inserted
+        batch_size: Number of entries per batch
     """
     batch = []
     total = 0
 
-    async for record in records:
-        batch.append(record.to_tuple())
+    async for entry in entries:
+        batch.append(entry.to_tuple())
 
         if len(batch) >= batch_size:
             await connection.copy_records_to_table(table_name, records=batch, columns=columns)
             total += len(batch)
             batch.clear()
+        yield entry
 
-    # Insert remaining records
+    # Insert remaining entries
     if batch:
         await connection.copy_records_to_table(table_name, records=batch, columns=columns)
         total += len(batch)
-
-    return total
 
 
 async def deduplicate_by_timestamp[E: BasePerformanceEntry](

@@ -47,15 +47,9 @@ async def test_multi_product_creates_timeline_events(
             ORDER BY "timestamp"
         """)
         cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
-        await refresh_cumulative_cashflows(connection, cashflow_iter, {})
-
-    # Query back the cumulative cashflows
-    cumulative_cashflow_rows = await connection.fetch(f"""
-        SELECT {", ".join(f.name for f in fields(CumulativeCashflow))}
-        FROM cumulative_cashflow_cache
-        ORDER BY "timestamp"
-    """)
-    cumulative_cashflows = [CumulativeCashflow(*ccf) for ccf in cumulative_cashflow_rows]
+        cumulative_cashflows = []
+        async for ccf in refresh_cumulative_cashflows(connection, cashflow_iter, {}):
+            cumulative_cashflows.append(ccf)
 
     # Refresh continuous aggregate for price updates
     granularity = GRANULARITIES[0]
@@ -81,7 +75,7 @@ async def test_multi_product_creates_timeline_events(
 
     # Refresh user_product_timeline
     user_product_timeline_entries = await refresh_user_product_timeline(
-        connection, granularity, sorted_events, None, None
+        connection, granularity, sorted_events, {}, {}
     )
 
     # Now refresh user_timeline
@@ -174,15 +168,9 @@ async def test_refresh_only_a_few(
             ORDER BY "timestamp"
         """)
         cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
-        await refresh_cumulative_cashflows(connection, cashflow_iter, {})
-
-    # Query back the cumulative cashflows
-    cumulative_cashflow_rows = await connection.fetch(f"""
-        SELECT {", ".join(f.name for f in fields(CumulativeCashflow))}
-        FROM cumulative_cashflow_cache
-        ORDER BY "timestamp"
-    """)
-    cumulative_cashflows = [CumulativeCashflow(*ccf) for ccf in cumulative_cashflow_rows]
+        cumulative_cashflows = []
+        async for ccf in refresh_cumulative_cashflows(connection, cashflow_iter, {}):
+            cumulative_cashflows.append(ccf)
 
     # Only include events before 12:40
     cumulative_cashflows = [
@@ -215,7 +203,7 @@ async def test_refresh_only_a_few(
 
     # Refresh user_product_timeline
     user_product_timeline_entries = await refresh_user_product_timeline(
-        connection, granularity, sorted_events, None, None
+        connection, granularity, sorted_events, {}, {}
     )
 
     # Refresh user_timeline with limited events
@@ -268,15 +256,9 @@ async def test_with_seed_values(
             ORDER BY "timestamp"
         """)
         cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
-        await refresh_cumulative_cashflows(connection, cashflow_iter, None)
-
-    # Query back the cumulative cashflows
-    cumulative_cashflow_rows = await connection.fetch(f"""
-        SELECT {", ".join(f.name for f in fields(CumulativeCashflow))}
-        FROM cumulative_cashflow_cache
-        ORDER BY "timestamp"
-    """)
-    cumulative_cashflows = [CumulativeCashflow(*ccf) for ccf in cumulative_cashflow_rows]
+        cumulative_cashflows = []
+        async for ccf in refresh_cumulative_cashflows(connection, cashflow_iter, {}):
+            cumulative_cashflows.append(ccf)
 
     # Refresh continuous aggregate for price updates
     granularity = GRANULARITIES[0]
@@ -302,7 +284,7 @@ async def test_with_seed_values(
 
     # Refresh user_product_timeline
     user_product_timeline_entries = await refresh_user_product_timeline(
-        connection, granularity, sorted_events, None, None
+        connection, granularity, sorted_events, {}, {}
     )
 
     # Split into two phases

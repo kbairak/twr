@@ -2,18 +2,17 @@
 
 all: lint test
 
-lint: ruff mypy
+lint: ruff ty mypy
 
 ruff:
 	uv run ruff format .
 	uv run ruff check --fix .
 
+ty:
+	uv run ty check
+
 mypy:
-ifdef MYPY_PYTHON_VERSION
-	uv run mypy --python-version=$(MYPY_PYTHON_VERSION) .
-else
 	uv run mypy .
-endif
 
 test:
 	uv run pytest

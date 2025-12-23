@@ -8,7 +8,12 @@ version = "0.1.0"
 description = "Time-Weighted Return calculation system with PostgreSQL"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = ["asyncpg>=0.31.0", "jinja2>=3.1.0", "psycopg2-binary>=2.9.11"]
+dependencies = [
+    "asyncpg>=0.31.0",
+ "jinja2>=3.1.0",
+ "psycopg2-binary>=2.9.11",
+ "ty>=0.0.6",
+]
 
 [dependency-groups]
 dev = [
@@ -47,3 +52,6 @@ exclude = ["src/performance/generate.py", "src/performance/benchmark.py"]
 [[tool.mypy.overrides]]
 module = ["testcontainers.*"]
 ignore_missing_imports = true
+
+[tool.ty.src]
+exclude = ["src/performance/generate.py", "src/performance/benchmark.py"]

@@ -12,14 +12,8 @@ from performance.interface import add_cashflows, refresh
 from performance.models import (
     Cashflow,
     CumulativeCashflow,
-    PriceUpdate,
     UserProductTimelineEntry,
     UserTimelineEntry,
-)
-from performance.refresh_utils import (
-    refresh_cumulative_cashflows,
-    refresh_user_product_timeline,
-    refresh_user_timeline,
 )
 from tests.utils import parse_time
 

@@ -38,7 +38,6 @@ def _transaction(func: Callable[..., Awaitable[None]]) -> Callable[..., Awaitabl
 async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) -> None:
     min_user_product_timestamps: dict[tuple[UUID, UUID], datetime.datetime] = {}
     min_user_timestamps: dict[UUID, datetime.datetime] = {}
-    min_product_timestamps: dict[UUID, datetime.datetime] = {}
     for cf in cashflows:
         min_user_product_timestamps[(cf.user_id, cf.product_id)] = min(
             min_user_product_timestamps.get(
@@ -53,12 +52,6 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
             ),
             cf.timestamp,
         )
-        min_product_timestamps[cf.product_id] = min(
-            min_product_timestamps.get(
-                cf.product_id, datetime.datetime.max.replace(tzinfo=datetime.timezone.utc)
-            ),
-            cf.timestamp,
-        )
 
     # Reverse-zip min_timestamps into user_ids, product_ids, timestamps
     keys, timestamps_tuple = zip(*min_user_product_timestamps.items())
@@ -70,11 +63,6 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
     )
     user_ids_tuple_user, timestamps_tuple_user = zip(*min_user_timestamps.items())
     user_ids_for_user, timestamps_for_user = list(user_ids_tuple_user), list(timestamps_tuple_user)
-    product_ids_tuple_product, timestamps_tuple_product = zip(*min_product_timestamps.items())
-    product_ids_for_product, timestamps_for_product = (
-        list(product_ids_tuple_product),
-        list(timestamps_tuple_product),
-    )
 
     # Invalidate cumulative_cashflow_cache after out-of-order inserts
     await connection.execute(
@@ -181,33 +169,15 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
         product_ids_for_user_product,
     )
     seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]] = {}
-    for ccf in seed_cumulative_cashflow_rows:
-        seed_cumulative_cashflows.setdefault(ccf["user_id"], {})[ccf["product_id"]] = (
-            CumulativeCashflow(*ccf)
+    for ccf_row in seed_cumulative_cashflow_rows:
+        seed_cumulative_cashflows.setdefault(ccf_row["user_id"], {})[ccf_row["product_id"]] = (
+            CumulativeCashflow(*ccf_row)
         )
-    await refresh_cumulative_cashflows(connection, sorted_cashflow_iter, seed_cumulative_cashflows)
-    sorted_cumulative_cashflow_rows = await connection.fetch(
-        f"""
-            WITH min_user_product_timestamps AS (
-                SELECT unnest($1::uuid[]) AS user_id,
-                       unnest($2::uuid[]) AS product_id,
-                       unnest($3::timestamptz[]) AS "timestamp"
-            )
-            SELECT {", ".join(f"ccf.{f.name}" for f in fields(CumulativeCashflow))}
-            FROM cumulative_cashflow_cache ccf
-                INNER JOIN min_user_product_timestamps mupt
-                    ON mupt.user_id = ccf.user_id AND
-                       mupt.product_id = ccf.product_id AND
-                       ccf."timestamp" >= mupt."timestamp"
-            ORDER BY ccf.user_id, ccf.product_id, ccf."timestamp" ASC
-        """,
-        user_ids_for_user_product,
-        product_ids_for_user_product,
-        timestamps_for_user_product,
-    )
-    sorted_cumulative_cashflows = [
-        CumulativeCashflow(*ccf) for ccf in sorted_cumulative_cashflow_rows
-    ]
+    sorted_cumulative_cashflows: list[CumulativeCashflow] = []
+    async for ccf in refresh_cumulative_cashflows(
+        connection, sorted_cashflow_iter, seed_cumulative_cashflows
+    ):
+        sorted_cumulative_cashflows.append(ccf)
 
     # Repair user-product-timeline
     for granularity in GRANULARITIES:
@@ -624,15 +594,11 @@ async def refresh(connection: asyncpg.Connection) -> None:
     seed_cumulative_cashflows_by_user: dict[UUID, dict[UUID, CumulativeCashflow]] = {}
     seed_cumulative_cashflows_by_product: dict[UUID, dict[UUID, CumulativeCashflow]] = {}
     cumulative_cashflows_watermark = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
-    for ccf in seed_cumulative_cashflow_rows:
-        ccf_obj = CumulativeCashflow(*ccf)
-        seed_cumulative_cashflows_by_user.setdefault(ccf["user_id"], {})[ccf["product_id"]] = (
-            ccf_obj
-        )
-        seed_cumulative_cashflows_by_product.setdefault(ccf["product_id"], {})[ccf["user_id"]] = (
-            ccf_obj
-        )
-        cumulative_cashflows_watermark = max(cumulative_cashflows_watermark, ccf["timestamp"])
+    for ccf_row in seed_cumulative_cashflow_rows:
+        ccf = CumulativeCashflow(*ccf_row)
+        seed_cumulative_cashflows_by_user.setdefault(ccf.user_id, {})[ccf.product_id] = ccf
+        seed_cumulative_cashflows_by_product.setdefault(ccf.product_id, {})[ccf.user_id] = ccf
+        cumulative_cashflows_watermark = max(cumulative_cashflows_watermark, ccf.timestamp)
 
     cashflow_cursor = connection.cursor(
         f"""
@@ -644,23 +610,11 @@ async def refresh(connection: asyncpg.Connection) -> None:
         cumulative_cashflows_watermark,
     )
     cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
-    await refresh_cumulative_cashflows(
+    sorted_cumulative_cashflows: list[CumulativeCashflow] = []
+    async for ccf in refresh_cumulative_cashflows(
         connection, cashflow_iter, seed_cumulative_cashflows_by_user
-    )
-
-    # Query back the newly created cumulative cashflows
-    sorted_cumulative_cashflow_rows: list[asyncpg.Record] = await connection.fetch(
-        f"""
-            SELECT {", ".join(f.name for f in fields(CumulativeCashflow))}
-            FROM cumulative_cashflow_cache
-            WHERE "timestamp" > $1
-            ORDER BY "timestamp" ASC
-        """,
-        cumulative_cashflows_watermark,
-    )
-    sorted_cumulative_cashflows = [
-        CumulativeCashflow(*record) for record in sorted_cumulative_cashflow_rows
-    ]
+    ):
+        sorted_cumulative_cashflows.append(ccf)
 
     for granularity in GRANULARITIES:
         seed_price_update_rows: list[asyncpg.Record] = await connection.fetch(f"""

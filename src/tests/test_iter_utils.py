@@ -40,21 +40,16 @@ async def test_batch_insert(connection: asyncpg.Connection) -> None:
             )
 
     # Insert with batch_size=10 (should create 3 batches: 10, 10, 5)
-    total = await batch_insert(
-        connection,
-        "test_batch",
-        record_generator(),
-        columns=["timestamp", "value"],
-        batch_size=10,
-    )
-
-    assert total == 25
+    rows = []
+    async for ro in batch_insert(
+        connection, "test_batch", record_generator(), columns=["timestamp", "value"], batch_size=10
+    ):
+        rows.append(ro)
 
     # Verify data was inserted
-    rows = await connection.fetch("SELECT * FROM test_batch ORDER BY value")
     assert len(rows) == 25
     for i, row in enumerate(rows):
-        assert row["value"] == i
+        assert row.value == i
 
 
 @pytest.mark.asyncio

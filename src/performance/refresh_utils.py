@@ -20,7 +20,7 @@ from performance.models import (
 
 async def compute_cumulative_cashflows(
     cashflow_iter: AsyncIterator[Cashflow],
-    seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]] | None = None,
+    seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]],
 ) -> AsyncIterator[CumulativeCashflow]:
     if seed_cumulative_cashflows is None:
         seed_cumulative_cashflows = {}
@@ -74,27 +74,23 @@ async def compute_cumulative_cashflows(
 async def refresh_cumulative_cashflows(
     connection: Connection,
     cashflow_iter: AsyncIterator[Cashflow],
-    seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]] | None = None,
-) -> int:
+    seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]],
+) -> AsyncIterator[CumulativeCashflow]:
     cumulative_cashflows = compute_cumulative_cashflows(cashflow_iter, seed_cumulative_cashflows)
-    return await batch_insert(
+    async for entry in batch_insert(
         connection,
         "cumulative_cashflow_cache",
         cumulative_cashflows,
         columns=[f.name for f in fields(CumulativeCashflow)],
-    )
+    ):
+        yield entry
 
 
 async def compute_user_product_timeline(
     sorted_events: list[CumulativeCashflow | PriceUpdate],
-    seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]] | None = None,
-    seed_price_updates: dict[UUID, PriceUpdate] | None = None,
+    seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]],
+    seed_price_updates: dict[UUID, PriceUpdate],
 ) -> list[UserProductTimelineEntry]:
-    if seed_cumulative_cashflows is None:
-        seed_cumulative_cashflows = {}
-    if seed_price_updates is None:
-        seed_price_updates = {}
-
     records: dict[tuple[UUID, UUID, datetime.datetime], UserProductTimelineEntry] = {}
     for event in sorted_events:
         if isinstance(event, CumulativeCashflow):
@@ -168,8 +164,8 @@ async def refresh_user_product_timeline(
     connection: asyncpg.Connection,
     granularity: Granularity,
     sorted_events: list[CumulativeCashflow | PriceUpdate],
-    seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]] | None = None,
-    seed_price_updates: dict[UUID, PriceUpdate] | None = None,
+    seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]],
+    seed_price_updates: dict[UUID, PriceUpdate],
 ) -> list[UserProductTimelineEntry]:
     records = await compute_user_product_timeline(
         sorted_events, seed_cumulative_cashflows, seed_price_updates
