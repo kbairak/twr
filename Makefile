@@ -1,5 +1,9 @@
 .PHONY: ruff mypy lint test
 
+all: lint test
+
+lint: ruff mypy
+
 ruff:
 	uv run ruff format .
 	uv run ruff check --fix .
@@ -10,8 +14,6 @@ ifdef MYPY_PYTHON_VERSION
 else
 	uv run mypy .
 endif
-
-lint: ruff mypy
 
 test:
 	uv run pytest

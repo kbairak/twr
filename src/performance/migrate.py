@@ -27,7 +27,7 @@ async def run_all_migrations(connection: asyncpg.Connection) -> None:
     print("All migrations completed successfully!")
 
 
-async def main():
+async def main() -> None:
     connection = await asyncpg.connect(
         host="127.0.0.1", database="twr", user="twr_user", password="twr_password"
     )

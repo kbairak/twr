@@ -2,6 +2,7 @@ import datetime
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from decimal import Decimal
+from typing import Any
 from uuid import UUID, uuid4
 
 
@@ -11,7 +12,7 @@ class BasePerformanceEntry(ABC):
     timestamp: datetime.datetime
 
     @abstractmethod
-    def to_tuple(self):
+    def to_tuple(self) -> tuple[Any, ...]:
         """Convert to tuple for database insertion"""
         raise NotImplementedError
 
@@ -22,7 +23,7 @@ class PriceUpdate(BasePerformanceEntry):
     timestamp: datetime.datetime
     price: Decimal
 
-    def to_tuple(self):
+    def to_tuple(self) -> tuple[UUID, datetime.datetime, Decimal]:
         return (self.product_id, self.timestamp, self.price)
 
 
@@ -39,7 +40,7 @@ class Cashflow(BasePerformanceEntry):
     user_money: Decimal | None = None
     fees: Decimal | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         units_delta, execution_price, execution_money, user_money, fees = (
             self.units_delta,
             self.execution_price,
@@ -97,7 +98,19 @@ class Cashflow(BasePerformanceEntry):
         if abs(execution_money + fees - user_money) >= Decimal("0.01"):
             raise ValueError(f"Invalid cashflow, {execution_money=} + {fees=} != {user_money}")
 
-    def to_tuple(self):
+    def to_tuple(
+        self,
+    ) -> tuple[
+        UUID,
+        UUID,
+        datetime.datetime,
+        UUID,
+        Decimal | None,
+        Decimal | None,
+        Decimal | None,
+        Decimal | None,
+        Decimal | None,
+    ]:
         return (
             self.user_id,
             self.product_id,
@@ -128,7 +141,23 @@ class CumulativeCashflow(BasePerformanceEntry):
     buy_cost: Decimal = Decimal("0.000000")
     sell_proceeds: Decimal = Decimal("0.000000")
 
-    def to_tuple(self):
+    def to_tuple(
+        self,
+    ) -> tuple[
+        UUID,
+        UUID,
+        UUID,
+        datetime.datetime,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+    ]:
         return (
             self.cashflow_id,
             self.user_id,
@@ -167,7 +196,25 @@ class UserProductTimelineEntry(BasePerformanceEntry):
 
     market_value: Decimal = Decimal("0.000000")
 
-    def to_tuple(self):
+    def to_tuple(
+        self,
+    ) -> tuple[
+        UUID,
+        UUID,
+        datetime.datetime,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+    ]:
         return (
             self.user_id,
             self.product_id,
@@ -205,7 +252,23 @@ class UserTimelineEntry(BasePerformanceEntry):
     cost_basis: Decimal = Decimal("0.000000")
     sell_basis: Decimal = Decimal("0.000000")
 
-    def to_tuple(self):
+    def to_tuple(
+        self,
+    ) -> tuple[
+        UUID,
+        datetime.datetime,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal,
+    ]:
         return (
             self.user_id,
             self.timestamp,

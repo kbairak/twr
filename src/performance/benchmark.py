@@ -239,7 +239,7 @@ def print_results(results: dict):
             print(f"  user-timeline-{suffix}:         {ut_100:.0f}ms ({ut_speedup:.1f}x)")
 
 
-async def main():
+async def main() -> None:
     parser = argparse.ArgumentParser(
         description="Benchmark TWR database performance",
         formatter_class=argparse.RawDescriptionHelpFormatter,

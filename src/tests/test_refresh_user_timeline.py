@@ -7,6 +7,7 @@ import asyncpg
 import pytest
 
 from performance.granularities import GRANULARITIES
+from performance.iter_utils import cursor_to_async_iterator
 from performance.models import (
     Cashflow,
     CumulativeCashflow,
@@ -27,7 +28,6 @@ async def test_multi_product_creates_timeline_events(
     make_data: Callable[[str], Awaitable[None]],
     connection: asyncpg.Connection,
     alice: UUID,
-    aapl: UUID,
 ) -> None:
     # Create test data with multiple products
     await make_data("""
@@ -46,7 +46,8 @@ async def test_multi_product_creates_timeline_events(
             FROM cashflow
             ORDER BY "timestamp"
         """)
-        await refresh_cumulative_cashflows(connection, cashflow_cursor, None)
+        cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
+        await refresh_cumulative_cashflows(connection, cashflow_iter, {})
 
     # Query back the cumulative cashflows
     cumulative_cashflow_rows = await connection.fetch(f"""
@@ -73,8 +74,8 @@ async def test_multi_product_creates_timeline_events(
     price_updates = [PriceUpdate(*pu) for pu in price_update_rows]
 
     # Sort events
-    sorted_events = sorted(
-        cumulative_cashflows + price_updates,
+    sorted_events: list[CumulativeCashflow | PriceUpdate] = sorted(
+        [*cumulative_cashflows, *price_updates],
         key=lambda e: (e.timestamp, isinstance(e, CumulativeCashflow)),
     )
 
@@ -172,7 +173,8 @@ async def test_refresh_only_a_few(
             FROM cashflow
             ORDER BY "timestamp"
         """)
-        await refresh_cumulative_cashflows(connection, cashflow_cursor, None)
+        cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
+        await refresh_cumulative_cashflows(connection, cashflow_iter, {})
 
     # Query back the cumulative cashflows
     cumulative_cashflow_rows = await connection.fetch(f"""
@@ -206,8 +208,8 @@ async def test_refresh_only_a_few(
     price_updates = [PriceUpdate(*pu) for pu in price_update_rows]
 
     # Sort events
-    sorted_events = sorted(
-        cumulative_cashflows + price_updates,
+    sorted_events: list[CumulativeCashflow | PriceUpdate] = sorted(
+        [*cumulative_cashflows, *price_updates],
         key=lambda e: (e.timestamp, isinstance(e, CumulativeCashflow)),
     )
 
@@ -247,7 +249,6 @@ async def test_with_seed_values(
     make_data: Callable[[str], Awaitable[None]],
     connection: asyncpg.Connection,
     alice: UUID,
-    aapl: UUID,
 ) -> None:
     # Create test data with multiple products
     await make_data("""
@@ -266,7 +267,8 @@ async def test_with_seed_values(
             FROM cashflow
             ORDER BY "timestamp"
         """)
-        await refresh_cumulative_cashflows(connection, cashflow_cursor, None)
+        cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
+        await refresh_cumulative_cashflows(connection, cashflow_iter, None)
 
     # Query back the cumulative cashflows
     cumulative_cashflow_rows = await connection.fetch(f"""
@@ -293,8 +295,8 @@ async def test_with_seed_values(
     price_updates = [PriceUpdate(*pu) for pu in price_update_rows]
 
     # Sort events
-    sorted_events = sorted(
-        cumulative_cashflows + price_updates,
+    sorted_events: list[CumulativeCashflow | PriceUpdate] = sorted(
+        [*cumulative_cashflows, *price_updates],
         key=lambda e: (e.timestamp, isinstance(e, CumulativeCashflow)),
     )
 

@@ -36,12 +36,13 @@ select = ["I"]
 
 [tool.pytest.ini_options]
 filterwarnings = [
-    "ignore:The @wait_container_is_ready decorator is deprecated:DeprecationWarning:testcontainers",
+  "ignore:The @wait_container_is_ready decorator is deprecated:DeprecationWarning:testcontainers",
 ]
 
 [tool.mypy]
 python_version = "3.13"
 strict = true
+exclude = ["src/performance/generate.py", "src/performance/benchmark.py"]
 
 [[tool.mypy.overrides]]
 module = ["testcontainers.*"]

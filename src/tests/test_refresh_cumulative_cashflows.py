@@ -6,6 +6,7 @@ from uuid import UUID
 import asyncpg
 import pytest
 
+from performance.iter_utils import cursor_to_async_iterator
 from performance.models import Cashflow, CumulativeCashflow
 from performance.refresh_utils import refresh_cumulative_cashflows
 from tests.utils import parse_time
@@ -29,7 +30,8 @@ async def test_refresh_cumulative_cashflows(
             FROM cashflow
             ORDER BY "timestamp"
         """)
-        count = await refresh_cumulative_cashflows(connection, cashflow_cursor)
+        cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
+        count = await refresh_cumulative_cashflows(connection, cashflow_iter)
 
     # assert
     assert count == 2
@@ -64,7 +66,8 @@ async def test_refresh_only_a_few(
             ORDER BY "timestamp"
             LIMIT 1
         """)
-        count = await refresh_cumulative_cashflows(connection, cashflow_cursor)
+        cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
+        count = await refresh_cumulative_cashflows(connection, cashflow_iter)
 
     # assert
     assert count == 1
@@ -96,7 +99,8 @@ async def test_with_seed_data(
             FROM cashflow
             ORDER BY "timestamp"
         """)
-        await refresh_cumulative_cashflows(connection, cashflow_cursor)
+        cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
+        await refresh_cumulative_cashflows(connection, cashflow_iter)
 
     # Fetch the first cumulative cashflow for use as seed
     ccf_1_row = await connection.fetchrow(f"""
@@ -105,6 +109,7 @@ async def test_with_seed_data(
         ORDER BY "timestamp"
         LIMIT 1
     """)
+    assert ccf_1_row is not None
     ccf_1 = CumulativeCashflow(*ccf_1_row)
 
     cf = Cashflow(
@@ -125,24 +130,30 @@ async def test_with_seed_data(
 
     # act
     async with connection.transaction():
-        cashflow_cursor_2 = connection.cursor(f"""
+        cashflow_cursor_2 = connection.cursor(
+            f"""
             SELECT {", ".join(f.name for f in fields(Cashflow))}
             FROM cashflow
             WHERE "timestamp" = $1
             ORDER BY "timestamp"
-        """, parse_time("12:20"))
+        """,
+            parse_time("12:20"),
+        )
+        cashflow_iter_2 = cursor_to_async_iterator(cashflow_cursor_2, Cashflow)
         await refresh_cumulative_cashflows(
-            connection,
-            cashflow_cursor_2,
-            seed_cumulative_cashflows={alice: {aapl: ccf_1}},
+            connection, cashflow_iter_2, seed_cumulative_cashflows={alice: {aapl: ccf_1}}
         )
 
     # assert
-    ccf_2_row = await connection.fetchrow(f"""
+    ccf_2_row = await connection.fetchrow(
+        f"""
         SELECT {", ".join(f.name for f in fields(CumulativeCashflow))}
         FROM cumulative_cashflow_cache
         WHERE "timestamp" = $1
-    """, parse_time("12:20"))
+    """,
+        parse_time("12:20"),
+    )
+    assert ccf_2_row is not None
     ccf_2 = CumulativeCashflow(*ccf_2_row)
 
     assert [ccf_1.units, ccf_2.units] == [Decimal("1.000000"), Decimal("3.000000")]

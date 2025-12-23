@@ -3,7 +3,7 @@ import asyncio
 import asyncpg
 
 
-async def drop(connection: asyncpg.Connection):
+async def drop(connection: asyncpg.Connection) -> None:
     """Drop and recreate the public schema."""
     print("Dropping schema...")
     await connection.execute("DROP SCHEMA public CASCADE")
@@ -12,7 +12,7 @@ async def drop(connection: asyncpg.Connection):
     print("✓ Database schema reset complete")
 
 
-async def main():
+async def main() -> None:
     connection = await asyncpg.connect(
         host="127.0.0.1", database="twr", user="twr_user", password="twr_password"
     )

@@ -90,13 +90,12 @@ async def test_invalidate_and_reresh(
         ),
     )
     # Now the data looks like this:
-    # await make_data("""
-    #                 11:59, 12:10, 12:16, 12:20, 12:40, 12:50, 13:00
-    #     AAPL:         100,      ,      ,   110,   120
-    #     Alice/AAPL:      ,    10,    -4,      ,      ,     8
-    #     Alice/GOOGL:     ,     5
-    #     Bob/AAPL:        ,      ,      ,      ,      ,      ,     1
-    # """)
+    #                             vvvvv
+    #               11:59, 12:10, 12:16, 12:20, 12:40, 12:50, 13:00
+    #   AAPL:         100,      ,      ,   110,   120
+    #   Alice/AAPL:      ,    10,    -4,      ,      ,     8
+    #   Alice/GOOGL:     ,     5
+    #   Bob/AAPL:        ,      ,      ,      ,      ,      ,     1
 
     # assert
     cumulative_cashflow_rows: list[asyncpg.Record] = await connection.fetch(

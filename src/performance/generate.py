@@ -384,7 +384,9 @@ class EventGenerator:
         if cashflow_events:
             cashflow_events.sort(key=lambda x: (x.user_id, x.product_id, x.timestamp))
             print(f"\nInserting {len(cashflow_events):,} cashflow events...")
-            print("(Note: Skipping cache maintenance for performance. Run refresh() afterward if needed.)")
+            print(
+                "(Note: Skipping cache maintenance for performance. Run refresh() afterward if needed.)"
+            )
 
             for i in range(0, len(cashflow_events), batch_size):
                 batch = cashflow_events[i : i + batch_size]

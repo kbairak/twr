@@ -7,6 +7,7 @@ import asyncpg
 import pytest
 
 from performance.granularities import GRANULARITIES
+from performance.iter_utils import cursor_to_async_iterator
 from performance.models import Cashflow, CumulativeCashflow, PriceUpdate, UserProductTimelineEntry
 from performance.refresh_utils import refresh_cumulative_cashflows, refresh_user_product_timeline
 from tests.utils import parse_time
@@ -30,7 +31,8 @@ async def test_inbetween_price_updates_create_timeline_events(
             FROM cashflow
             ORDER BY "timestamp"
         """)
-        await refresh_cumulative_cashflows(connection, cashflow_cursor)
+        cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
+        await refresh_cumulative_cashflows(connection, cashflow_iter)
 
     # Query back the cumulative cashflows
     cumulative_cashflow_rows = await connection.fetch(f"""
@@ -50,7 +52,7 @@ async def test_inbetween_price_updates_create_timeline_events(
     """)
     price_updates = [PriceUpdate(*pu) for pu in price_update_rows]
     sorted_events: list[CumulativeCashflow | PriceUpdate] = sorted(
-        cumulative_cashflows + price_updates,
+        [*cumulative_cashflows, *price_updates],
         key=lambda e: (e.timestamp, isinstance(e, CumulativeCashflow)),
     )
 
@@ -91,15 +93,19 @@ async def test_refresh_only_a_few(
             FROM cashflow
             ORDER BY "timestamp"
         """)
-        await refresh_cumulative_cashflows(connection, cashflow_cursor)
+        cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
+        await refresh_cumulative_cashflows(connection, cashflow_iter)
 
     # Query back the cumulative cashflows (filtered by timestamp)
-    cumulative_cashflow_rows = await connection.fetch(f"""
+    cumulative_cashflow_rows = await connection.fetch(
+        f"""
         SELECT {", ".join(f.name for f in fields(CumulativeCashflow))}
         FROM cumulative_cashflow_cache
         WHERE "timestamp" < $1
         ORDER BY "timestamp"
-    """, parse_time("12:40"))
+    """,
+        parse_time("12:40"),
+    )
     cumulative_cashflows = [CumulativeCashflow(*ccf) for ccf in cumulative_cashflow_rows]
     granularity = GRANULARITIES[0]
     await connection.execute(
@@ -116,7 +122,7 @@ async def test_refresh_only_a_few(
     )
     price_updates = [PriceUpdate(*pu) for pu in price_update_rows]
     sorted_events: list[CumulativeCashflow | PriceUpdate] = sorted(
-        cumulative_cashflows + price_updates,
+        [*cumulative_cashflows, *price_updates],
         key=lambda e: (e.timestamp, isinstance(e, CumulativeCashflow)),
     )
 
@@ -158,7 +164,8 @@ async def test_same_timestamp_price_update_before_cashflow(
             FROM cashflow
             ORDER BY "timestamp"
         """)
-        await refresh_cumulative_cashflows(connection, cashflow_cursor)
+        cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
+        await refresh_cumulative_cashflows(connection, cashflow_iter)
 
     # Query back the cumulative cashflows
     cumulative_cashflow_rows = await connection.fetch(f"""
@@ -239,7 +246,8 @@ async def test_with_seed_values(
             FROM cashflow
             ORDER BY "timestamp"
         """)
-        await refresh_cumulative_cashflows(connection, cashflow_cursor)
+        cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
+        await refresh_cumulative_cashflows(connection, cashflow_iter)
 
     # Query back the cumulative cashflows
     cumulative_cashflow_rows = await connection.fetch(f"""

@@ -19,14 +19,13 @@ from performance.models import (
 
 
 async def compute_cumulative_cashflows(
-    cashflow_cursor: asyncpg.cursor.Cursor,
+    cashflow_iter: AsyncIterator[Cashflow],
     seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]] | None = None,
 ) -> AsyncIterator[CumulativeCashflow]:
     if seed_cumulative_cashflows is None:
         seed_cumulative_cashflows = {}
 
-    async for record in cashflow_cursor:
-        cf = Cashflow(*record)
+    async for cf in cashflow_iter:
         start = seed_cumulative_cashflows.get(cf.user_id, {}).get(
             cf.product_id,
             CumulativeCashflow(
@@ -74,10 +73,10 @@ async def compute_cumulative_cashflows(
 
 async def refresh_cumulative_cashflows(
     connection: Connection,
-    cashflow_cursor: asyncpg.cursor.Cursor,
+    cashflow_iter: AsyncIterator[Cashflow],
     seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]] | None = None,
 ) -> int:
-    cumulative_cashflows = compute_cumulative_cashflows(cashflow_cursor, seed_cumulative_cashflows)
+    cumulative_cashflows = compute_cumulative_cashflows(cashflow_iter, seed_cumulative_cashflows)
     return await batch_insert(
         connection,
         "cumulative_cashflow_cache",
@@ -98,7 +97,8 @@ async def compute_user_product_timeline(
 
     records: dict[tuple[UUID, UUID, datetime.datetime], UserProductTimelineEntry] = {}
     for event in sorted_events:
-        if isinstance(ccf := event, CumulativeCashflow):
+        if isinstance(event, CumulativeCashflow):
+            ccf = event
             try:
                 pu = seed_price_updates[ccf.product_id]
             except KeyError:
@@ -130,7 +130,8 @@ async def compute_user_product_timeline(
             )
             records[(upt.user_id, upt.product_id, upt.timestamp)] = upt
             seed_cumulative_cashflows.setdefault(ccf.product_id, {})[ccf.user_id] = ccf
-        elif isinstance(pu := event, PriceUpdate):
+        elif isinstance(event, PriceUpdate):
+            pu = event
             for ccf in seed_cumulative_cashflows.get(pu.product_id, {}).values():
                 upt = UserProductTimelineEntry(
                     user_id=ccf.user_id,

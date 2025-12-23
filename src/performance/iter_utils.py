@@ -1,10 +1,9 @@
 """Utilities for streaming/iterating over database records"""
 
-import datetime
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 
 import asyncpg
-from asyncpg.cursor import Cursor, CursorIterator
+from asyncpg.cursor import CursorFactory
 
 from performance.models import BasePerformanceEntry
 
@@ -80,9 +79,9 @@ async def deduplicate_by_timestamp[E: BasePerformanceEntry](
         yield current
 
 
-async def cursor_to_async_iterator(
-    cursor: CursorIterator, cls: type[BasePerformanceEntry]
-) -> AsyncIterator[BasePerformanceEntry]:
+async def cursor_to_async_iterator[T: BasePerformanceEntry](
+    cursor: CursorFactory, cls: type[T]
+) -> AsyncIterator[T]:
     async for record in cursor:
         yield cls(*record)
 

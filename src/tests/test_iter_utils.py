@@ -1,9 +1,8 @@
 import datetime
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from decimal import Decimal
-from uuid import uuid4
 
+import asyncpg
 import pytest
 
 from performance.iter_utils import batch_insert, deduplicate_by_timestamp, merge_sorted
@@ -17,12 +16,12 @@ class SampleEntry(BasePerformanceEntry):
     timestamp: datetime.datetime
     value: int
 
-    def to_tuple(self):
+    def to_tuple(self) -> tuple[datetime.datetime, int]:
         return (self.timestamp, self.value)
 
 
 @pytest.mark.asyncio
-async def test_batch_insert(connection):
+async def test_batch_insert(connection: asyncpg.Connection) -> None:
     """Test batch_insert with small batch size"""
     # Create test table
     await connection.execute("""
@@ -59,7 +58,7 @@ async def test_batch_insert(connection):
 
 
 @pytest.mark.asyncio
-async def test_deduplicate_by_timestamp(connection):
+async def test_deduplicate_by_timestamp() -> None:
     """Test deduplicate_by_timestamp keeps last record for each timestamp"""
 
     async def record_generator() -> AsyncIterator[SampleEntry]:
@@ -85,7 +84,7 @@ async def test_deduplicate_by_timestamp(connection):
 
 
 @pytest.mark.asyncio
-async def test_deduplicate_by_timestamp_no_duplicates(connection):
+async def test_deduplicate_by_timestamp_no_duplicates() -> None:
     """Test deduplicate_by_timestamp with no duplicates"""
 
     async def record_generator() -> AsyncIterator[SampleEntry]:
@@ -105,7 +104,7 @@ async def test_deduplicate_by_timestamp_no_duplicates(connection):
 
 
 @pytest.mark.asyncio
-async def test_merge_sorted(connection):
+async def test_merge_sorted() -> None:
     """Test merge_sorted with multiple iterators"""
 
     async def gen1() -> AsyncIterator[SampleEntry]:
@@ -135,7 +134,7 @@ async def test_merge_sorted(connection):
 
 
 @pytest.mark.asyncio
-async def test_merge_sorted_three_iterators(connection):
+async def test_merge_sorted_three_iterators() -> None:
     """Test merge_sorted with three iterators"""
 
     async def gen1() -> AsyncIterator[SampleEntry]:
@@ -169,7 +168,7 @@ async def test_merge_sorted_three_iterators(connection):
 
 
 @pytest.mark.asyncio
-async def test_merge_sorted_empty_iterators(connection):
+async def test_merge_sorted_empty_iterators() -> None:
     """Test merge_sorted handles empty iterators"""
 
     async def empty_gen() -> AsyncIterator[SampleEntry]:

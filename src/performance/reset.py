@@ -27,7 +27,7 @@ async def reset() -> None:
         await connection.close()
 
 
-async def main():
+async def main() -> None:
     await reset()
 
 
