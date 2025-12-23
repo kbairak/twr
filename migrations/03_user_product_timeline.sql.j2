@@ -17,6 +17,10 @@
         buy_cost NUMERIC(20, 6),
         sell_proceeds NUMERIC(20, 6),
 
+        -- Cached computed values
+        avg_buy_price NUMERIC(20, 6),  -- buy_cost / buy_units (cached for performance)
+        avg_sell_price NUMERIC(20, 6),  -- sell_proceeds / sell_units (cached for performance)
+
         -- Market data
         market_value NUMERIC(20, 6),  -- units × market_price
 

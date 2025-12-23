@@ -1,7 +1,9 @@
 import datetime
 from decimal import Decimal
 from uuid import uuid4
+
 import pytest
+
 from performance.models import Cashflow
 
 

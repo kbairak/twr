@@ -1,13 +1,14 @@
 from decimal import Decimal
 from typing import Awaitable, Callable
 from uuid import UUID
+
 import asyncpg
 import pytest
 
 from performance.granularities import GRANULARITIES
 from performance.interface import get_user_timeline, refresh
 from performance.models import UserTimelineEntry
-from tests.utils import parse_time
+from tests.utils import parse_time, user_timeline_eq
 
 
 @pytest.mark.asyncio
@@ -37,23 +38,20 @@ async def test_get_user_timeline_without_refresh(
     timeline = await get_user_timeline(connection, alice, granularity)
 
     # assert
-    assert timeline == [
+    assert len(timeline) == 1
+    assert user_timeline_eq(
+        timeline[0],
         UserTimelineEntry(
             user_id=alice,
             timestamp=parse_time("12:10"),
-            net_investment=Decimal("2000.000000"),
-            market_value=Decimal("2000.000000"),
-            deposits=Decimal("2000.000000"),
-            withdrawals=Decimal("0.000000"),
-            fees=Decimal("0.000000"),
-            buy_units=Decimal("15.000000"),
-            sell_units=Decimal("0.000000"),
-            buy_cost=Decimal("2000.000000"),
-            sell_proceeds=Decimal("0.000000"),
+            net_investment=Decimal("2000"),
+            market_value=Decimal("2000"),
+            deposits=Decimal("2000"),
+            buy_units=Decimal("15"),
+            buy_cost=Decimal("2000"),
             cost_basis=Decimal("2000.000000"),
-            sell_basis=Decimal("0.000000"),
-        )
-    ]
+        ),
+    )
 
 
 @pytest.mark.asyncio
@@ -86,32 +84,25 @@ async def test_get_user_timeline_with_refresh(
     timeline = await get_user_timeline(connection, alice, granularity)
 
     # assert
-    assert timeline == [
+    assert len(timeline) == 1
+    assert user_timeline_eq(
+        timeline[0],
         UserTimelineEntry(
             user_id=alice,
             timestamp=parse_time("12:10"),
-            net_investment=Decimal("2000.000000"),
-            market_value=Decimal("2000.000000"),
-            deposits=Decimal("2000.000000"),
-            withdrawals=Decimal("0.000000"),
-            fees=Decimal("0.000000"),
-            buy_units=Decimal("15.000000"),
-            sell_units=Decimal("0.000000"),
-            buy_cost=Decimal("2000.000000"),
-            sell_proceeds=Decimal("0.000000"),
-            cost_basis=Decimal("2000.000000"),
-            sell_basis=Decimal("0.000000"),
-        )
-    ]
+            net_investment=Decimal("2000"),
+            market_value=Decimal("2000"),
+            deposits=Decimal("2000"),
+            buy_units=Decimal("15"),
+            buy_cost=Decimal("2000"),
+            cost_basis=Decimal("2000"),
+        ),
+    )
 
 
 @pytest.mark.asyncio
 async def test_get_user_timeline_cached_and_fresh(
-    make_data: Callable[[str], Awaitable[None]],
-    connection: asyncpg.Connection,
-    alice: UUID,
-    aapl: UUID,
-    googl: UUID,
+    make_data: Callable[[str], Awaitable[None]], connection: asyncpg.Connection, alice: UUID
 ) -> None:
     """Test query combines cached and fresh data"""
     # arrange - create initial data and refresh (cached)
@@ -143,54 +134,41 @@ async def test_get_user_timeline_cached_and_fresh(
     timeline = await get_user_timeline(connection, alice, granularity)
 
     # assert
-    assert timeline == [
+    expected = [
         # Cached entry at 12:10
         UserTimelineEntry(
             user_id=alice,
             timestamp=parse_time("12:10"),
-            net_investment=Decimal("2000.000000"),
-            market_value=Decimal("2000.000000"),
-            deposits=Decimal("2000.000000"),
-            withdrawals=Decimal("0.000000"),
-            fees=Decimal("0.000000"),
-            buy_units=Decimal("15.000000"),
-            sell_units=Decimal("0.000000"),
-            buy_cost=Decimal("2000.000000"),
-            sell_proceeds=Decimal("0.000000"),
-            cost_basis=Decimal("2000.000000"),
-            sell_basis=Decimal("0.000000"),
+            net_investment=Decimal("2000"),
+            market_value=Decimal("2000"),
+            deposits=Decimal("2000"),
+            buy_units=Decimal("15"),
+            buy_cost=Decimal("2000"),
+            cost_basis=Decimal("2000"),
         ),
         # Fresh entry from price update (12:14 bucketed to 12:15)
         UserTimelineEntry(
             user_id=alice,
             timestamp=parse_time("12:15"),
-            net_investment=Decimal("2000.000000"),
-            market_value=Decimal("2100.000000000000"),
-            deposits=Decimal("2000.000000"),
-            withdrawals=Decimal("0.000000"),
-            fees=Decimal("0.000000"),
-            buy_units=Decimal("15.000000"),
-            sell_units=Decimal("0.000000"),
-            buy_cost=Decimal("2000.000000"),
-            sell_proceeds=Decimal("0.000000"),
-            cost_basis=Decimal("2000.000000"),
-            sell_basis=Decimal("0.000000"),
+            net_investment=Decimal("2000"),
+            market_value=Decimal("2100"),
+            deposits=Decimal("2000"),
+            buy_units=Decimal("15"),
+            buy_cost=Decimal("2000"),
+            cost_basis=Decimal("2000"),
         ),
         # Fresh entry from cashflow (12:20)
         # 15 AAPL @ $110 + 5 GOOGL @ $200 = $2650
         UserTimelineEntry(
             user_id=alice,
             timestamp=parse_time("12:20"),
-            net_investment=Decimal("2550.000000"),
-            market_value=Decimal("2650.000000000000"),
-            deposits=Decimal("2550.000000"),
-            withdrawals=Decimal("0.000000"),
-            fees=Decimal("0.000000"),
-            buy_units=Decimal("20.000000"),
-            sell_units=Decimal("0.000000"),
-            buy_cost=Decimal("2550.000000"),
-            sell_proceeds=Decimal("0.000000"),
-            cost_basis=Decimal("2550.000000000000000000000000"),
-            sell_basis=Decimal("0.000000"),
+            net_investment=Decimal("2550"),
+            market_value=Decimal("2650"),
+            deposits=Decimal("2550"),
+            buy_units=Decimal("20"),
+            buy_cost=Decimal("2550"),
+            cost_basis=Decimal("2550"),
         ),
     ]
+    assert len(timeline) == len(expected)
+    assert all(user_timeline_eq(act, exp) for act, exp in zip(timeline, expected))

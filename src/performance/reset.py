@@ -6,7 +6,7 @@ from performance.drop import drop
 from performance.migrate import run_all_migrations
 
 
-async def reset():
+async def reset() -> None:
     """Drop the database schema and run all migrations (re-initializing connection between steps)."""
     # First, drop the schema
     connection = await asyncpg.connect(

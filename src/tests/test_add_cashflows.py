@@ -3,11 +3,12 @@ from decimal import Decimal
 from typing import Awaitable, Callable, cast
 from unittest import mock
 from uuid import UUID
+
 import asyncpg
 import pytest
 
 from performance.granularities import GRANULARITIES
-from performance.interface import add_cashflows
+from performance.interface import add_cashflows, refresh
 from performance.models import (
     Cashflow,
     CumulativeCashflow,
@@ -15,7 +16,7 @@ from performance.models import (
     UserProductTimelineEntry,
     UserTimelineEntry,
 )
-from performance.utils import (
+from performance.refresh_utils import (
     refresh_cumulative_cashflows,
     refresh_user_product_timeline,
     refresh_user_timeline,
@@ -67,44 +68,14 @@ async def test_invalidate_and_reresh(
         AAPL:         100,      ,   110,   120
         GOOGL:        200,      ,      ,   210
         Alice/AAPL:      ,    10,      ,      ,     8
-        Alice/GOOGL:     ,     5,      ,      ,
+        Alice/GOOGL:     ,     5
         Bob/AAPL:        ,      ,      ,      ,      ,     1
     """)
-    cashflow_rows: list[asyncpg.Record] = await connection.fetch(f"""
-        SELECT {", ".join(f.name for f in fields(Cashflow))}
-        FROM cashflow
-        ORDER BY "timestamp"
-    """)
-    cashflows = [Cashflow(*cf) for cf in cashflow_rows]
-    cumulative_cashflows = await refresh_cumulative_cashflows(connection, cashflows)
-
-    # Populate user_product_timeline_cache
     granularity = GRANULARITIES[0]
     await connection.execute(
         f"CALL refresh_continuous_aggregate('price_update_{granularity.suffix}', NULL, NULL)"
     )
-    price_update_rows = await connection.fetch(f"""
-        SELECT {", ".join(f.name for f in fields(PriceUpdate))}
-        FROM price_update_{granularity.suffix}
-        ORDER BY "timestamp"
-    """)
-    price_updates = [PriceUpdate(*pu) for pu in price_update_rows]
-    sorted_events = sorted(
-        cumulative_cashflows + price_updates,
-        key=lambda e: (e.timestamp, isinstance(e, CumulativeCashflow)),
-    )
-    await refresh_user_product_timeline(connection, granularity, sorted_events)
-
-    # Also populate user_timeline_cache
-    upt_rows = await connection.fetch(
-        f"""
-            SELECT {", ".join(f.name for f in fields(UserProductTimelineEntry))}
-            FROM user_product_timeline_cache_{granularity.suffix}
-            ORDER BY "timestamp"
-        """
-    )
-    upt_entries = [UserProductTimelineEntry(*upt) for upt in upt_rows]
-    await refresh_user_timeline(connection, granularity, upt_entries, {})
+    await refresh(connection)
 
     # act
     await add_cashflows(
@@ -123,6 +94,7 @@ async def test_invalidate_and_reresh(
     #                 11:59, 12:10, 12:16, 12:20, 12:40, 12:50, 13:00
     #     AAPL:         100,      ,      ,   110,   120
     #     Alice/AAPL:      ,    10,    -4,      ,      ,     8
+    #     Alice/GOOGL:     ,     5
     #     Bob/AAPL:        ,      ,      ,      ,      ,      ,     1
     # """)
 
@@ -144,6 +116,7 @@ async def test_invalidate_and_reresh(
         (parse_time("12:50"), Decimal("14.000000")),
     ]
 
+    granularity = GRANULARITIES[0]
     # assert user_product_timeline_cache was also invalidated and repaired
     user_product_timeline_rows: list[asyncpg.Record] = await connection.fetch(
         f"""
@@ -185,8 +158,20 @@ async def test_invalidate_and_reresh(
         (ut.timestamp, ut.net_investment, ut.market_value) for ut in user_timeline_entries
     ] == [
         (parse_time("12:10"), Decimal("2000.000000"), Decimal("2000.000000")),  # 10×100 + 5×200
-        (parse_time("12:16"), Decimal("1600.000000"), Decimal("1600.000000")),  # Out-of-order insert
+        (
+            parse_time("12:16"),
+            Decimal("1600.000000"),
+            Decimal("1600.000000"),
+        ),  # Out-of-order insert
         (parse_time("12:30"), Decimal("1600.000000"), Decimal("1660.000000")),  # Price updates
-        (parse_time("12:45"), Decimal("1600.000000"), Decimal("1770.000000")),  # AAPL:120, GOOGL:210
-        (parse_time("12:50"), Decimal("2560.000000"), Decimal("2730.000000")),  # Alice buys more AAPL
+        (
+            parse_time("12:45"),
+            Decimal("1600.000000"),
+            Decimal("1770.000000"),
+        ),  # AAPL:120, GOOGL:210
+        (
+            parse_time("12:50"),
+            Decimal("2560.000000"),
+            Decimal("2730.000000"),
+        ),  # Alice buys more AAPL
     ]

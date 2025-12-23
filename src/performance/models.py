@@ -1,18 +1,33 @@
 import datetime
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from decimal import Decimal
 from uuid import UUID, uuid4
 
 
+class BasePerformanceEntry(ABC):
+    """Base class for dataclasses that can be converted to tuples for database insertion"""
+
+    timestamp: datetime.datetime
+
+    @abstractmethod
+    def to_tuple(self):
+        """Convert to tuple for database insertion"""
+        raise NotImplementedError
+
+
 @dataclass
-class PriceUpdate:
+class PriceUpdate(BasePerformanceEntry):
     product_id: UUID
     timestamp: datetime.datetime
     price: Decimal
 
+    def to_tuple(self):
+        return (self.product_id, self.timestamp, self.price)
+
 
 @dataclass
-class Cashflow:
+class Cashflow(BasePerformanceEntry):
     user_id: UUID
     product_id: UUID
     timestamp: datetime.datetime
@@ -82,9 +97,22 @@ class Cashflow:
         if abs(execution_money + fees - user_money) >= Decimal("0.01"):
             raise ValueError(f"Invalid cashflow, {execution_money=} + {fees=} != {user_money}")
 
+    def to_tuple(self):
+        return (
+            self.user_id,
+            self.product_id,
+            self.timestamp,
+            self.id,
+            self.units_delta,
+            self.execution_price,
+            self.execution_money,
+            self.user_money,
+            self.fees,
+        )
+
 
 @dataclass
-class CumulativeCashflow:
+class CumulativeCashflow(BasePerformanceEntry):
     cashflow_id: UUID
     user_id: UUID
     product_id: UUID
@@ -100,9 +128,26 @@ class CumulativeCashflow:
     buy_cost: Decimal = Decimal("0.000000")
     sell_proceeds: Decimal = Decimal("0.000000")
 
+    def to_tuple(self):
+        return (
+            self.cashflow_id,
+            self.user_id,
+            self.product_id,
+            self.timestamp,
+            self.units,
+            self.net_investment,
+            self.deposits,
+            self.withdrawals,
+            self.fees,
+            self.buy_units,
+            self.sell_units,
+            self.buy_cost,
+            self.sell_proceeds,
+        )
+
 
 @dataclass
-class UserProductTimelineEntry:
+class UserProductTimelineEntry(BasePerformanceEntry):
     user_id: UUID
     product_id: UUID
     timestamp: datetime.datetime
@@ -117,23 +162,62 @@ class UserProductTimelineEntry:
     buy_cost: Decimal = Decimal("0.000000")
     sell_proceeds: Decimal = Decimal("0.000000")
 
+    avg_buy_price: Decimal = Decimal("0.000000")
+    avg_sell_price: Decimal = Decimal("0.000000")
+
     market_value: Decimal = Decimal("0.000000")
+
+    def to_tuple(self):
+        return (
+            self.user_id,
+            self.product_id,
+            self.timestamp,
+            self.units,
+            self.net_investment,
+            self.deposits,
+            self.withdrawals,
+            self.fees,
+            self.buy_units,
+            self.sell_units,
+            self.buy_cost,
+            self.sell_proceeds,
+            self.avg_buy_price,
+            self.avg_sell_price,
+            self.market_value,
+        )
 
 
 @dataclass
-class UserTimelineEntry:
+class UserTimelineEntry(BasePerformanceEntry):
     user_id: UUID
     timestamp: datetime.datetime
 
-    net_investment: Decimal
-    market_value: Decimal
+    net_investment: Decimal = Decimal("0.000000")
+    market_value: Decimal = Decimal("0.000000")
 
-    deposits: Decimal
-    withdrawals: Decimal
-    fees: Decimal
-    buy_units: Decimal
-    sell_units: Decimal
-    buy_cost: Decimal
-    sell_proceeds: Decimal
-    cost_basis: Decimal
-    sell_basis: Decimal
+    deposits: Decimal = Decimal("0.000000")
+    withdrawals: Decimal = Decimal("0.000000")
+    fees: Decimal = Decimal("0.000000")
+    buy_units: Decimal = Decimal("0.000000")
+    sell_units: Decimal = Decimal("0.000000")
+    buy_cost: Decimal = Decimal("0.000000")
+    sell_proceeds: Decimal = Decimal("0.000000")
+    cost_basis: Decimal = Decimal("0.000000")
+    sell_basis: Decimal = Decimal("0.000000")
+
+    def to_tuple(self):
+        return (
+            self.user_id,
+            self.timestamp,
+            self.net_investment,
+            self.market_value,
+            self.deposits,
+            self.withdrawals,
+            self.fees,
+            self.buy_units,
+            self.sell_units,
+            self.buy_cost,
+            self.sell_proceeds,
+            self.cost_basis,
+            self.sell_basis,
+        )

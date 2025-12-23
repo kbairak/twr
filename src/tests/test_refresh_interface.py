@@ -2,6 +2,7 @@ from dataclasses import fields
 from decimal import Decimal
 from typing import Awaitable, Callable
 from uuid import UUID
+
 import asyncpg
 import pytest
 

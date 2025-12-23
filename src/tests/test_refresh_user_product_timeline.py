@@ -2,12 +2,13 @@ from dataclasses import fields
 from decimal import Decimal
 from typing import Awaitable, Callable
 from uuid import UUID
+
 import asyncpg
 import pytest
 
 from performance.granularities import GRANULARITIES
 from performance.models import Cashflow, CumulativeCashflow, PriceUpdate, UserProductTimelineEntry
-from performance.utils import refresh_cumulative_cashflows, refresh_user_product_timeline
+from performance.refresh_utils import refresh_cumulative_cashflows, refresh_user_product_timeline
 from tests.utils import parse_time
 
 
@@ -23,13 +24,21 @@ async def test_inbetween_price_updates_create_timeline_events(
         AAPL:         100,      ,   110,   120,
         Alice/AAPL:      ,    10,      ,      ,     8
     """)
-    sorted_cashlow_rows = await connection.fetch(f"""
-        SELECT {", ".join(f.name for f in fields(Cashflow))}
-        FROM cashflow
+    async with connection.transaction():
+        cashflow_cursor = connection.cursor(f"""
+            SELECT {", ".join(f.name for f in fields(Cashflow))}
+            FROM cashflow
+            ORDER BY "timestamp"
+        """)
+        await refresh_cumulative_cashflows(connection, cashflow_cursor)
+
+    # Query back the cumulative cashflows
+    cumulative_cashflow_rows = await connection.fetch(f"""
+        SELECT {", ".join(f.name for f in fields(CumulativeCashflow))}
+        FROM cumulative_cashflow_cache
         ORDER BY "timestamp"
     """)
-    sorted_cashlows = [Cashflow(*cf) for cf in sorted_cashlow_rows]
-    cumulative_cashflows = await refresh_cumulative_cashflows(connection, sorted_cashlows)
+    cumulative_cashflows = [CumulativeCashflow(*ccf) for ccf in cumulative_cashflow_rows]
     granularity = GRANULARITIES[0]
     await connection.execute(
         f"CALL refresh_continuous_aggregate('price_update_{granularity.suffix}', NULL, NULL)"
@@ -40,7 +49,7 @@ async def test_inbetween_price_updates_create_timeline_events(
         ORDER BY "timestamp"
     """)
     price_updates = [PriceUpdate(*pu) for pu in price_update_rows]
-    sorted_events = sorted(
+    sorted_events: list[CumulativeCashflow | PriceUpdate] = sorted(
         cumulative_cashflows + price_updates,
         key=lambda e: (e.timestamp, isinstance(e, CumulativeCashflow)),
     )
@@ -76,16 +85,22 @@ async def test_refresh_only_a_few(
         AAPL:         100,      ,   110,   120,
         Alice/AAPL:      ,    10,      ,      ,     8
     """)
-    sorted_cashlow_rows = await connection.fetch(f"""
-        SELECT {", ".join(f.name for f in fields(Cashflow))}
-        FROM cashflow
+    async with connection.transaction():
+        cashflow_cursor = connection.cursor(f"""
+            SELECT {", ".join(f.name for f in fields(Cashflow))}
+            FROM cashflow
+            ORDER BY "timestamp"
+        """)
+        await refresh_cumulative_cashflows(connection, cashflow_cursor)
+
+    # Query back the cumulative cashflows (filtered by timestamp)
+    cumulative_cashflow_rows = await connection.fetch(f"""
+        SELECT {", ".join(f.name for f in fields(CumulativeCashflow))}
+        FROM cumulative_cashflow_cache
+        WHERE "timestamp" < $1
         ORDER BY "timestamp"
-    """)
-    sorted_cashlows = [Cashflow(*cf) for cf in sorted_cashlow_rows]
-    cumulative_cashflows = await refresh_cumulative_cashflows(connection, sorted_cashlows)
-    cumulative_cashflows = [
-        ccf for ccf in cumulative_cashflows if ccf.timestamp < parse_time("12:40")
-    ]
+    """, parse_time("12:40"))
+    cumulative_cashflows = [CumulativeCashflow(*ccf) for ccf in cumulative_cashflow_rows]
     granularity = GRANULARITIES[0]
     await connection.execute(
         f"CALL refresh_continuous_aggregate('price_update_{granularity.suffix}', NULL, NULL)"
@@ -100,7 +115,7 @@ async def test_refresh_only_a_few(
         parse_time("12:40"),
     )
     price_updates = [PriceUpdate(*pu) for pu in price_update_rows]
-    sorted_events = sorted(
+    sorted_events: list[CumulativeCashflow | PriceUpdate] = sorted(
         cumulative_cashflows + price_updates,
         key=lambda e: (e.timestamp, isinstance(e, CumulativeCashflow)),
     )
@@ -137,13 +152,21 @@ async def test_same_timestamp_price_update_before_cashflow(
         AAPL:         100,      ,   120
         Alice/AAPL:      ,    10
     """)
-    sorted_cashflow_rows = await connection.fetch(f"""
-        SELECT {", ".join(f.name for f in fields(Cashflow))}
-        FROM cashflow
+    async with connection.transaction():
+        cashflow_cursor = connection.cursor(f"""
+            SELECT {", ".join(f.name for f in fields(Cashflow))}
+            FROM cashflow
+            ORDER BY "timestamp"
+        """)
+        await refresh_cumulative_cashflows(connection, cashflow_cursor)
+
+    # Query back the cumulative cashflows
+    cumulative_cashflow_rows = await connection.fetch(f"""
+        SELECT {", ".join(f.name for f in fields(CumulativeCashflow))}
+        FROM cumulative_cashflow_cache
         ORDER BY "timestamp"
     """)
-    sorted_cashflows = [Cashflow(*cf) for cf in sorted_cashflow_rows]
-    cumulative_cashflows = await refresh_cumulative_cashflows(connection, sorted_cashflows)
+    cumulative_cashflows = [CumulativeCashflow(*ccf) for ccf in cumulative_cashflow_rows]
 
     granularity = GRANULARITIES[0]
     await connection.execute(
@@ -166,7 +189,7 @@ async def test_same_timestamp_price_update_before_cashflow(
     )
 
     # Mix them together - cashflow comes first in the list
-    events = [ccf, pu_same_time]
+    events: list[CumulativeCashflow | PriceUpdate] = [ccf, pu_same_time]
     sorted_events = sorted(
         events,
         key=lambda e: (e.timestamp, isinstance(e, CumulativeCashflow)),
@@ -210,13 +233,21 @@ async def test_with_seed_values(
         AAPL:         100,      ,   110,   120,
         Alice/AAPL:      ,    10,      ,      ,     8
     """)
-    sorted_cashlow_rows = await connection.fetch(f"""
-        SELECT {", ".join(f.name for f in fields(Cashflow))}
-        FROM cashflow
+    async with connection.transaction():
+        cashflow_cursor = connection.cursor(f"""
+            SELECT {", ".join(f.name for f in fields(Cashflow))}
+            FROM cashflow
+            ORDER BY "timestamp"
+        """)
+        await refresh_cumulative_cashflows(connection, cashflow_cursor)
+
+    # Query back the cumulative cashflows
+    cumulative_cashflow_rows = await connection.fetch(f"""
+        SELECT {", ".join(f.name for f in fields(CumulativeCashflow))}
+        FROM cumulative_cashflow_cache
         ORDER BY "timestamp"
     """)
-    sorted_cashlows = [Cashflow(*cf) for cf in sorted_cashlow_rows]
-    (ccf1, ccf2) = await refresh_cumulative_cashflows(connection, sorted_cashlows)
+    (ccf1, ccf2) = [CumulativeCashflow(*ccf) for ccf in cumulative_cashflow_rows]
     granularity = GRANULARITIES[0]
     await connection.execute(
         f"CALL refresh_continuous_aggregate('price_update_{granularity.suffix}', NULL, NULL)"

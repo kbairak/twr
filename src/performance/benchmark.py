@@ -11,17 +11,17 @@ Measures:
 import argparse
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 from uuid import UUID
+
 import asyncpg
 
-from performance.granularities import GRANULARITIES
 from performance.generate import EventGenerator, calculate_missing_parameter, parse_time_interval
-from performance.reset import reset
+from performance.granularities import GRANULARITIES
 from performance.interface import get_user_product_timeline, get_user_timeline, refresh
+from performance.reset import reset
 
 
-def format_time(seconds):
+def format_time(seconds: int) -> str:
     """Format seconds into human readable string"""
     if seconds >= 60:
         return f"{int(seconds // 60)}m {seconds % 60:.1f}s"
@@ -44,7 +44,7 @@ class Benchmark:
         self.db_host = db_host
         self.db_port = db_port
 
-    async def get_connection(self):
+    async def get_connection(self) -> asyncpg.Connection:
         """Create and return a new database connection"""
         return await asyncpg.connect(
             database=self.db_name,
@@ -54,13 +54,15 @@ class Benchmark:
             port=self.db_port,
         )
 
-    async def reset_database(self):
+    async def reset_database(self) -> None:
         """Reset database using async reset infrastructure"""
         print("Resetting database...")
         await reset()
         print("✓ Database reset complete\n")
 
-    async def get_sample_queries(self, conn: asyncpg.Connection, num_queries: int):
+    async def get_sample_queries(
+        self, conn: asyncpg.Connection, num_queries: int
+    ) -> tuple[list[tuple[UUID, UUID]], list[UUID]]:
         """Get sample user-product pairs and user IDs for queries.
 
         Returns:
@@ -79,8 +81,11 @@ class Benchmark:
         return user_product_pairs, user_ids
 
     async def measure_query_performance(
-        self, conn: asyncpg.Connection, user_product_pairs: list, user_ids: list
-    ):
+        self,
+        conn: asyncpg.Connection,
+        user_product_pairs: list[tuple[UUID, UUID]],
+        user_ids: list[UUID],
+    ) -> dict[str, float]:
         """Measure query performance for each granularity using the new async interface.
 
         Returns:
@@ -89,7 +94,7 @@ class Benchmark:
                 'ut_15min_ms': float, 'ut_1h_ms': float, 'ut_1d_ms': float,
             }
         """
-        results = {}
+        results: dict[str, float] = {}
 
         for g in GRANULARITIES:
             suffix = g.suffix
@@ -98,9 +103,7 @@ class Benchmark:
             start = time.time()
             for user_id, product_id in user_product_pairs:
                 await get_user_product_timeline(conn, user_id, product_id, g)
-            results[f"upt_{suffix}_ms"] = (
-                (time.time() - start) / len(user_product_pairs)
-            ) * 1000
+            results[f"upt_{suffix}_ms"] = ((time.time() - start) / len(user_product_pairs)) * 1000
 
             # Measure user_timeline
             start = time.time()
@@ -110,7 +113,7 @@ class Benchmark:
 
         return results
 
-    async def refresh_all_caches(self, conn: asyncpg.Connection):
+    async def refresh_all_caches(self, conn: asyncpg.Connection) -> float:
         """Refresh all caches using the refresh() function from interface.
 
         Returns:
@@ -120,7 +123,9 @@ class Benchmark:
 
         # First refresh the continuous aggregates (must be outside transaction)
         for g in GRANULARITIES:
-            await conn.execute(f"CALL refresh_continuous_aggregate('price_update_{g.suffix}', NULL, NULL)")
+            await conn.execute(
+                f"CALL refresh_continuous_aggregate('price_update_{g.suffix}', NULL, NULL)"
+            )
 
         # Then refresh the caches
         await refresh(conn)
@@ -199,7 +204,9 @@ class Benchmark:
 def print_results(results: dict):
     """Print benchmark results in a readable format"""
     print(f"\n{'=' * 80}")
-    print(f"Scenario {results['scenario']}: {results['days']:.1f} days, {results['num_events']:,} events")
+    print(
+        f"Scenario {results['scenario']}: {results['days']:.1f} days, {results['num_events']:,} events"
+    )
     print(f"{'=' * 80}")
     print(f"Cache refresh time: {results['cache_refresh_time']:.1f}s\n")
 
@@ -261,9 +268,7 @@ Note: Exactly 2 of the 3 parameters (days, num-events, price-update-frequency) m
     )
 
     # Standard parameters
-    parser.add_argument(
-        "--num-users", type=int, default=50, help="Number of users (default: 50)"
-    )
+    parser.add_argument("--num-users", type=int, default=50, help="Number of users (default: 50)")
     parser.add_argument(
         "--num-products",
         type=int,
@@ -291,9 +296,7 @@ Note: Exactly 2 of the 3 parameters (days, num-events, price-update-frequency) m
         parser.error(str(e))
 
     # Calculate end_date as today at market close
-    end_date = datetime.now(timezone.utc).replace(
-        hour=16, minute=0, second=0, microsecond=0
-    )
+    end_date = datetime.now(timezone.utc).replace(hour=16, minute=0, second=0, microsecond=0)
 
     # Display calculated parameters
     print("\n=== Calculated Parameters ===")
@@ -322,4 +325,5 @@ Note: Exactly 2 of the 3 parameters (days, num-events, price-update-frequency) m
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(main())

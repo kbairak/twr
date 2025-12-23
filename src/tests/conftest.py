@@ -1,3 +1,4 @@
+import datetime
 from typing import AsyncGenerator, Awaitable, Callable, cast
 from uuid import UUID
 
@@ -22,7 +23,7 @@ async def postgres() -> AsyncGenerator[PostgresContainer, None]:
 
 
 @pytest_asyncio.fixture
-async def connection(postgres) -> AsyncGenerator[asyncpg.Connection, None]:
+async def connection(postgres: PostgresContainer) -> AsyncGenerator[asyncpg.Connection, None]:
     conn: asyncpg.Connection = await asyncpg.connect(postgres.get_connection_url())
     try:
         yield conn
@@ -103,8 +104,8 @@ async def make_data(
     (at market prices).
     '''
 
-    async def fn(text):
-        price_updates = {}
+    async def fn(text: str) -> None:
+        price_updates: dict[str, dict[datetime.datetime, float]] = {}
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         timestamps = [parse_time(t.strip()) for t in lines[0].split(",")]
         for line in lines[1:]:
