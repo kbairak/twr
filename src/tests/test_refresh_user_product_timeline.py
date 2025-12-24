@@ -1,7 +1,6 @@
 from dataclasses import fields
 from decimal import Decimal
 from typing import AsyncIterator, Awaitable, Callable
-from uuid import UUID
 
 import asyncpg
 import pytest
@@ -50,7 +49,10 @@ async def test_inbetween_price_updates_create_timeline_events(
         )
 
         # act
-        await refresh_user_product_timeline(connection, granularity, sorted_events_iter, {}, {})
+        async for _ in refresh_user_product_timeline(
+            connection, granularity, sorted_events_iter, {}, {}
+        ):
+            pass
 
         # assert
         user_product_timeline_rows = await connection.fetch(f"""
@@ -113,7 +115,10 @@ async def test_refresh_only_a_few(
         )
 
         # act
-        await refresh_user_product_timeline(connection, granularity, sorted_events_iter, {}, {})
+        async for _ in refresh_user_product_timeline(
+            connection, granularity, sorted_events_iter, {}, {}
+        ):
+            pass
 
         # assert
         user_product_timeline_rows = await connection.fetch(f"""
@@ -173,7 +178,10 @@ async def test_same_timestamp_price_update_before_cashflow(
         )
 
         # Now test the full refresh - the market value should use the new price (150)
-        await refresh_user_product_timeline(connection, granularity, sorted_events_iter, {}, {})
+        async for _ in refresh_user_product_timeline(
+            connection, granularity, sorted_events_iter, {}, {}
+        ):
+            pass
 
         user_product_timeline_rows = await connection.fetch(
             f"""
@@ -198,10 +206,7 @@ async def test_same_timestamp_price_update_before_cashflow(
 
 @pytest.mark.asyncio
 async def test_with_seed_values(
-    make_data: Callable[[str], Awaitable[None]],
-    connection: asyncpg.Connection,
-    alice: UUID,
-    aapl: UUID,
+    make_data: Callable[[str], Awaitable[None]], connection: asyncpg.Connection
 ) -> None:
     # arrange
     await make_data("""
@@ -235,7 +240,10 @@ async def test_with_seed_values(
         )
 
         # act
-        await refresh_user_product_timeline(connection, granularity, sorted_events_iter, {}, {})
+        async for _ in refresh_user_product_timeline(
+            connection, granularity, sorted_events_iter, {}, {}
+        ):
+            pass
 
         # assert
         user_product_timeline_rows = await connection.fetch(f"""

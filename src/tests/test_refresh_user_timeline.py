@@ -67,9 +67,11 @@ async def test_multi_product_creates_timeline_events(
         )
 
         # Refresh user_product_timeline
-        user_product_timeline_entries = await refresh_user_product_timeline(
+        user_product_timeline_entries = []
+        async for entry in refresh_user_product_timeline(
             connection, granularity, sorted_events_iter, {}, {}
-        )
+        ):
+            user_product_timeline_entries.append(entry)
 
         # Now refresh user_timeline
         user_timeline_entries = await refresh_user_timeline(
@@ -190,9 +192,11 @@ async def test_refresh_only_a_few(
         )
 
         # Refresh user_product_timeline
-        user_product_timeline_entries = await refresh_user_product_timeline(
+        user_product_timeline_entries = []
+        async for entry in refresh_user_product_timeline(
             connection, granularity, sorted_events_iter, {}, {}
-        )
+        ):
+            user_product_timeline_entries.append(entry)
 
         # Refresh user_timeline with limited events
         user_timeline_entries = await refresh_user_timeline(
@@ -264,9 +268,11 @@ async def test_with_seed_values(
         )
 
         # Refresh user_product_timeline
-        user_product_timeline_entries = await refresh_user_product_timeline(
+        user_product_timeline_entries = []
+        async for entry in refresh_user_product_timeline(
             connection, granularity, sorted_events_iter, {}, {}
-        )
+        ):
+            user_product_timeline_entries.append(entry)
 
         # Split into two phases
         # First phase: process events up to 12:30

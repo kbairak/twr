@@ -73,11 +73,13 @@ async def refresh_cumulative_cashflows(
     cashflow_iter: AsyncIterator[Cashflow],
     seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]],
 ) -> AsyncIterator[CumulativeCashflow]:
-    cumulative_cashflows = compute_cumulative_cashflows(cashflow_iter, seed_cumulative_cashflows)
+    cumulative_cashflows_iter = compute_cumulative_cashflows(
+        cashflow_iter, seed_cumulative_cashflows
+    )
     async for entry in batch_insert(
         connection,
         "cumulative_cashflow_cache",
-        cumulative_cashflows,
+        cumulative_cashflows_iter,
         columns=[f.name for f in fields(CumulativeCashflow)],
     ):
         yield entry
@@ -88,7 +90,7 @@ async def compute_user_product_timeline(
     seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]],
     seed_price_updates: dict[UUID, PriceUpdate],
 ) -> AsyncIterator[UserProductTimelineEntry]:
-    # Buffer to ensure that we only yield the lates for each (user_id, product_id, timestamp)
+    # Buffer to ensure that we only yield the latest for each (user_id, product_id, timestamp)
     buffer: UserProductTimelineEntry | None = None
 
     async for event in sorted_events_iter:
@@ -104,7 +106,6 @@ async def compute_user_product_timeline(
                 timestamp=ccf.timestamp,
                 units=ccf.units,
                 net_investment=ccf.net_investment,
-                market_value=ccf.units * pu.price,
                 deposits=ccf.deposits,
                 withdrawals=ccf.withdrawals,
                 fees=ccf.fees,
@@ -112,6 +113,7 @@ async def compute_user_product_timeline(
                 sell_units=ccf.sell_units,
                 buy_cost=ccf.buy_cost,
                 sell_proceeds=ccf.sell_proceeds,
+                market_value=ccf.units * pu.price,
                 avg_buy_price=(
                     (ccf.buy_cost / ccf.buy_units).quantize(Decimal("0.000000"))
                     if ccf.buy_units > Decimal("0.000000")
@@ -140,7 +142,6 @@ async def compute_user_product_timeline(
                     timestamp=pu.timestamp,
                     units=ccf.units,
                     net_investment=ccf.net_investment,
-                    market_value=ccf.units * pu.price,
                     deposits=ccf.deposits,
                     withdrawals=ccf.withdrawals,
                     fees=ccf.fees,
@@ -148,6 +149,7 @@ async def compute_user_product_timeline(
                     sell_units=ccf.sell_units,
                     buy_cost=ccf.buy_cost,
                     sell_proceeds=ccf.sell_proceeds,
+                    market_value=ccf.units * pu.price,
                     avg_buy_price=(
                         (ccf.buy_cost / ccf.buy_units).quantize(Decimal("0.000000"))
                         if ccf.buy_units > Decimal("0.000000")
@@ -178,18 +180,17 @@ async def refresh_user_product_timeline(
     sorted_events_iter: AsyncIterator[CumulativeCashflow | PriceUpdate],
     seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]],
     seed_price_updates: dict[UUID, PriceUpdate],
-) -> list[UserProductTimelineEntry]:
-    user_product_timeline_entries = []
-    async for upt in compute_user_product_timeline(
+) -> AsyncIterator[UserProductTimelineEntry]:
+    user_product_timeline_entries_iter = compute_user_product_timeline(
         sorted_events_iter, seed_cumulative_cashflows, seed_price_updates
-    ):
-        user_product_timeline_entries.append(upt)
-    await connection.copy_records_to_table(
-        f"user_product_timeline_cache_{granularity.suffix}",
-        records=[upt.to_tuple() for upt in user_product_timeline_entries],
-        columns=[f.name for f in fields(UserProductTimelineEntry)],
     )
-    return user_product_timeline_entries
+    async for entry in batch_insert(
+        connection,
+        f"user_product_timeline_cache_{granularity.suffix}",
+        user_product_timeline_entries_iter,
+        columns=[f.name for f in fields(UserProductTimelineEntry)],
+    ):
+        yield entry
 
 
 async def compute_user_timeline(

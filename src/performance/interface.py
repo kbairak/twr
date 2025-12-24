@@ -229,13 +229,14 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
         seed_price_updates: dict[UUID, PriceUpdate] = {
             pu["product_id"]: PriceUpdate(*pu) for pu in seed_price_update_rows
         }
-        await refresh_user_product_timeline(
+        async for _ in refresh_user_product_timeline(
             connection,
             granularity,
             sorted_events_iter,
             seed_cumulative_cashflows,
             seed_price_updates,
-        )
+        ):
+            pass
 
     # Repair user-timeline
     for granularity in GRANULARITIES:
@@ -257,10 +258,10 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
             min_affected_timestamp,
         )
         seed_user_product_timeline: dict[UUID, dict[UUID, UserProductTimelineEntry]] = {}
-        for upt in seed_upt_rows:
-            seed_user_product_timeline.setdefault(upt["user_id"], {})[upt["product_id"]] = (
-                UserProductTimelineEntry(*upt)
-            )
+        for upt_row in seed_upt_rows:
+            seed_user_product_timeline.setdefault(upt_row["user_id"], {})[
+                upt_row["product_id"]
+            ] = UserProductTimelineEntry(*upt_row)
 
         # Fetch ALL user_product_timeline entries >= min_affected_timestamp for affected users
         # (not just the ones we just refreshed, which only include affected products)
@@ -278,7 +279,7 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
             min_affected_timestamp,
         )
         sorted_user_product_timeline = [
-            UserProductTimelineEntry(*upt) for upt in sorted_user_product_rows
+            UserProductTimelineEntry(*upt_row) for upt_row in sorted_user_product_rows
         ]
 
         await refresh_user_timeline(
@@ -565,8 +566,8 @@ async def get_user_timeline(
         watermark,
     )
     seed_user_product_timeline: dict[UUID, dict[UUID, UserProductTimelineEntry]] = {}
-    for upt in seed_upt_rows:
-        upt_entry = UserProductTimelineEntry(*upt)
+    for upt_row in seed_upt_rows:
+        upt_entry = UserProductTimelineEntry(*upt_row)
         seed_user_product_timeline.setdefault(user_id, {})[upt_entry.product_id] = upt_entry
 
     # Compute fresh user_timeline entries
@@ -636,25 +637,17 @@ async def refresh(connection: asyncpg.Connection) -> None:
         sorted_events_iter: AsyncIterator[CumulativeCashflow | PriceUpdate] = merge_sorted(
             sorted_price_update_iter, list_to_async_iterator(sorted_cumulative_cashflows)
         )
-        await refresh_user_product_timeline(
+        sorted_user_product_timeline: list[UserProductTimelineEntry] = []
+        async for upt in refresh_user_product_timeline(
             connection,
             granularity,
             sorted_events_iter,
             seed_cumulative_cashflows_by_product,
             seed_price_updates,
-        )
+        ):
+            sorted_user_product_timeline.append(upt)
 
-    # Refresh user_timeline_cache
-    for granularity in GRANULARITIES:
-        # Fetch UserProductTimelineEntry objects after watermark
-        sorted_upt_rows: list[asyncpg.Record] = await connection.fetch(f"""
-            SELECT {", ".join(f.name for f in fields(UserProductTimelineEntry))}
-            FROM user_product_timeline_cache_{granularity.suffix}
-            WHERE "timestamp" > (SELECT COALESCE(MAX("timestamp"), '-Infinity'::timestamptz)
-                                 FROM user_timeline_cache_{granularity.suffix})
-            ORDER BY "timestamp" ASC
-        """)
-        sorted_user_product_timeline = [UserProductTimelineEntry(*upt) for upt in sorted_upt_rows]
+        # Refresh user_timeline_cache
 
         # Get seed: latest UserProductTimelineEntry per (user_id, product_id) before watermark
         seed_upt_rows: list[asyncpg.Record] = await connection.fetch(f"""
@@ -667,10 +660,10 @@ async def refresh(connection: asyncpg.Connection) -> None:
         """)
 
         seed_user_product_timeline: dict[UUID, dict[UUID, UserProductTimelineEntry]] = {}
-        for upt in seed_upt_rows:
-            seed_user_product_timeline.setdefault(upt["user_id"], {})[upt["product_id"]] = (
-                UserProductTimelineEntry(*upt)
-            )
+        for upt_row in seed_upt_rows:
+            seed_user_product_timeline.setdefault(upt_row["user_id"], {})[
+                upt_row["product_id"]
+            ] = UserProductTimelineEntry(*upt_row)
 
         await refresh_user_timeline(
             connection,
