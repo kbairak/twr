@@ -1,7 +1,7 @@
 """Utilities for streaming/iterating over database records"""
 
 from collections.abc import AsyncIterator
-from typing import Sequence
+from typing import Any, Callable, Sequence
 
 import asyncpg
 from asyncpg.cursor import CursorFactory
@@ -74,6 +74,15 @@ async def deduplicate_by_timestamp[E: BasePerformanceEntry](
     # Yield the last record
     if current is not None:
         yield current
+
+
+def deduplicate_by_timestamp_decorator[T: BasePerformanceEntry](
+    func: Callable[..., AsyncIterator[T]],
+) -> Callable[..., AsyncIterator[T]]:
+    def decorated(*args: Any, **kwargs: Any) -> AsyncIterator[T]:
+        return deduplicate_by_timestamp(func(*args, **kwargs))
+
+    return decorated
 
 
 async def cursor_to_async_iterator[T: BasePerformanceEntry](

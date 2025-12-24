@@ -433,9 +433,11 @@ async def get_user_product_timeline(
     )
 
     # Compute fresh entries
-    fresh_entries = await compute_user_product_timeline(
+    fresh_entries = []
+    async for entry in compute_user_product_timeline(
         sorted_events_iter, seed_ccf_for_compute_upt, seed_price_updates
-    )
+    ):
+        fresh_entries.append(entry)
 
     # Return cached + fresh combined
     return cached_entries + fresh_entries
@@ -544,9 +546,11 @@ async def get_user_timeline(
     )
 
     # Compute fresh user_product_timeline entries
-    fresh_upt_entries = await compute_user_product_timeline(
+    fresh_upt_entries = []
+    async for upt_entry in compute_user_product_timeline(
         sorted_events_iter, seed_ccf_for_compute_upt, seed_price_updates
-    )
+    ):
+        fresh_upt_entries.append(upt_entry)
 
     # Get seed user_product_timeline (latest per product at or before watermark)
     seed_upt_rows = await connection.fetch(

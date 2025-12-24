@@ -8,7 +8,7 @@ import asyncpg
 from asyncpg import Connection
 
 from performance.granularities import Granularity
-from performance.iter_utils import batch_insert
+from performance.iter_utils import batch_insert, deduplicate_by_timestamp_decorator
 from performance.models import (
     Cashflow,
     CumulativeCashflow,
@@ -87,8 +87,10 @@ async def compute_user_product_timeline(
     sorted_events_iter: AsyncIterator[CumulativeCashflow | PriceUpdate],
     seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]],
     seed_price_updates: dict[UUID, PriceUpdate],
-) -> list[UserProductTimelineEntry]:
-    records: dict[tuple[UUID, UUID, datetime.datetime], UserProductTimelineEntry] = {}
+) -> AsyncIterator[UserProductTimelineEntry]:
+    # Buffer to ensure that we only yield the lates for each (user_id, product_id, timestamp)
+    buffer: UserProductTimelineEntry | None = None
+
     async for event in sorted_events_iter:
         if isinstance(event, CumulativeCashflow):
             ccf = event
@@ -121,7 +123,13 @@ async def compute_user_product_timeline(
                     else Decimal("0.000000")
                 ),
             )
-            records[(upt.user_id, upt.product_id, upt.timestamp)] = upt
+            if buffer is not None and (buffer.user_id, buffer.product_id, buffer.timestamp) != (
+                upt.user_id,
+                upt.product_id,
+                upt.timestamp,
+            ):
+                yield buffer
+            buffer = upt
             seed_cumulative_cashflows.setdefault(ccf.product_id, {})[ccf.user_id] = ccf
         elif isinstance(event, PriceUpdate):
             pu = event
@@ -151,10 +159,17 @@ async def compute_user_product_timeline(
                         else Decimal("0.000000")
                     ),
                 )
-                records[(upt.user_id, upt.product_id, upt.timestamp)] = upt
+                if buffer is not None and (
+                    buffer.user_id,
+                    buffer.product_id,
+                    buffer.timestamp,
+                ) != (upt.user_id, upt.product_id, upt.timestamp):
+                    yield buffer
+                buffer = upt
                 seed_cumulative_cashflows.setdefault(pu.product_id, {})[ccf.user_id] = ccf
             seed_price_updates[pu.product_id] = pu
-    return list(records.values())
+    if buffer is not None:
+        yield buffer
 
 
 async def refresh_user_product_timeline(
@@ -164,15 +179,17 @@ async def refresh_user_product_timeline(
     seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]],
     seed_price_updates: dict[UUID, PriceUpdate],
 ) -> list[UserProductTimelineEntry]:
-    records = await compute_user_product_timeline(
+    user_product_timeline_entries = []
+    async for upt in compute_user_product_timeline(
         sorted_events_iter, seed_cumulative_cashflows, seed_price_updates
-    )
+    ):
+        user_product_timeline_entries.append(upt)
     await connection.copy_records_to_table(
         f"user_product_timeline_cache_{granularity.suffix}",
-        records=[upt.to_tuple() for upt in records],
+        records=[upt.to_tuple() for upt in user_product_timeline_entries],
         columns=[f.name for f in fields(UserProductTimelineEntry)],
     )
-    return records
+    return user_product_timeline_entries
 
 
 async def compute_user_timeline(
@@ -194,6 +211,7 @@ async def compute_user_timeline(
             running_totals[user_id].sell_proceeds += x.sell_proceeds
             running_totals[user_id].cost_basis += x.units * x.avg_buy_price
             running_totals[user_id].sell_basis += x.sell_units * x.avg_buy_price
+
     records: dict[tuple[UUID, datetime.datetime], UserTimelineEntry] = {}
     for upt in sorted_user_product_timeline:
         prev = seed_user_product_timeline.get(upt.user_id, {}).get(
