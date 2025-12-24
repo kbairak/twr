@@ -22,9 +22,6 @@ async def compute_cumulative_cashflows(
     cashflow_iter: AsyncIterator[Cashflow],
     seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]],
 ) -> AsyncIterator[CumulativeCashflow]:
-    if seed_cumulative_cashflows is None:
-        seed_cumulative_cashflows = {}
-
     async for cf in cashflow_iter:
         start = seed_cumulative_cashflows.get(cf.user_id, {}).get(
             cf.product_id,
@@ -87,12 +84,12 @@ async def refresh_cumulative_cashflows(
 
 
 async def compute_user_product_timeline(
-    sorted_events: list[CumulativeCashflow | PriceUpdate],
+    sorted_events_iter: AsyncIterator[CumulativeCashflow | PriceUpdate],
     seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]],
     seed_price_updates: dict[UUID, PriceUpdate],
 ) -> list[UserProductTimelineEntry]:
     records: dict[tuple[UUID, UUID, datetime.datetime], UserProductTimelineEntry] = {}
-    for event in sorted_events:
+    async for event in sorted_events_iter:
         if isinstance(event, CumulativeCashflow):
             ccf = event
             try:
@@ -163,12 +160,12 @@ async def compute_user_product_timeline(
 async def refresh_user_product_timeline(
     connection: asyncpg.Connection,
     granularity: Granularity,
-    sorted_events: list[CumulativeCashflow | PriceUpdate],
+    sorted_events_iter: AsyncIterator[CumulativeCashflow | PriceUpdate],
     seed_cumulative_cashflows: dict[UUID, dict[UUID, CumulativeCashflow]],
     seed_price_updates: dict[UUID, PriceUpdate],
 ) -> list[UserProductTimelineEntry]:
     records = await compute_user_product_timeline(
-        sorted_events, seed_cumulative_cashflows, seed_price_updates
+        sorted_events_iter, seed_cumulative_cashflows, seed_price_updates
     )
     await connection.copy_records_to_table(
         f"user_product_timeline_cache_{granularity.suffix}",

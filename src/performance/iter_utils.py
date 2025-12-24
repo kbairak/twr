@@ -1,6 +1,7 @@
 """Utilities for streaming/iterating over database records"""
 
 from collections.abc import AsyncIterator
+from typing import Sequence
 
 import asyncpg
 from asyncpg.cursor import CursorFactory
@@ -82,9 +83,9 @@ async def cursor_to_async_iterator[T: BasePerformanceEntry](
         yield cls(*record)
 
 
-async def merge_sorted[E: BasePerformanceEntry](
-    *iterators: AsyncIterator[E],
-) -> AsyncIterator[E]:
+async def merge_sorted[T: BasePerformanceEntry](
+    *iterators: AsyncIterator[T],
+) -> AsyncIterator[T]:
     """Merge sorted async iterators into a single sorted async iterator by timestamp.
 
     All input iterators must be sorted by timestamp.
@@ -99,7 +100,7 @@ async def merge_sorted[E: BasePerformanceEntry](
         return
 
     # Track active iterators with their current items
-    active: list[tuple[E, AsyncIterator[E]]] = []
+    active: list[tuple[T, AsyncIterator[T]]] = []
 
     # Prime all iterators
     for iterator in iterators:
@@ -128,3 +129,15 @@ async def merge_sorted[E: BasePerformanceEntry](
         except StopAsyncIteration:
             # Iterator exhausted, remove it
             active.pop(min_idx)
+
+
+async def async_iterator_to_list[T](async_iterator: AsyncIterator[T]) -> list[T]:
+    result = []
+    async for item in async_iterator:
+        result.append(item)
+    return result
+
+
+async def list_to_async_iterator[T](lst: Sequence[T]) -> AsyncIterator[T]:
+    for item in lst:
+        yield item
