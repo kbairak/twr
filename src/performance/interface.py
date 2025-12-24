@@ -238,8 +238,7 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
         ):
             pass
 
-    # Repair user-timeline
-    for granularity in GRANULARITIES:
+        # Repair user-timeline
         min_affected_timestamp = min(timestamps_for_user)
 
         # Build seed from latest entries before min_timestamp
@@ -265,7 +264,7 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
 
         # Fetch ALL user_product_timeline entries >= min_affected_timestamp for affected users
         # (not just the ones we just refreshed, which only include affected products)
-        sorted_user_product_rows = await connection.fetch(
+        sorted_user_product_cursor = connection.cursor(
             f"""
                 WITH user_ids AS (SELECT unnest($1::uuid[]) AS user_id)
                 SELECT {", ".join(f"upt.{f.name}" for f in fields(UserProductTimelineEntry))}
@@ -278,14 +277,14 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
             user_ids_for_user,
             min_affected_timestamp,
         )
-        sorted_user_product_timeline = [
-            UserProductTimelineEntry(*upt_row) for upt_row in sorted_user_product_rows
-        ]
+        sorted_user_product_iter = cursor_to_async_iterator(
+            sorted_user_product_cursor, UserProductTimelineEntry
+        )
 
         await refresh_user_timeline(
             connection,
             granularity,
-            sorted_user_product_timeline,
+            sorted_user_product_iter,
             seed_user_product_timeline,
         )
 
@@ -547,11 +546,9 @@ async def get_user_timeline(
     )
 
     # Compute fresh user_product_timeline entries
-    fresh_upt_entries = []
-    async for upt_entry in compute_user_product_timeline(
+    fresh_upt_iter = compute_user_product_timeline(
         sorted_events_iter, seed_ccf_for_compute_upt, seed_price_updates
-    ):
-        fresh_upt_entries.append(upt_entry)
+    )
 
     # Get seed user_product_timeline (latest per product at or before watermark)
     seed_upt_rows = await connection.fetch(
@@ -572,7 +569,7 @@ async def get_user_timeline(
 
     # Compute fresh user_timeline entries
     fresh_entries = await compute_user_timeline(
-        fresh_upt_entries,
+        fresh_upt_iter,
         seed_user_product_timeline,
     )
 
@@ -616,6 +613,7 @@ async def refresh(connection: asyncpg.Connection) -> None:
     sorted_cumulative_cashflows = await async_iterator_to_list(sorted_cumulative_cashflows_iter)
 
     for granularity in GRANULARITIES:
+        # Refresh user_product_timeline_cache
         seed_price_update_rows: list[asyncpg.Record] = await connection.fetch(f"""
             SELECT DISTINCT ON (product_id) {", ".join(f.name for f in fields(PriceUpdate))}
             FROM price_update_{granularity.suffix}
@@ -637,15 +635,13 @@ async def refresh(connection: asyncpg.Connection) -> None:
         sorted_events_iter: AsyncIterator[CumulativeCashflow | PriceUpdate] = merge_sorted(
             sorted_price_update_iter, list_to_async_iterator(sorted_cumulative_cashflows)
         )
-        sorted_user_product_timeline: list[UserProductTimelineEntry] = []
-        async for upt in refresh_user_product_timeline(
+        sorted_user_product_iter = refresh_user_product_timeline(
             connection,
             granularity,
             sorted_events_iter,
             seed_cumulative_cashflows_by_product,
             seed_price_updates,
-        ):
-            sorted_user_product_timeline.append(upt)
+        )
 
         # Refresh user_timeline_cache
 
@@ -666,8 +662,5 @@ async def refresh(connection: asyncpg.Connection) -> None:
             ] = UserProductTimelineEntry(*upt_row)
 
         await refresh_user_timeline(
-            connection,
-            granularity,
-            sorted_user_product_timeline,
-            seed_user_product_timeline,
+            connection, granularity, sorted_user_product_iter, seed_user_product_timeline
         )

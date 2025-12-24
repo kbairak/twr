@@ -7,7 +7,7 @@ import asyncpg
 import pytest
 
 from performance.granularities import GRANULARITIES
-from performance.iter_utils import cursor_to_async_iterator, merge_sorted
+from performance.iter_utils import cursor_to_async_iterator, list_to_async_iterator, merge_sorted
 from performance.models import (
     Cashflow,
     CumulativeCashflow,
@@ -67,15 +67,13 @@ async def test_multi_product_creates_timeline_events(
         )
 
         # Refresh user_product_timeline
-        user_product_timeline_entries = []
-        async for entry in refresh_user_product_timeline(
+        user_product_timeline_iter = refresh_user_product_timeline(
             connection, granularity, sorted_events_iter, {}, {}
-        ):
-            user_product_timeline_entries.append(entry)
+        )
 
         # Now refresh user_timeline
         user_timeline_entries = await refresh_user_timeline(
-            connection, granularity, user_product_timeline_entries, {}
+            connection, granularity, user_product_timeline_iter, {}
         )
 
         # Fetch results
@@ -192,15 +190,13 @@ async def test_refresh_only_a_few(
         )
 
         # Refresh user_product_timeline
-        user_product_timeline_entries = []
-        async for entry in refresh_user_product_timeline(
+        user_product_timeline_iter = refresh_user_product_timeline(
             connection, granularity, sorted_events_iter, {}, {}
-        ):
-            user_product_timeline_entries.append(entry)
+        )
 
         # Refresh user_timeline with limited events
         user_timeline_entries = await refresh_user_timeline(
-            connection, granularity, user_product_timeline_entries, {}
+            connection, granularity, user_product_timeline_iter, {}
         )
 
         # Fetch results
@@ -284,7 +280,9 @@ async def test_with_seed_values(
         ]
 
         # First refresh
-        await refresh_user_timeline(connection, granularity, first_phase_entries, {})
+        await refresh_user_timeline(
+            connection, granularity, list_to_async_iterator(first_phase_entries), {}
+        )
 
         # Build seed from first phase results
         seed_user_product_timeline: dict[UUID, dict[UUID, UserProductTimelineEntry]] = {}
@@ -293,7 +291,10 @@ async def test_with_seed_values(
 
         # Second refresh with seed
         await refresh_user_timeline(
-            connection, granularity, second_phase_entries, seed_user_product_timeline
+            connection,
+            granularity,
+            list_to_async_iterator(second_phase_entries),
+            seed_user_product_timeline,
         )
 
         # Fetch final results

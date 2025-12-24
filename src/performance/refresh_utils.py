@@ -8,7 +8,7 @@ import asyncpg
 from asyncpg import Connection
 
 from performance.granularities import Granularity
-from performance.iter_utils import batch_insert, deduplicate_by_timestamp_decorator
+from performance.iter_utils import batch_insert
 from performance.models import (
     Cashflow,
     CumulativeCashflow,
@@ -194,7 +194,7 @@ async def refresh_user_product_timeline(
 
 
 async def compute_user_timeline(
-    sorted_user_product_timeline: list[UserProductTimelineEntry],
+    sorted_user_product_timeline_iter: AsyncIterator[UserProductTimelineEntry],
     seed_user_product_timeline: dict[UUID, dict[UUID, UserProductTimelineEntry]],
 ) -> list[UserTimelineEntry]:
     running_totals: dict[UUID, UserTimelineEntry] = {}
@@ -214,7 +214,7 @@ async def compute_user_timeline(
             running_totals[user_id].sell_basis += x.sell_units * x.avg_buy_price
 
     records: dict[tuple[UUID, datetime.datetime], UserTimelineEntry] = {}
-    for upt in sorted_user_product_timeline:
+    async for upt in sorted_user_product_timeline_iter:
         prev = seed_user_product_timeline.get(upt.user_id, {}).get(
             upt.product_id,
             UserProductTimelineEntry(upt.user_id, upt.product_id, datetime.datetime.min),
@@ -261,10 +261,12 @@ async def compute_user_timeline(
 async def refresh_user_timeline(
     connection: asyncpg.Connection,
     granularity: Granularity,
-    sorted_user_product_timeline: list[UserProductTimelineEntry],
+    sorted_user_product_timeline_iter: AsyncIterator[UserProductTimelineEntry],
     seed_user_product_timeline: dict[UUID, dict[UUID, UserProductTimelineEntry]],
 ) -> list[UserTimelineEntry]:
-    records = await compute_user_timeline(sorted_user_product_timeline, seed_user_product_timeline)
+    records = await compute_user_timeline(
+        sorted_user_product_timeline_iter, seed_user_product_timeline
+    )
     await connection.copy_records_to_table(
         f"user_timeline_cache_{granularity.suffix}",
         records=[ut.to_tuple() for ut in records],

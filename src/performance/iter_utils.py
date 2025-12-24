@@ -1,7 +1,7 @@
 """Utilities for streaming/iterating over database records"""
 
 from collections.abc import AsyncIterator
-from typing import Any, Callable, Sequence
+from typing import Sequence
 
 import asyncpg
 from asyncpg.cursor import CursorFactory
@@ -41,48 +41,6 @@ async def batch_insert[T: BasePerformanceEntry](
     if batch:
         await connection.copy_records_to_table(table_name, records=batch, columns=columns)
         total += len(batch)
-
-
-async def deduplicate_by_timestamp[E: BasePerformanceEntry](
-    records: AsyncIterator[E],
-) -> AsyncIterator[E]:
-    """Deduplicate records by timestamp, keeping the last record for each timestamp.
-
-    When multiple records have the same timestamp, only the last one is yielded.
-    This function holds onto a record until it sees one with a different timestamp.
-
-    Args:
-        records: Async iterator of records (must be sorted by timestamp)
-
-    Yields:
-        Deduplicated records
-    """
-    current: E | None = None
-
-    async for record in records:
-        if current is None:
-            # First record
-            current = record
-        elif record.timestamp != current.timestamp:
-            # Different timestamp - yield the previous record and update current
-            yield current
-            current = record
-        else:
-            # Same timestamp - replace current (we keep the last one)
-            current = record
-
-    # Yield the last record
-    if current is not None:
-        yield current
-
-
-def deduplicate_by_timestamp_decorator[T: BasePerformanceEntry](
-    func: Callable[..., AsyncIterator[T]],
-) -> Callable[..., AsyncIterator[T]]:
-    def decorated(*args: Any, **kwargs: Any) -> AsyncIterator[T]:
-        return deduplicate_by_timestamp(func(*args, **kwargs))
-
-    return decorated
 
 
 async def cursor_to_async_iterator[T: BasePerformanceEntry](

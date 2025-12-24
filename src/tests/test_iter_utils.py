@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import asyncpg
 import pytest
 
-from performance.iter_utils import batch_insert, deduplicate_by_timestamp, merge_sorted
+from performance.iter_utils import batch_insert, merge_sorted
 from performance.models import BasePerformanceEntry
 
 
@@ -50,52 +50,6 @@ async def test_batch_insert(connection: asyncpg.Connection) -> None:
     assert len(rows) == 25
     for i, row in enumerate(rows):
         assert row.value == i
-
-
-@pytest.mark.asyncio
-async def test_deduplicate_by_timestamp() -> None:
-    """Test deduplicate_by_timestamp keeps last record for each timestamp"""
-
-    async def record_generator() -> AsyncIterator[SampleEntry]:
-        ts1 = datetime.datetime(2024, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)
-        ts2 = datetime.datetime(2024, 1, 1, 1, 0, tzinfo=datetime.timezone.utc)
-
-        # Two records with ts1 (should keep value=2)
-        yield SampleEntry(timestamp=ts1, value=1)
-        yield SampleEntry(timestamp=ts1, value=2)
-
-        # Three records with ts2 (should keep value=5)
-        yield SampleEntry(timestamp=ts2, value=3)
-        yield SampleEntry(timestamp=ts2, value=4)
-        yield SampleEntry(timestamp=ts2, value=5)
-
-    result = []
-    async for record in deduplicate_by_timestamp(record_generator()):
-        result.append(record)
-
-    assert len(result) == 2
-    assert result[0].value == 2  # Last with ts1
-    assert result[1].value == 5  # Last with ts2
-
-
-@pytest.mark.asyncio
-async def test_deduplicate_by_timestamp_no_duplicates() -> None:
-    """Test deduplicate_by_timestamp with no duplicates"""
-
-    async def record_generator() -> AsyncIterator[SampleEntry]:
-        for i in range(5):
-            yield SampleEntry(
-                timestamp=datetime.datetime(2024, 1, 1, i, 0, tzinfo=datetime.timezone.utc),
-                value=i,
-            )
-
-    result = []
-    async for record in deduplicate_by_timestamp(record_generator()):
-        result.append(record)
-
-    assert len(result) == 5
-    for i, record in enumerate(result):
-        assert record.value == i
 
 
 @pytest.mark.asyncio
