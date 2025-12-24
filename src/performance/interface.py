@@ -7,7 +7,6 @@ from uuid import UUID
 
 import asyncpg
 
-from performance import settings
 from performance.granularities import GRANULARITIES, Granularity
 from performance.iter_utils import (
     async_iterator_to_list,
@@ -155,7 +154,6 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
         user_ids_for_user_product,
         product_ids_for_user_product,
         timestamps_for_user_product,
-        prefetch=settings.PREFETCH_COUNT,
     )
     sorted_cashflow_iter = cursor_to_async_iterator(sorted_cashflow_cursor, Cashflow)
     seed_cumulative_cashflow_cursor = connection.cursor(
@@ -172,7 +170,6 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
         """,
         user_ids_for_user_product,
         product_ids_for_user_product,
-        prefetch=settings.PREFETCH_COUNT,
     )
     seed_cumulative_cashflow_iter = cursor_to_async_iterator(
         seed_cumulative_cashflow_cursor, CumulativeCashflow
@@ -206,7 +203,6 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
             """,
             product_ids_for_user_product,
             timestamps_for_user_product,
-            prefetch=settings.PREFETCH_COUNT,
         )
         sorted_price_update_iter = cursor_to_async_iterator(
             sorted_price_update_cursor, PriceUpdate
@@ -281,7 +277,6 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
             """,
             user_ids_for_user,
             min_affected_timestamp,
-            prefetch=settings.PREFETCH_COUNT,
         )
         sorted_user_product_iter = cursor_to_async_iterator(
             sorted_user_product_cursor, UserProductTimelineEntry
@@ -396,7 +391,6 @@ async def get_user_product_timeline(
             user_id,
             product_id,
             watermark,
-            prefetch=settings.PREFETCH_COUNT,
         )
         sorted_cashflow_iter = cursor_to_async_iterator(sorted_cashflow_cursor, Cashflow)
 
@@ -431,7 +425,6 @@ async def get_user_product_timeline(
         """,
         product_id,
         watermark,
-        prefetch=settings.PREFETCH_COUNT,
     )
     sorted_price_update_iter = cursor_to_async_iterator(sorted_price_update_cursor, PriceUpdate)
 
@@ -508,7 +501,6 @@ async def get_user_timeline(
             """,
             user_id,
             watermark,
-            prefetch=settings.PREFETCH_COUNT,
         )
         sorted_cashflow_iter = cursor_to_async_iterator(sorted_cashflow_cursor, Cashflow)
 
@@ -546,7 +538,6 @@ async def get_user_timeline(
         """,
         user_id,
         watermark,
-        prefetch=settings.PREFETCH_COUNT,
     )
     sorted_price_update_iter = cursor_to_async_iterator(sorted_price_update_cursor, PriceUpdate)
 
@@ -615,7 +606,6 @@ async def refresh(connection: asyncpg.Connection) -> None:
             ORDER BY "timestamp" ASC
         """,
         cumulative_cashflows_watermark,
-        prefetch=settings.PREFETCH_COUNT,
     )
     cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
     sorted_cumulative_cashflows_iter = refresh_cumulative_cashflows(
@@ -641,7 +631,6 @@ async def refresh(connection: asyncpg.Connection) -> None:
                                     FROM user_product_timeline_cache_{granularity.suffix})
                 ORDER BY "timestamp" ASC
             """,
-            prefetch=settings.PREFETCH_COUNT,
         )
         sorted_price_update_iter = cursor_to_async_iterator(
             sorted_price_update_cursor, PriceUpdate
