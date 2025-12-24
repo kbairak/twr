@@ -33,7 +33,7 @@ async def test_inbetween_price_updates_create_timeline_events(
     async with connection.transaction():
         cashflow_cursor = connection.cursor(
             f"""
-                SELECT {", ".join(f.name for f in fields(Cashflow))}
+                SELECT {", ".join(Cashflow.DATABASE_FIELDS)}
                 FROM cashflow
                 ORDER BY "timestamp"
             """,
@@ -60,7 +60,7 @@ async def test_inbetween_price_updates_create_timeline_events(
 
         # assert
         user_product_timeline_rows = await connection.fetch(f"""
-            SELECT {", ".join(f.name for f in fields(UserProductTimelineEntry))}
+            SELECT {", ".join(UserProductTimelineEntry.DATABASE_FIELDS)}
             FROM user_product_timeline_cache_{granularity.suffix}
             ORDER BY "timestamp"
         """)
@@ -95,7 +95,7 @@ async def test_refresh_only_a_few(
     async with connection.transaction():
         cashflow_cursor = connection.cursor(
             f"""
-                SELECT {", ".join(f.name for f in fields(Cashflow))}
+                SELECT {", ".join(Cashflow.DATABASE_FIELDS)}
                 FROM cashflow
                 WHERE "timestamp" < $1
                 ORDER BY "timestamp"
@@ -126,7 +126,7 @@ async def test_refresh_only_a_few(
 
         # assert
         user_product_timeline_rows = await connection.fetch(f"""
-            SELECT {", ".join(f.name for f in fields(UserProductTimelineEntry))}
+            SELECT {", ".join(UserProductTimelineEntry.DATABASE_FIELDS)}
             FROM user_product_timeline_cache_{granularity.suffix}
             ORDER BY "timestamp"
         """)
@@ -163,7 +163,7 @@ async def test_same_timestamp_price_update_before_cashflow(
     async with connection.transaction():
         cashflow_cursor = connection.cursor(
             f"""
-                SELECT {", ".join(f.name for f in fields(Cashflow))}
+                SELECT {", ".join(Cashflow.DATABASE_FIELDS)}
                 FROM cashflow
                 ORDER BY "timestamp"
             """,
@@ -193,7 +193,7 @@ async def test_same_timestamp_price_update_before_cashflow(
 
         user_product_timeline_rows = await connection.fetch(
             f"""
-                SELECT {", ".join(f.name for f in fields(UserProductTimelineEntry))}
+                SELECT {", ".join(UserProductTimelineEntry.DATABASE_FIELDS)}
                 FROM user_product_timeline_cache_{granularity.suffix}
                 WHERE "timestamp" = $1
                 ORDER BY "timestamp"
@@ -231,7 +231,7 @@ async def test_with_seed_values(
     async with connection.transaction():
         cashflow_cursor = connection.cursor(
             f"""
-                SELECT {", ".join(f.name for f in fields(Cashflow))}
+                SELECT {", ".join(Cashflow.DATABASE_FIELDS)}
                 FROM cashflow
                 ORDER BY "timestamp"
             """,
@@ -259,7 +259,7 @@ async def test_with_seed_values(
 
         # assert
         user_product_timeline_rows = await connection.fetch(f"""
-            SELECT {", ".join(f.name for f in fields(UserProductTimelineEntry))}
+            SELECT {", ".join(UserProductTimelineEntry.DATABASE_FIELDS)}
             FROM user_product_timeline_cache_{granularity.suffix}
             ORDER BY "timestamp"
         """)

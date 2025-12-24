@@ -17,13 +17,14 @@ CREATE TABLE cashflow (
     product_id UUID NOT NULL REFERENCES product(id) ON DELETE CASCADE,
     "timestamp" TIMESTAMPTZ NOT NULL,
 
-    -- The 5 interdependent transaction fields
-    -- At least 3 must be provided; trigger will derive the other 2
+    -- The 3 essential transaction fields (execution_price and fees are derived in Python)
     units_delta NUMERIC(20, 6),           -- positive for buys, negative for sells
-    execution_price NUMERIC(20, 6),       -- price per unit
     execution_money NUMERIC(20, 6),       -- units_delta × execution_price
     user_money NUMERIC(20, 6),            -- execution_money + fees (what left/entered bank)
-    fees NUMERIC(20, 6),                  -- always >= 0 (cost to user)
+
+    -- Derived fields (computed in Python):
+    -- execution_price = execution_money / units_delta
+    -- fees = user_money - execution_money
 
     -- Deduplication: only one transaction per user/product/timestamp
     CONSTRAINT unique_cashflow UNIQUE (user_id, product_id, "timestamp")

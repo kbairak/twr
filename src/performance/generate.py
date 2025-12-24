@@ -393,7 +393,7 @@ class EventGenerator:
                 await self.conn.copy_records_to_table(
                     "cashflow",
                     records=[cf.to_tuple() for cf in batch],
-                    columns=[f.name for f in fields(Cashflow)],
+                    columns=Cashflow.DATABASE_FIELDS,
                 )
 
     async def close(self):

@@ -27,7 +27,7 @@ async def test_refresh_cumulative_cashflows(
     async with connection.transaction():
         cashflow_cursor = connection.cursor(
             f"""
-                SELECT {", ".join(f.name for f in fields(Cashflow))}
+                SELECT {", ".join(Cashflow.DATABASE_FIELDS)}
                 FROM cashflow
                 ORDER BY "timestamp"
             """,
@@ -60,7 +60,7 @@ async def test_refresh_only_a_few(
     async with connection.transaction():
         cashflow_cursor = connection.cursor(
             f"""
-                SELECT {", ".join(f.name for f in fields(Cashflow))}
+                SELECT {", ".join(Cashflow.DATABASE_FIELDS)}
                 FROM cashflow
                 ORDER BY "timestamp"
                 LIMIT 1
@@ -92,7 +92,7 @@ async def test_with_seed_data(
     async with connection.transaction():
         cashflow_cursor = connection.cursor(
             f"""
-                SELECT {", ".join(f.name for f in fields(Cashflow))}
+                SELECT {", ".join(Cashflow.DATABASE_FIELDS)}
                 FROM cashflow
                 ORDER BY "timestamp"
             """,
@@ -103,7 +103,7 @@ async def test_with_seed_data(
 
     # Fetch the first cumulative cashflow for use as seed
     ccf_1_row = await connection.fetchrow(f"""
-        SELECT {", ".join(f.name for f in fields(CumulativeCashflow))}
+        SELECT {", ".join(CumulativeCashflow.DATABASE_FIELDS)}
         FROM cumulative_cashflow_cache
         ORDER BY "timestamp"
         LIMIT 1
@@ -121,17 +121,17 @@ async def test_with_seed_data(
     )
     await connection.execute(
         f"""
-            INSERT INTO cashflow ({", ".join(f.name for f in fields(Cashflow))})
-            VALUES ({", ".join(f"${i}" for i in range(1, len(fields(Cashflow)) + 1))})
+            INSERT INTO cashflow ({", ".join(Cashflow.DATABASE_FIELDS)})
+            VALUES ({", ".join(f"${i}" for i in range(1, len(Cashflow.DATABASE_FIELDS) + 1))})
         """,
-        *astuple(cf),
+        *cf.to_tuple(),
     )
 
     # act
     async with connection.transaction():
         cashflow_cursor_2 = connection.cursor(
             f"""
-            SELECT {", ".join(f.name for f in fields(Cashflow))}
+            SELECT {", ".join(Cashflow.DATABASE_FIELDS)}
             FROM cashflow
             WHERE "timestamp" = $1
             ORDER BY "timestamp"
@@ -147,7 +147,7 @@ async def test_with_seed_data(
     # assert
     ccf_2_row = await connection.fetchrow(
         f"""
-        SELECT {", ".join(f.name for f in fields(CumulativeCashflow))}
+        SELECT {", ".join(CumulativeCashflow.DATABASE_FIELDS)}
         FROM cumulative_cashflow_cache
         WHERE "timestamp" = $1
     """,

@@ -421,8 +421,5 @@ PYTHONPATH=src uv run python -m twr.benchmark --days 5 --num-events 100000 --num
 # TODOs
 
 - [ ] Can we have gaps in the cache during concurrent usage?
-- [ ] Get rid of redundant fields, find ways for dataclasses to have everything (properties maybe?)
-- [ ] Benchmarks
 - [ ] Dashboard
-- [ ] use asyncio.gather wherever to speed things up if possible
 - [ ] What if UserProductTimeline had a FK to CumulativeCashflow in order to save on fields? Huge storage wins but perhaps code harder to read and query performance suffers

@@ -42,13 +42,10 @@ async def compute_cumulative_cashflows(
             user_id=cf.user_id,
             product_id=cf.product_id,
             timestamp=cf.timestamp,
-            units=start.units + cf.units_delta,
-            net_investment=start.net_investment + cf.user_money,
             deposits=start.deposits
             + (cf.user_money if cf.units_delta > Decimal("0.000000") else Decimal("0.000000")),
             withdrawals=start.withdrawals
             + (-cf.user_money if cf.units_delta < Decimal("0.000000") else Decimal("0.000000")),
-            fees=start.fees + cf.fees,
             buy_units=start.buy_units
             + (cf.units_delta if cf.units_delta > Decimal("0.000000") else Decimal("0.000000")),
             sell_units=start.sell_units
@@ -80,7 +77,7 @@ async def refresh_cumulative_cashflows(
         connection,
         "cumulative_cashflow_cache",
         cumulative_cashflows_iter,
-        columns=[f.name for f in fields(CumulativeCashflow)],
+        columns=CumulativeCashflow.DATABASE_FIELDS,
     ):
         yield entry
 
@@ -104,26 +101,13 @@ async def compute_user_product_timeline(
                 user_id=ccf.user_id,
                 product_id=ccf.product_id,
                 timestamp=ccf.timestamp,
-                units=ccf.units,
-                net_investment=ccf.net_investment,
                 deposits=ccf.deposits,
                 withdrawals=ccf.withdrawals,
-                fees=ccf.fees,
                 buy_units=ccf.buy_units,
                 sell_units=ccf.sell_units,
                 buy_cost=ccf.buy_cost,
                 sell_proceeds=ccf.sell_proceeds,
                 market_value=ccf.units * pu.price,
-                avg_buy_price=(
-                    (ccf.buy_cost / ccf.buy_units).quantize(Decimal("0.000000"))
-                    if ccf.buy_units > Decimal("0.000000")
-                    else Decimal("0.000000")
-                ),
-                avg_sell_price=(
-                    (ccf.sell_proceeds / ccf.sell_units).quantize(Decimal("0.000000"))
-                    if ccf.sell_units > Decimal("0.000000")
-                    else Decimal("0.000000")
-                ),
             )
             if buffer is not None and (buffer.user_id, buffer.product_id, buffer.timestamp) != (
                 upt.user_id,
@@ -140,26 +124,13 @@ async def compute_user_product_timeline(
                     user_id=ccf.user_id,
                     product_id=ccf.product_id,
                     timestamp=pu.timestamp,
-                    units=ccf.units,
-                    net_investment=ccf.net_investment,
                     deposits=ccf.deposits,
                     withdrawals=ccf.withdrawals,
-                    fees=ccf.fees,
                     buy_units=ccf.buy_units,
                     sell_units=ccf.sell_units,
                     buy_cost=ccf.buy_cost,
                     sell_proceeds=ccf.sell_proceeds,
                     market_value=ccf.units * pu.price,
-                    avg_buy_price=(
-                        (ccf.buy_cost / ccf.buy_units).quantize(Decimal("0.000000"))
-                        if ccf.buy_units > Decimal("0.000000")
-                        else Decimal("0.000000")
-                    ),
-                    avg_sell_price=(
-                        (ccf.sell_proceeds / ccf.sell_units).quantize(Decimal("0.000000"))
-                        if ccf.sell_units > Decimal("0.000000")
-                        else Decimal("0.000000")
-                    ),
                 )
                 if buffer is not None and (
                     buffer.user_id,
@@ -188,7 +159,7 @@ async def refresh_user_product_timeline(
         connection,
         f"user_product_timeline_cache_{granularity.suffix}",
         user_product_timeline_entries_iter,
-        columns=[f.name for f in fields(UserProductTimelineEntry)],
+        columns=UserProductTimelineEntry.DATABASE_FIELDS,
     ):
         yield entry
 
@@ -206,8 +177,6 @@ async def compute_user_timeline(
             running_totals[user_id].deposits += x.deposits
             running_totals[user_id].withdrawals += x.withdrawals
             running_totals[user_id].fees += x.fees
-            running_totals[user_id].buy_units += x.buy_units
-            running_totals[user_id].sell_units += x.sell_units
             running_totals[user_id].buy_cost += x.buy_cost
             running_totals[user_id].sell_proceeds += x.sell_proceeds
             running_totals[user_id].cost_basis += x.units * x.avg_buy_price
@@ -227,8 +196,6 @@ async def compute_user_timeline(
         running_totals[upt.user_id].deposits += upt.deposits - prev.deposits
         running_totals[upt.user_id].withdrawals += upt.withdrawals - prev.withdrawals
         running_totals[upt.user_id].fees += upt.fees - prev.fees
-        running_totals[upt.user_id].buy_units += upt.buy_units - prev.buy_units
-        running_totals[upt.user_id].sell_units += upt.sell_units - prev.sell_units
         running_totals[upt.user_id].buy_cost += upt.buy_cost - prev.buy_cost
         running_totals[upt.user_id].sell_proceeds += upt.sell_proceeds - prev.sell_proceeds
         running_totals[upt.user_id].cost_basis += (
@@ -248,8 +215,6 @@ async def compute_user_timeline(
             deposits=rt.deposits,
             withdrawals=rt.withdrawals,
             fees=rt.fees,
-            buy_units=rt.buy_units,
-            sell_units=rt.sell_units,
             buy_cost=rt.buy_cost,
             sell_proceeds=rt.sell_proceeds,
             cost_basis=rt.cost_basis,
@@ -270,6 +235,6 @@ async def refresh_user_timeline(
     await connection.copy_records_to_table(
         f"user_timeline_cache_{granularity.suffix}",
         records=[ut.to_tuple() for ut in records],
-        columns=[f.name for f in fields(UserTimelineEntry)],
+        columns=UserTimelineEntry.DATABASE_FIELDS,
     )
     return records

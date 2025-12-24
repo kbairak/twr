@@ -8,15 +8,11 @@
         "timestamp" TIMESTAMPTZ NOT NULL,
 
         -- Portfolio-level aggregates (SUM across all products)
-        net_investment NUMERIC(20, 6),
         market_value NUMERIC(20, 6),
 
         -- Aggregated cumulative fields
         deposits NUMERIC(20, 6),
         withdrawals NUMERIC(20, 6),
-        fees NUMERIC(20, 6),
-        buy_units NUMERIC(20, 6),
-        sell_units NUMERIC(20, 6),
         buy_cost NUMERIC(20, 6),
         sell_proceeds NUMERIC(20, 6),
         cost_basis NUMERIC(20, 6),

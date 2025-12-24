@@ -47,7 +47,7 @@ async def test_multi_product_creates_timeline_events(
     async with connection.transaction():
         cashflow_cursor = connection.cursor(
             f"""
-                SELECT {", ".join(f.name for f in fields(Cashflow))}
+                SELECT {", ".join(Cashflow.DATABASE_FIELDS)}
                 FROM cashflow
                 ORDER BY "timestamp"
             """,
@@ -81,7 +81,7 @@ async def test_multi_product_creates_timeline_events(
         # Fetch results
         user_timeline_rows = await connection.fetch(
             f"""
-            SELECT {", ".join(f.name for f in fields(UserTimelineEntry))}
+            SELECT {", ".join(UserTimelineEntry.DATABASE_FIELDS)}
             FROM user_timeline_cache_{granularity.suffix}
             WHERE user_id = $1
             ORDER BY "timestamp"
@@ -134,7 +134,7 @@ async def test_multi_product_creates_timeline_events(
                 parse_time("12:50"),
                 Decimal("2960.000000"),
                 Decimal("3210.000000"),
-                Decimal("2960.000002"),
+                Decimal("2960.000000"),
             ),
         ]
 
@@ -165,7 +165,7 @@ async def test_refresh_only_a_few(
         # Fetch cashflows
         cashflow_cursor = connection.cursor(
             f"""
-                SELECT {", ".join(f.name for f in fields(Cashflow))}
+                SELECT {", ".join(Cashflow.DATABASE_FIELDS)}
                 FROM cashflow
                 WHERE "timestamp" < $1
                 ORDER BY "timestamp"
@@ -204,7 +204,7 @@ async def test_refresh_only_a_few(
         # Fetch results
         user_timeline_rows = await connection.fetch(
             f"""
-            SELECT {", ".join(f.name for f in fields(UserTimelineEntry))}
+            SELECT {", ".join(UserTimelineEntry.DATABASE_FIELDS)}
             FROM user_timeline_cache_{granularity.suffix}
             WHERE user_id = $1
             ORDER BY "timestamp"
@@ -245,7 +245,7 @@ async def test_with_seed_values(
     async with connection.transaction():
         cashflow_cursor = connection.cursor(
             f"""
-                SELECT {", ".join(f.name for f in fields(Cashflow))}
+                SELECT {", ".join(Cashflow.DATABASE_FIELDS)}
                 FROM cashflow
                 ORDER BY "timestamp"
             """,
@@ -304,7 +304,7 @@ async def test_with_seed_values(
         # Fetch final results
         user_timeline_rows = await connection.fetch(
             f"""
-            SELECT {", ".join(f.name for f in fields(UserTimelineEntry))}
+            SELECT {", ".join(UserTimelineEntry.DATABASE_FIELDS)}
             FROM user_timeline_cache_{granularity.suffix}
             WHERE user_id = $1
             ORDER BY "timestamp"
@@ -340,6 +340,6 @@ async def test_with_seed_values(
                 parse_time("12:50"),
                 Decimal("2960.000000"),
                 Decimal("3210.000000"),
-                Decimal("2960.000002"),
+                Decimal("2960.000000"),
             ),
         ]

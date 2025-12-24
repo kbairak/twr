@@ -7,24 +7,24 @@
         "timestamp" TIMESTAMPTZ NOT NULL,
 
         -- Portfolio state (all cumulative fields from cumulative_cashflow)
-        units NUMERIC(20, 6),
-        net_investment NUMERIC(20, 6),
         deposits NUMERIC(20, 6),
         withdrawals NUMERIC(20, 6),
-        fees NUMERIC(20, 6),
         buy_units NUMERIC(20, 6),
         sell_units NUMERIC(20, 6),
         buy_cost NUMERIC(20, 6),
         sell_proceeds NUMERIC(20, 6),
 
-        -- Cached computed values
-        avg_buy_price NUMERIC(20, 6),  -- buy_cost / buy_units (cached for performance)
-        avg_sell_price NUMERIC(20, 6),  -- sell_proceeds / sell_units (cached for performance)
-
         -- Market data
         market_value NUMERIC(20, 6),  -- units × market_price
 
         PRIMARY KEY (user_id, product_id, "timestamp")
+
+      -- Derived fields (computed in Python):
+      -- units = buy_units - sell_units
+      -- net_investment = deposits - withdrawals
+      -- fees = net_investment - (buy_cost - sell_proceeds)
+      -- avg_buy_price = buy_cost / buy_units
+      -- avg_sell_price = sell_proceeds / sell_units
     );
 
     CREATE INDEX idx_user_product_timeline_cache_{{ g.suffix }}_user_product

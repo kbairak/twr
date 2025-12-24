@@ -37,8 +37,6 @@ async def test_add_cashflow(connection: asyncpg.Connection, alice: UUID, aapl: U
     cf = cast(asyncpg.Record, await connection.fetchrow("SELECT * FROM cashflow"))
     assert dict(cf) == {
         "execution_money": Decimal("10000.000000"),
-        "execution_price": Decimal("1000.000000"),
-        "fees": Decimal("0.000000"),
         "id": mock.ANY,
         "product_id": aapl,
         "timestamp": parse_time("12:00"),
@@ -94,7 +92,7 @@ async def test_invalidate_and_reresh(
     # assert
     cumulative_cashflow_rows: list[asyncpg.Record] = await connection.fetch(
         f"""
-            SELECT {", ".join(f.name for f in fields(CumulativeCashflow))}
+            SELECT {", ".join(CumulativeCashflow.DATABASE_FIELDS)}
             FROM cumulative_cashflow_cache
             WHERE user_id = $1 AND product_id = $2
             ORDER BY "timestamp"
@@ -113,7 +111,7 @@ async def test_invalidate_and_reresh(
     # assert user_product_timeline_cache was also invalidated and repaired
     user_product_timeline_rows: list[asyncpg.Record] = await connection.fetch(
         f"""
-            SELECT {", ".join(f.name for f in fields(UserProductTimelineEntry))}
+            SELECT {", ".join(UserProductTimelineEntry.DATABASE_FIELDS)}
             FROM user_product_timeline_cache_{granularity.suffix}
             WHERE user_id = $1 AND product_id = $2
             ORDER BY "timestamp"
@@ -137,7 +135,7 @@ async def test_invalidate_and_reresh(
     # assert user_timeline_cache was also invalidated and repaired
     user_timeline_rows: list[asyncpg.Record] = await connection.fetch(
         f"""
-            SELECT {", ".join(f.name for f in fields(UserTimelineEntry))}
+            SELECT {", ".join(UserTimelineEntry.DATABASE_FIELDS)}
             FROM user_timeline_cache_{granularity.suffix}
             WHERE user_id = $1
             ORDER BY "timestamp"

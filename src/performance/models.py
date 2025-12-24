@@ -2,7 +2,7 @@ import datetime
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any
+from typing import Any, ClassVar
 from uuid import UUID, uuid4
 
 
@@ -29,15 +29,25 @@ class PriceUpdate(BasePerformanceEntry):
 
 @dataclass
 class Cashflow(BasePerformanceEntry):
+    DATABASE_FIELDS: ClassVar[tuple[str, ...]] = (
+        "user_id",
+        "product_id",
+        "timestamp",
+        "id",
+        "units_delta",
+        "execution_money",
+        "user_money",
+    )
+
     user_id: UUID
     product_id: UUID
     timestamp: datetime.datetime
 
     id: UUID = field(default_factory=uuid4)
     units_delta: Decimal | None = None
-    execution_price: Decimal | None = None
     execution_money: Decimal | None = None
     user_money: Decimal | None = None
+    execution_price: Decimal | None = None
     fees: Decimal | None = None
 
     def __post_init__(self) -> None:
@@ -101,73 +111,80 @@ class Cashflow(BasePerformanceEntry):
     def to_tuple(
         self,
     ) -> tuple[
-        UUID,
-        UUID,
-        datetime.datetime,
-        UUID,
-        Decimal | None,
-        Decimal | None,
-        Decimal | None,
-        Decimal | None,
-        Decimal | None,
+        UUID, UUID, datetime.datetime, UUID, Decimal | None, Decimal | None, Decimal | None
     ]:
+        """Return minimal tuple for database storage.
+
+        Only stores units_delta, execution_money, user_money.
+        execution_price and fees are derived in __post_init__ when reading.
+        """
         return (
             self.user_id,
             self.product_id,
             self.timestamp,
             self.id,
             self.units_delta,
-            self.execution_price,
             self.execution_money,
             self.user_money,
-            self.fees,
         )
 
 
 @dataclass
 class CumulativeCashflow(BasePerformanceEntry):
+    DATABASE_FIELDS: ClassVar[tuple[str, ...]] = (
+        "cashflow_id",
+        "user_id",
+        "product_id",
+        "timestamp",
+        "deposits",
+        "withdrawals",
+        "buy_units",
+        "sell_units",
+        "buy_cost",
+        "sell_proceeds",
+    )
+
     cashflow_id: UUID
     user_id: UUID
     product_id: UUID
     timestamp: datetime.datetime
 
-    units: Decimal = Decimal("0.000000")
-    net_investment: Decimal = Decimal("0.000000")
+    # Stored fields (6 fields)
     deposits: Decimal = Decimal("0.000000")
     withdrawals: Decimal = Decimal("0.000000")
-    fees: Decimal = Decimal("0.000000")
     buy_units: Decimal = Decimal("0.000000")
     sell_units: Decimal = Decimal("0.000000")
     buy_cost: Decimal = Decimal("0.000000")
     sell_proceeds: Decimal = Decimal("0.000000")
 
+    # Derived fields (3 fields) - computed in __post_init__
+    units: Decimal = field(init=False, default=Decimal("0.000000"))
+    net_investment: Decimal = field(init=False, default=Decimal("0.000000"))
+    fees: Decimal = field(init=False, default=Decimal("0.000000"))
+
+    def __post_init__(self) -> None:
+        # Derive the 3 computed fields
+        self.units = self.buy_units - self.sell_units
+        self.net_investment = self.deposits - self.withdrawals
+        self.fees = self.net_investment - (self.buy_cost - self.sell_proceeds)
+
     def to_tuple(
         self,
     ) -> tuple[
-        UUID,
-        UUID,
-        UUID,
-        datetime.datetime,
-        Decimal,
-        Decimal,
-        Decimal,
-        Decimal,
-        Decimal,
-        Decimal,
-        Decimal,
-        Decimal,
-        Decimal,
+        UUID, UUID, UUID, datetime.datetime, Decimal, Decimal, Decimal, Decimal, Decimal, Decimal
     ]:
+        """Return minimal tuple for database storage.
+
+        Only stores deposits, withdrawals, buy_units, sell_units, buy_cost, sell_proceeds.
+        units, net_investment, and fees are derived in __post_init__ when reading.
+        """
         return (
             self.cashflow_id,
             self.user_id,
             self.product_id,
             self.timestamp,
-            self.units,
-            self.net_investment,
             self.deposits,
             self.withdrawals,
-            self.fees,
             self.buy_units,
             self.sell_units,
             self.buy_cost,
@@ -177,24 +194,51 @@ class CumulativeCashflow(BasePerformanceEntry):
 
 @dataclass
 class UserProductTimelineEntry(BasePerformanceEntry):
+    DATABASE_FIELDS: ClassVar[tuple[str, ...]] = (
+        "user_id",
+        "product_id",
+        "timestamp",
+        "deposits",
+        "withdrawals",
+        "buy_units",
+        "sell_units",
+        "buy_cost",
+        "sell_proceeds",
+        "market_value",
+    )
+
     user_id: UUID
     product_id: UUID
     timestamp: datetime.datetime
 
-    units: Decimal = Decimal("0.000000")
-    net_investment: Decimal = Decimal("0.000000")
+    # Stored fields (6 fields)
     deposits: Decimal = Decimal("0.000000")
     withdrawals: Decimal = Decimal("0.000000")
-    fees: Decimal = Decimal("0.000000")
     buy_units: Decimal = Decimal("0.000000")
     sell_units: Decimal = Decimal("0.000000")
     buy_cost: Decimal = Decimal("0.000000")
     sell_proceeds: Decimal = Decimal("0.000000")
 
-    avg_buy_price: Decimal = Decimal("0.000000")
-    avg_sell_price: Decimal = Decimal("0.000000")
-
     market_value: Decimal = Decimal("0.000000")
+
+    # Derived fields (5 fields) - computed in __post_init__
+    units: Decimal = field(init=False, default=Decimal("0.000000"))
+    net_investment: Decimal = field(init=False, default=Decimal("0.000000"))
+    fees: Decimal = field(init=False, default=Decimal("0.000000"))
+    avg_buy_price: Decimal = field(init=False, default=Decimal("0.000000"))
+    avg_sell_price: Decimal = field(init=False, default=Decimal("0.000000"))
+
+    def __post_init__(self) -> None:
+        # Derive the 5 computed fields
+        self.units = self.buy_units - self.sell_units
+        self.net_investment = self.deposits - self.withdrawals
+        self.fees = self.net_investment - (self.buy_cost - self.sell_proceeds)
+        self.avg_buy_price = (
+            (self.buy_cost / self.buy_units) if self.buy_units != 0 else Decimal("0.000000")
+        )
+        self.avg_sell_price = (
+            (self.sell_proceeds / self.sell_units) if self.sell_units != 0 else Decimal("0.000000")
+        )
 
     def to_tuple(
         self,
@@ -202,11 +246,6 @@ class UserProductTimelineEntry(BasePerformanceEntry):
         UUID,
         UUID,
         datetime.datetime,
-        Decimal,
-        Decimal,
-        Decimal,
-        Decimal,
-        Decimal,
         Decimal,
         Decimal,
         Decimal,
@@ -219,66 +258,61 @@ class UserProductTimelineEntry(BasePerformanceEntry):
             self.user_id,
             self.product_id,
             self.timestamp,
-            self.units,
-            self.net_investment,
             self.deposits,
             self.withdrawals,
-            self.fees,
             self.buy_units,
             self.sell_units,
             self.buy_cost,
             self.sell_proceeds,
-            self.avg_buy_price,
-            self.avg_sell_price,
             self.market_value,
         )
 
 
 @dataclass
 class UserTimelineEntry(BasePerformanceEntry):
+    DATABASE_FIELDS: ClassVar[tuple[str, ...]] = (
+        "user_id",
+        "timestamp",
+        "market_value",
+        "deposits",
+        "withdrawals",
+        "buy_cost",
+        "sell_proceeds",
+        "cost_basis",
+        "sell_basis",
+    )
+
     user_id: UUID
     timestamp: datetime.datetime
 
-    net_investment: Decimal = Decimal("0.000000")
+    # Stored fields (7 fields)
     market_value: Decimal = Decimal("0.000000")
-
     deposits: Decimal = Decimal("0.000000")
     withdrawals: Decimal = Decimal("0.000000")
-    fees: Decimal = Decimal("0.000000")
-    buy_units: Decimal = Decimal("0.000000")
-    sell_units: Decimal = Decimal("0.000000")
     buy_cost: Decimal = Decimal("0.000000")
     sell_proceeds: Decimal = Decimal("0.000000")
     cost_basis: Decimal = Decimal("0.000000")
     sell_basis: Decimal = Decimal("0.000000")
 
+    # Derived fields (2 fields) - computed in __post_init__
+    net_investment: Decimal = Decimal("0.000000")
+    fees: Decimal = Decimal("0.000000")
+
+    def __post_init__(self) -> None:
+        self.net_investment = self.deposits - self.withdrawals
+        self.fees = self.net_investment - (self.buy_cost - self.sell_proceeds)
+
     def to_tuple(
         self,
     ) -> tuple[
-        UUID,
-        datetime.datetime,
-        Decimal,
-        Decimal,
-        Decimal,
-        Decimal,
-        Decimal,
-        Decimal,
-        Decimal,
-        Decimal,
-        Decimal,
-        Decimal,
-        Decimal,
+        UUID, datetime.datetime, Decimal, Decimal, Decimal, Decimal, Decimal, Decimal, Decimal
     ]:
         return (
             self.user_id,
             self.timestamp,
-            self.net_investment,
             self.market_value,
             self.deposits,
             self.withdrawals,
-            self.fees,
-            self.buy_units,
-            self.sell_units,
             self.buy_cost,
             self.sell_proceeds,
             self.cost_basis,

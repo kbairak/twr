@@ -13,7 +13,7 @@ async def batch_insert[T: BasePerformanceEntry](
     connection: asyncpg.Connection,
     table_name: str,
     entries: AsyncIterator[T],
-    columns: list[str],
+    columns: Sequence[str],
     batch_size: int = 10000,
 ) -> AsyncIterator[T]:
     """Insert entries into database table in batches.

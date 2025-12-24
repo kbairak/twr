@@ -141,17 +141,15 @@ async def make_data(
                     )[0][1]
                     await connection.execute(
                         "INSERT INTO cashflow ("
-                        "user_id, product_id, timestamp, units_delta, execution_price, "
-                        "execution_money, user_money, fees"
-                        ") VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                        "user_id, product_id, timestamp, units_delta, "
+                        "execution_money, user_money"
+                        ") VALUES ($1, $2, $3, $4, $5, $6)",
                         await user(user_name),
                         await product(product_name),
                         timestamp,
                         units,
-                        price,
                         units * price,
-                        units * price,
-                        0,
+                        units * price,  # user_money = execution_money when fees=0
                     )
 
     return fn

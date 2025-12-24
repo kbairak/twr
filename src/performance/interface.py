@@ -130,7 +130,7 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
     await connection.copy_records_to_table(
         "cashflow",
         records=[cf.to_tuple() for cf in cashflows],
-        columns=[f.name for f in fields(Cashflow)],
+        columns=Cashflow.DATABASE_FIELDS,
     )
 
     # Repair cumulative cashlows
@@ -141,7 +141,7 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
                        unnest($2::uuid[]) AS product_id,
                        unnest($3::timestamptz[]) AS "timestamp"
             )
-            SELECT {", ".join(f"cf.{f.name}" for f in fields(Cashflow))}
+            SELECT {", ".join(f"cf.{f}" for f in Cashflow.DATABASE_FIELDS)}
             FROM cashflow cf
                 INNER JOIN min_user_product_timestamps mupt
                     ON cf.user_id = mupt.user_id AND
@@ -162,7 +162,7 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
                 SELECT unnest($1::uuid[]) AS user_id, unnest($2::uuid[]) AS product_id
             )
             SELECT DISTINCT ON (user_id, product_id)
-                {", ".join(f"ccc.{f.name}" for f in fields(CumulativeCashflow))}
+                {", ".join(f"ccc.{f}" for f in CumulativeCashflow.DATABASE_FIELDS)}
             FROM cumulative_cashflow_cache ccc
                 INNER JOIN min_user_products mup
                     ON ccc.user_id = mup.user_id AND ccc.product_id = mup.product_id
@@ -247,7 +247,7 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
             f"""
                 WITH user_ids AS (SELECT unnest($1::uuid[]) AS user_id)
                 SELECT DISTINCT ON (upt.user_id, upt.product_id)
-                    {", ".join(f"upt.{f.name}" for f in fields(UserProductTimelineEntry))}
+                    {", ".join(f"upt.{f}" for f in UserProductTimelineEntry.DATABASE_FIELDS)}
                 FROM user_product_timeline_cache_{granularity.suffix} upt
                     INNER JOIN user_ids u
                         ON upt.user_id = u.user_id
@@ -268,7 +268,7 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
         sorted_user_product_cursor = connection.cursor(
             f"""
                 WITH user_ids AS (SELECT unnest($1::uuid[]) AS user_id)
-                SELECT {", ".join(f"upt.{f.name}" for f in fields(UserProductTimelineEntry))}
+                SELECT {", ".join(f"upt.{f}" for f in UserProductTimelineEntry.DATABASE_FIELDS)}
                 FROM user_product_timeline_cache_{granularity.suffix} upt
                     INNER JOIN user_ids u
                         ON upt.user_id = u.user_id
@@ -340,7 +340,7 @@ async def get_user_product_timeline(
     # Fetch all cached entries
     cached_rows = await connection.fetch(
         f"""
-            SELECT {", ".join(f.name for f in fields(UserProductTimelineEntry))}
+            SELECT {", ".join((f for f in UserProductTimelineEntry.DATABASE_FIELDS))}
             FROM user_product_timeline_cache_{granularity.suffix}
             WHERE user_id = $1 AND product_id = $2
             ORDER BY "timestamp" ASC
@@ -362,7 +362,7 @@ async def get_user_product_timeline(
     seed_ccf_for_compute_upt: dict[UUID, dict[UUID, CumulativeCashflow]] = {}
     ccf_row = await connection.fetchrow(
         f"""
-            SELECT {", ".join(f.name for f in fields(CumulativeCashflow))}
+            SELECT {", ".join(CumulativeCashflow.DATABASE_FIELDS)}
             FROM cumulative_cashflow_cache
             WHERE user_id = $1 AND product_id = $2 AND "timestamp" <= $3
             ORDER BY "timestamp" DESC
@@ -383,7 +383,7 @@ async def get_user_product_timeline(
     async with connection.transaction():
         sorted_cashflow_cursor = connection.cursor(
             f"""
-                SELECT {", ".join(f.name for f in fields(Cashflow))}
+                SELECT {", ".join(Cashflow.DATABASE_FIELDS)}
                 FROM cashflow
                 WHERE user_id = $1 AND product_id = $2 AND "timestamp" > $3
                 ORDER BY "timestamp" ASC
@@ -453,7 +453,7 @@ async def get_user_timeline(
     # Fetch all cached entries
     cached_rows = await connection.fetch(
         f"""
-            SELECT {", ".join(f.name for f in fields(UserTimelineEntry))}
+            SELECT {", ".join(UserTimelineEntry.DATABASE_FIELDS)}
             FROM user_timeline_cache_{granularity.suffix}
             WHERE user_id = $1
             ORDER BY "timestamp" ASC
@@ -475,7 +475,7 @@ async def get_user_timeline(
     ccf_rows = await connection.fetch(
         f"""
             SELECT DISTINCT ON (product_id)
-                {", ".join(f.name for f in fields(CumulativeCashflow))}
+                {", ".join(CumulativeCashflow.DATABASE_FIELDS)}
             FROM cumulative_cashflow_cache
             WHERE user_id = $1 AND "timestamp" <= $2
             ORDER BY product_id, "timestamp" DESC
@@ -494,7 +494,7 @@ async def get_user_timeline(
     async with connection.transaction():
         sorted_cashflow_cursor = connection.cursor(
             f"""
-                SELECT {", ".join(f.name for f in fields(Cashflow))}
+                SELECT {", ".join(Cashflow.DATABASE_FIELDS)}
                 FROM cashflow
                 WHERE user_id = $1 AND "timestamp" > $2
                 ORDER BY "timestamp" ASC
@@ -555,7 +555,7 @@ async def get_user_timeline(
     seed_upt_rows = await connection.fetch(
         f"""
             SELECT DISTINCT ON (product_id)
-                {", ".join(f.name for f in fields(UserProductTimelineEntry))}
+                {", ".join(UserProductTimelineEntry.DATABASE_FIELDS)}
             FROM user_product_timeline_cache_{granularity.suffix}
             WHERE user_id = $1 AND "timestamp" <= $2
             ORDER BY product_id, "timestamp" DESC
@@ -583,7 +583,7 @@ async def refresh(connection: asyncpg.Connection) -> None:
     # Get last cumulative_cashflow per user-product
     seed_cumulative_cashflow_rows: list[asyncpg.Record] = await connection.fetch(f"""
         SELECT DISTINCT ON (user_id, product_id)
-            {", ".join(f.name for f in fields(CumulativeCashflow))}
+            {", ".join(CumulativeCashflow.DATABASE_FIELDS)}
         FROM cumulative_cashflow_cache
         ORDER BY user_id, product_id, "timestamp" DESC
     """)
@@ -600,7 +600,7 @@ async def refresh(connection: asyncpg.Connection) -> None:
 
     cashflow_cursor = connection.cursor(
         f"""
-            SELECT {", ".join(f.name for f in fields(Cashflow))}
+            SELECT {", ".join(Cashflow.DATABASE_FIELDS)}
             FROM cashflow
             WHERE "timestamp" > $1
             ORDER BY "timestamp" ASC
@@ -651,7 +651,7 @@ async def refresh(connection: asyncpg.Connection) -> None:
         # Get seed: latest UserProductTimelineEntry per (user_id, product_id) before watermark
         seed_upt_rows: list[asyncpg.Record] = await connection.fetch(f"""
             SELECT DISTINCT ON (user_id, product_id)
-                {", ".join(f.name for f in fields(UserProductTimelineEntry))}
+                {", ".join(UserProductTimelineEntry.DATABASE_FIELDS)}
             FROM user_product_timeline_cache_{granularity.suffix}
             WHERE "timestamp" <= (SELECT COALESCE(MAX("timestamp"), 'Infinity'::timestamptz)
                                   FROM user_timeline_cache_{granularity.suffix})

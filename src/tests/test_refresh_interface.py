@@ -41,7 +41,7 @@ async def test_refresh_updates_user_timeline(
     granularity = GRANULARITIES[0]
     user_timeline_rows = await connection.fetch(
         f"""
-            SELECT {", ".join(f.name for f in fields(UserTimelineEntry))}
+            SELECT {", ".join(UserTimelineEntry.DATABASE_FIELDS)}
             FROM user_timeline_cache_{granularity.suffix}
             WHERE user_id = $1
             ORDER BY "timestamp"
@@ -79,7 +79,7 @@ async def test_refresh_updates_user_timeline(
     # assert - verify new entries added
     user_timeline_rows = await connection.fetch(
         f"""
-            SELECT {", ".join(f.name for f in fields(UserTimelineEntry))}
+            SELECT {", ".join(UserTimelineEntry.DATABASE_FIELDS)}
             FROM user_timeline_cache_{granularity.suffix}
             WHERE user_id = $1
             ORDER BY "timestamp"

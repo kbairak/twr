@@ -42,13 +42,10 @@ async def test_get_user_product_timeline_without_refresh(
             user_id=alice,
             product_id=aapl,
             timestamp=parse_time("12:10"),
-            units=Decimal("10"),
-            net_investment=Decimal("1000"),
             deposits=Decimal("1000"),
             buy_units=Decimal("10"),
             buy_cost=Decimal("1000"),
             market_value=Decimal("1000"),
-            avg_buy_price=Decimal("100"),
         ),
     )
 
@@ -87,13 +84,10 @@ async def test_get_user_product_timeline_with_refresh(
             user_id=alice,
             product_id=aapl,
             timestamp=parse_time("12:10"),
-            units=Decimal("10"),
-            net_investment=Decimal("1000"),
             deposits=Decimal("1000"),
             buy_units=Decimal("10"),
             buy_cost=Decimal("1000"),
             market_value=Decimal("1000"),
-            avg_buy_price=Decimal("100"),
         ),
     )
 
@@ -139,39 +133,30 @@ async def test_get_user_product_timeline_cached_and_fresh(
             user_id=alice,
             product_id=aapl,
             timestamp=parse_time("12:10"),
-            units=Decimal("10"),
-            net_investment=Decimal("1000"),
             deposits=Decimal("1000"),
             buy_units=Decimal("10"),
             buy_cost=Decimal("1000"),
             market_value=Decimal("1000"),
-            avg_buy_price=Decimal("100"),
         ),
         # Fresh entry from price update (12:14 bucketed to 12:15)
         UserProductTimelineEntry(
             user_id=alice,
             product_id=aapl,
             timestamp=parse_time("12:15"),
-            units=Decimal("10"),
-            net_investment=Decimal("1000"),
             deposits=Decimal("1000"),
             buy_units=Decimal("10"),
             buy_cost=Decimal("1000"),
             market_value=Decimal("1100"),
-            avg_buy_price=Decimal("100"),
         ),
         # Fresh entry from cashflow (12:20)
         UserProductTimelineEntry(
             user_id=alice,
             product_id=aapl,
             timestamp=parse_time("12:20"),
-            units=Decimal("15"),
-            net_investment=Decimal("1550"),
             deposits=Decimal("1550"),
             buy_units=Decimal("15"),
             buy_cost=Decimal("1550"),
             market_value=Decimal("1650"),
-            avg_buy_price=Decimal("103.333333"),
         ),
     ]
     assert len(timeline) == len(expected)

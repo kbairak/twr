@@ -56,8 +56,6 @@ def user_timeline_eq(
         and abs(actual.deposits - expected.deposits) <= tolerance
         and abs(actual.withdrawals - expected.withdrawals) <= tolerance
         and abs(actual.fees - expected.fees) <= tolerance
-        and abs(actual.buy_units - expected.buy_units) <= tolerance
-        and abs(actual.sell_units - expected.sell_units) <= tolerance
         and abs(actual.buy_cost - expected.buy_cost) <= tolerance
         and abs(actual.sell_proceeds - expected.sell_proceeds) <= tolerance
         and abs(actual.cost_basis - expected.cost_basis) <= tolerance
