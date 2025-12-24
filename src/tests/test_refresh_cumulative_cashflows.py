@@ -6,6 +6,7 @@ from uuid import UUID
 import asyncpg
 import pytest
 
+from performance import settings
 from performance.iter_utils import cursor_to_async_iterator
 from performance.models import Cashflow, CumulativeCashflow
 from performance.refresh_utils import refresh_cumulative_cashflows
@@ -25,11 +26,14 @@ async def test_refresh_cumulative_cashflows(
 
     # act
     async with connection.transaction():
-        cashflow_cursor = connection.cursor(f"""
-            SELECT {", ".join(f.name for f in fields(Cashflow))}
-            FROM cashflow
-            ORDER BY "timestamp"
-        """)
+        cashflow_cursor = connection.cursor(
+            f"""
+                SELECT {", ".join(f.name for f in fields(Cashflow))}
+                FROM cashflow
+                ORDER BY "timestamp"
+            """,
+            prefetch=settings.PREFETCH_COUNT,
+        )
         cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
         cumulative_cashflows = []
         async for ccf in refresh_cumulative_cashflows(connection, cashflow_iter, {}):
@@ -56,12 +60,15 @@ async def test_refresh_only_a_few(
 
     # act
     async with connection.transaction():
-        cashflow_cursor = connection.cursor(f"""
-            SELECT {", ".join(f.name for f in fields(Cashflow))}
-            FROM cashflow
-            ORDER BY "timestamp"
-            LIMIT 1
-        """)
+        cashflow_cursor = connection.cursor(
+            f"""
+                SELECT {", ".join(f.name for f in fields(Cashflow))}
+                FROM cashflow
+                ORDER BY "timestamp"
+                LIMIT 1
+            """,
+            prefetch=settings.PREFETCH_COUNT,
+        )
         cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
         cumulative_cashflows = []
         async for ccf in refresh_cumulative_cashflows(connection, cashflow_iter, {}):
@@ -86,11 +93,14 @@ async def test_with_seed_data(
         Alice/AAPL:      ,     1
     """)
     async with connection.transaction():
-        cashflow_cursor = connection.cursor(f"""
-            SELECT {", ".join(f.name for f in fields(Cashflow))}
-            FROM cashflow
-            ORDER BY "timestamp"
-        """)
+        cashflow_cursor = connection.cursor(
+            f"""
+                SELECT {", ".join(f.name for f in fields(Cashflow))}
+                FROM cashflow
+                ORDER BY "timestamp"
+            """,
+            prefetch=settings.PREFETCH_COUNT,
+        )
         cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
         async for _ in refresh_cumulative_cashflows(connection, cashflow_iter, {}):
             pass
@@ -131,6 +141,7 @@ async def test_with_seed_data(
             ORDER BY "timestamp"
         """,
             parse_time("12:20"),
+            prefetch=settings.PREFETCH_COUNT,
         )
         cashflow_iter_2 = cursor_to_async_iterator(cashflow_cursor_2, Cashflow)
         async for _ in refresh_cumulative_cashflows(

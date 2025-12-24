@@ -6,6 +6,7 @@ from uuid import UUID
 import asyncpg
 import pytest
 
+from performance import settings
 from performance.granularities import GRANULARITIES
 from performance.iter_utils import cursor_to_async_iterator, list_to_async_iterator, merge_sorted
 from performance.models import (
@@ -45,21 +46,25 @@ async def test_multi_product_creates_timeline_events(
     # Fetch cashflows
     # Refresh cumulative cashflows
     async with connection.transaction():
-        cashflow_cursor = connection.cursor(f"""
-            SELECT {", ".join(f.name for f in fields(Cashflow))}
-            FROM cashflow
-            ORDER BY "timestamp"
-        """)
+        cashflow_cursor = connection.cursor(
+            f"""
+                SELECT {", ".join(f.name for f in fields(Cashflow))}
+                FROM cashflow
+                ORDER BY "timestamp"
+            """,
+            prefetch=settings.PREFETCH_COUNT,
+        )
         cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
         cumulative_cashflows_iter = refresh_cumulative_cashflows(connection, cashflow_iter, {})
 
         # Fetch price updates
         price_update_cursor = connection.cursor(
             f"""
-            SELECT {", ".join(f.name for f in fields(PriceUpdate))}
-            FROM price_update_{granularity.suffix}
-            ORDER BY "timestamp"
-            """
+                SELECT {", ".join(f.name for f in fields(PriceUpdate))}
+                FROM price_update_{granularity.suffix}
+                ORDER BY "timestamp"
+            """,
+            prefetch=settings.PREFETCH_COUNT,
         )
         price_update_iter = cursor_to_async_iterator(price_update_cursor, PriceUpdate)
         sorted_events_iter: AsyncIterator[CumulativeCashflow | PriceUpdate] = merge_sorted(
@@ -169,6 +174,7 @@ async def test_refresh_only_a_few(
                 ORDER BY "timestamp"
             """,
             parse_time("12:39"),
+            prefetch=settings.PREFETCH_COUNT,
         )
         cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
         cumulative_cashflows_iter = refresh_cumulative_cashflows(connection, cashflow_iter, {})
@@ -181,6 +187,7 @@ async def test_refresh_only_a_few(
                 ORDER BY "timestamp"
             """,
             parse_time("12:39"),
+            prefetch=settings.PREFETCH_COUNT,
         )
         price_updates_iter = cursor_to_async_iterator(price_update_cursor, PriceUpdate)
 
@@ -241,11 +248,14 @@ async def test_with_seed_values(
     )
 
     async with connection.transaction():
-        cashflow_cursor = connection.cursor(f"""
-            SELECT {", ".join(f.name for f in fields(Cashflow))}
-            FROM cashflow
-            ORDER BY "timestamp"
-        """)
+        cashflow_cursor = connection.cursor(
+            f"""
+                SELECT {", ".join(f.name for f in fields(Cashflow))}
+                FROM cashflow
+                ORDER BY "timestamp"
+            """,
+            prefetch=settings.PREFETCH_COUNT,
+        )
         cashflow_iter = cursor_to_async_iterator(cashflow_cursor, Cashflow)
         cumulative_cashflows_iter = refresh_cumulative_cashflows(connection, cashflow_iter, {})
 
@@ -254,7 +264,8 @@ async def test_with_seed_values(
                 SELECT {", ".join(f.name for f in fields(PriceUpdate))}
                 FROM price_update_{granularity.suffix}
                 ORDER BY "timestamp"
-            """
+            """,
+            prefetch=settings.PREFETCH_COUNT,
         )
         price_updates_iter = cursor_to_async_iterator(price_update_cursor, PriceUpdate)
 
