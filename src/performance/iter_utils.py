@@ -1,7 +1,10 @@
 """Utilities for streaming/iterating over database records"""
 
+import datetime
 from collections.abc import AsyncIterator
+from decimal import Decimal
 from typing import Sequence
+from uuid import UUID
 
 import asyncpg
 from asyncpg.cursor import CursorFactory
@@ -14,7 +17,7 @@ async def batch_insert[T: BasePerformanceEntry](
     table_name: str,
     entries: AsyncIterator[T],
     columns: Sequence[str],
-    batch_size: int = 10000,
+    batch_size: int = 10_000,
 ) -> AsyncIterator[T]:
     """Insert entries into database table in batches.
 
@@ -32,15 +35,63 @@ async def batch_insert[T: BasePerformanceEntry](
         batch.append(entry.to_tuple())
 
         if len(batch) >= batch_size:
-            await connection.copy_records_to_table(table_name, records=batch, columns=columns)
+            await _batch_insert_with_conflict_handling(connection, table_name, batch, columns)
             total += len(batch)
             batch.clear()
         yield entry
 
     # Insert remaining entries
     if batch:
-        await connection.copy_records_to_table(table_name, records=batch, columns=columns)
+        await _batch_insert_with_conflict_handling(connection, table_name, batch, columns)
         total += len(batch)
+
+
+async def _batch_insert_with_conflict_handling(
+    connection: asyncpg.Connection,
+    table_name: str,
+    records: list[tuple],
+    columns: Sequence[str],
+) -> None:
+    """Insert records with ON CONFLICT DO NOTHING to handle duplicates."""
+    if not records:
+        return
+
+    # Build arrays for each column
+    placeholders = ", ".join(f"${i+1}" for i in range(len(columns)))
+    column_names = ", ".join(f'"{col}"' for col in columns)
+
+    # Use unnest to insert multiple rows from arrays
+    unnest_expr = ", ".join(f"unnest(${i+1}::{_infer_array_type(records[0][i])}[])" for i in range(len(columns)))
+
+    query = f"""
+        INSERT INTO {table_name} ({column_names})
+        SELECT {unnest_expr}
+        ON CONFLICT DO NOTHING
+    """
+
+    # Transpose records: list of tuples -> tuple of lists
+    columns_data = tuple([record[i] for record in records] for i in range(len(columns)))
+
+    await connection.execute(query, *columns_data)
+
+
+def _infer_array_type(value) -> str:
+    """Infer PostgreSQL array type from Python value."""
+    if isinstance(value, UUID):
+        return "uuid"
+    elif isinstance(value, datetime.datetime):
+        return "timestamptz"
+    elif isinstance(value, Decimal):
+        return "numeric"
+    elif isinstance(value, int):
+        return "bigint"
+    elif isinstance(value, float):
+        return "float8"
+    elif isinstance(value, str):
+        return "text"
+    else:
+        # Fallback
+        return "text"
 
 
 async def cursor_to_async_iterator[T: BasePerformanceEntry](

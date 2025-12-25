@@ -59,6 +59,11 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
             cf.timestamp,
         )
 
+    # Acquire advisory locks for affected (user, product) pairs to prevent conflicts with refresh
+    for user_id, product_id in min_user_product_timestamps.keys():
+        lock_id = hash((user_id.bytes, product_id.bytes)) & 0x7FFFFFFFFFFFFFFF
+        await connection.execute("SELECT pg_advisory_xact_lock($1)", lock_id)
+
     # Reverse-zip min_timestamps into user_ids, product_ids, timestamps
     keys, timestamps_tuple = zip(*min_user_product_timestamps.items())
     user_ids_tuple, product_ids_tuple = zip(*keys)
@@ -147,8 +152,6 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
                     ON cf.user_id = mupt.user_id AND
                        cf.product_id = mupt.product_id AND
                        cf."timestamp" >= mupt."timestamp"
-            WHERE cf."timestamp" <= (SELECT COALESCE(MAX("timestamp"), 'Infinity'::timestamptz)
-                                     FROM cumulative_cashflow_cache)
             ORDER BY cf."timestamp" ASC
         """,
         user_ids_for_user_product,
@@ -196,8 +199,6 @@ async def add_cashflows(connection: asyncpg.Connection, *cashflows: Cashflow) ->
                 FROM price_update_{granularity.suffix} pu
                     INNER JOIN min_user_product_timestamps mupt
                         ON pu.product_id = mupt.product_id AND pu."timestamp" >= mupt."timestamp"
-                WHERE pu."timestamp" <= (SELECT COALESCE(MAX("timestamp"), 'Infinity'::timestamptz)
-                                         FROM user_product_timeline_cache_{granularity.suffix})
                 ORDER BY pu."timestamp" ASC
 
             """,
@@ -597,6 +598,12 @@ async def refresh(connection: asyncpg.Connection) -> None:
         seed_cumulative_cashflows_by_user.setdefault(ccf.user_id, {})[ccf.product_id] = ccf
         seed_cumulative_cashflows_by_product.setdefault(ccf.product_id, {})[ccf.user_id] = ccf
         cumulative_cashflows_watermark = max(cumulative_cashflows_watermark, ccf.timestamp)
+
+    # Acquire advisory locks for all (user, product) pairs to prevent conflicts with add_cashflows
+    for user_id, products in seed_cumulative_cashflows_by_user.items():
+        for product_id in products.keys():
+            lock_id = hash((user_id.bytes, product_id.bytes)) & 0x7FFFFFFFFFFFFFFF
+            await connection.execute("SELECT pg_advisory_xact_lock($1)", lock_id)
 
     cashflow_cursor = connection.cursor(
         f"""
