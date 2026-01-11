@@ -1,0 +1,73 @@
+CREATE OR REPLACE FUNCTION cashflow_repair()
+    RETURNS TRIGGER AS $$
+    DECLARE
+        v_overall_watermark TIMESTAMPTZ;
+        v_user_product_watermark TIMESTAMPTZ;
+    BEGIN
+        DELETE FROM cumulative_cashflow_cache
+        WHERE
+            user_id = NEW.user_id AND
+            product_id = NEW.product_id AND
+            "timestamp" >= NEW."timestamp";
+
+        SELECT MAX("timestamp") INTO v_overall_watermark
+        FROM cumulative_cashflow_cache;
+
+        IF v_overall_watermark IS NOT NULL THEN
+            SELECT MAX("timestamp") INTO v_user_product_watermark
+            FROM cumulative_cashflow_cache
+            WHERE user_id = NEW.user_id AND product_id = NEW.product_id;
+
+            INSERT INTO cumulative_cashflow_cache (
+                user_id, product_id, "timestamp", buy_units, sell_units, buy_cost, sell_proceeds,
+                deposits, withdrawals
+            )
+            SELECT
+                user_id, product_id, "timestamp", buy_units, sell_units, buy_cost, sell_proceeds,
+                deposits, withdrawals
+            FROM cumulative_cashflow
+            WHERE
+                user_id = NEW.user_id AND
+                product_id = NEW.product_id AND
+                (v_user_product_watermark IS NULL OR "timestamp" > v_user_product_watermark) AND
+                "timestamp" <= v_overall_watermark;
+        END IF;
+
+        {% for g in GRANULARITIES %}
+            DELETE FROM user_product_timeline_cache_{{ g.suffix }}
+            WHERE
+                user_id = NEW.user_id AND
+                product_id = NEW.product_id AND
+                "timestamp" >= NEW."timestamp";
+
+            SELECT MAX("timestamp") INTO v_overall_watermark
+            FROM user_product_timeline_cache_{{ g.suffix }};
+
+            IF v_overall_watermark IS NOT NULL THEN
+                SELECT MAX("timestamp") INTO v_user_product_watermark
+                FROM user_product_timeline_cache_{{ g.suffix }}
+                WHERE user_id = NEW.user_id AND product_id = NEW.product_id;
+
+                INSERT INTO user_product_timeline_cache_{{ g.suffix }} (
+                    user_id, product_id, "timestamp", cashflow_timestamp
+                )
+                SELECT user_id, product_id, "timestamp", cashflow_timestamp
+                FROM user_product_timeline_{{ g.suffix }}
+                WHERE
+                    user_id = NEW.user_id AND
+                    product_id = NEW.product_id AND
+                    (
+                        v_user_product_watermark IS NULL OR "timestamp" > v_user_product_watermark
+                    ) AND
+                    "timestamp" <= v_overall_watermark;
+            END IF;
+
+        {% endfor %}
+        RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+
+CREATE TRIGGER cashflow_repair
+    AFTER INSERT ON cashflow
+    FOR EACH ROW
+    EXECUTE FUNCTION cashflow_repair();

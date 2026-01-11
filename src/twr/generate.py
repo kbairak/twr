@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone, time
 from typing import Iterator
 import random
 import math
+import uuid
 import psycopg2
 from psycopg2.extras import execute_values
 
@@ -149,10 +150,10 @@ class EventGenerator:
                 self.products.append(name)
                 seen_products.add(name)
 
-        # Create users and products in DB, store their UUIDs
+        # Generate UUIDs for users and products (no DB insertion)
         self.user_ids = {}  # name -> uuid
         self.product_ids = {}  # name -> uuid
-        self._initialize_entities()
+        self._generate_entity_ids()
 
         # State tracking
         self.current_prices = {}  # product_name -> price
@@ -167,18 +168,12 @@ class EventGenerator:
         self.max_price = Decimal(str(max_price))
         self.min_price = Decimal(str(min_price))
 
-    def _initialize_entities(self):
-        """Create users and products in DB"""
-        cur = self.conn.cursor()
+    def _generate_entity_ids(self):
+        """Generate UUIDs for users and products"""
         for user in self.users:
-            cur.execute('INSERT INTO "user" (name) VALUES (%s) RETURNING id', (user,))
-            self.user_ids[user] = cur.fetchone()[0]
+            self.user_ids[user] = uuid.uuid4()
         for product in self.products:
-            cur.execute(
-                "INSERT INTO product (name) VALUES (%s) RETURNING id", (product,)
-            )
-            self.product_ids[product] = cur.fetchone()[0]
-        self.conn.commit()
+            self.product_ids[product] = uuid.uuid4()
 
     def generate_and_insert(
         self,
@@ -238,7 +233,7 @@ class EventGenerator:
                     price = max(self.min_price, min(self.max_price, price))
 
                 self.current_prices[product] = price
-                price_events.append((self.product_ids[product], timestamp, price))
+                price_events.append((str(self.product_ids[product]), timestamp, price))
 
         # Determine time range from price events
         start_time = min(e[1] for e in price_events)
@@ -358,15 +353,18 @@ class EventGenerator:
         self.user_products[user].add(product)
 
         # Return tuple for batch insertion
-        # Provide units_delta, execution_price (from current price), fees (0)
-        # Trigger will calculate execution_money and user_money
+        # Provide units_delta, execution_price, user_money
+        # user_money = execution_money + fees = units_delta * execution_price + fees
+        # Since fees = 0, user_money = units_delta * execution_price
+        final_units = units if units is not None else calc_units
+        user_money = final_units * current_price
         return (
-            self.user_ids[user],
-            self.product_ids[product],
+            str(self.user_ids[user]),
+            str(self.product_ids[product]),
             timestamp,
-            units if units is not None else calc_units,
+            final_units,
             current_price,
-            Decimal("0"),
+            user_money,
         )
 
     def _batch_insert_all_events(
@@ -403,7 +401,7 @@ class EventGenerator:
                 batch = cashflow_events[i : i + batch_size]
                 execute_values(
                     cur,
-                    "INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, fees) VALUES %s",
+                    "INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money) VALUES %s",
                     batch,
                     page_size=100,
                 )

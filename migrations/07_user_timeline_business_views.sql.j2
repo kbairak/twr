@@ -1,0 +1,58 @@
+{% for g in GRANULARITIES %}
+    CREATE VIEW user_timeline_business_{{ g.suffix }} AS
+        WITH all_user_timestamps AS (
+            -- Get all distinct (user_id, timestamp) combinations
+            SELECT DISTINCT user_id, "timestamp"
+            FROM user_product_timeline_{{ g.suffix }}
+        )
+        SELECT
+            aut.user_id,
+            aut."timestamp",
+            SUM(uptb.deposits) AS deposits,
+            SUM(uptb.withdrawals) AS withdrawals,
+            SUM(uptb.buy_cost) AS buy_cost,
+            SUM(uptb.sell_proceeds) AS sell_proceeds,
+            SUM(uptb.buy_units) AS buy_units,
+            SUM(uptb.sell_units) AS sell_units,
+            SUM(uptb.net_investment) AS net_investment,
+            SUM(uptb.fees) AS fees,
+            SUM(uptb.buy_cost) / NULLIF(SUM(uptb.buy_units), 0) AS avg_buy_cost,
+            SUM(uptb.market_value) AS market_value,
+            SUM(uptb.cost_basis) AS cost_basis,
+            SUM(uptb.unrealized_returns) AS unrealized_returns
+        FROM all_user_timestamps aut
+            INNER JOIN LATERAL (
+                -- For each product, get its latest state at or before this timestamp
+                SELECT DISTINCT ON (upt.product_id) upt.product_id, upt."timestamp"
+                FROM user_product_timeline_{{ g.suffix }} upt
+                WHERE upt.user_id = aut.user_id AND upt."timestamp" <= aut."timestamp"
+                ORDER BY upt.product_id, upt."timestamp" DESC
+            ) latest_products ON true
+            INNER JOIN user_product_timeline_business_{{ g.suffix }} uptb ON
+                uptb.user_id = aut.user_id AND
+                uptb.product_id = latest_products.product_id AND
+                uptb."timestamp" = latest_products."timestamp"
+        GROUP BY aut.user_id, aut."timestamp";
+{% endfor %}
+
+CREATE VIEW user_timeline_latest AS
+    SELECT
+        user_id,
+        MAX("timestamp") as "timestamp",
+        SUM(deposits) AS deposits,
+        SUM(withdrawals) AS withdrawals,
+        SUM(buy_cost) AS buy_cost,
+        SUM(sell_proceeds) AS sell_proceeds,
+        SUM(buy_units) AS buy_units,
+        SUM(sell_units) AS sell_units,
+        SUM(net_investment) AS net_investment,
+        SUM(fees) AS fees,
+        SUM(buy_cost) / NULLIF(SUM(buy_units), 0) AS avg_buy_cost,
+        SUM(market_value) AS market_value,
+        SUM(cost_basis) AS cost_basis,
+        SUM(avg_buy_cost * sell_units) AS sell_basis,
+        SUM(unrealized_returns) AS unrealized_returns,
+        SUM(sell_proceeds) - SUM(avg_buy_cost * sell_units) AS realized_returns,
+        SUM(unrealized_returns) + (SUM(sell_proceeds) - SUM(avg_buy_cost * sell_units)) AS total_returns
+    FROM user_product_timeline_latest
+    GROUP BY user_id;

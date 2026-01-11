@@ -1,0 +1,102 @@
+{% for g in GRANULARITIES %}
+
+    CREATE TABLE user_product_timeline_cache_{{ g.suffix }} (
+        -- Identity
+        user_id UUID NOT NULL,
+        product_id UUID NOT NULL,
+        "timestamp" TIMESTAMPTZ NOT NULL,
+
+        -- Previous cumulative cashflow's timestamp, can be used in a JOIN to get more information
+        -- for that point in time
+        cashflow_timestamp TIMESTAMPTZ NOT NULL,
+
+        CONSTRAINT unique_user_product_timeline{{ g.suffix }} UNIQUE (
+            user_id, product_id, "timestamp"
+        )
+    );
+
+    CREATE INDEX idx_user_product_timeline_cache_{{ g.suffix }}_user_product
+        ON user_product_timeline_cache_{{ g.suffix }}(user_id, product_id, "timestamp" DESC);
+    CREATE INDEX idx_user_product_timeline_cache_{{ g.suffix }}_timestamp
+        ON user_product_timeline_cache_{{ g.suffix }}("timestamp" DESC);
+
+    CREATE VIEW user_product_timeline_{{ g.suffix }} AS
+        WITH
+            -- Most recent cache timestamp per product
+            seed_pt AS (
+                SELECT DISTINCT ON (product_id) product_id, "timestamp"
+                FROM user_product_timeline_cache_{{ g.suffix }}
+                ORDER BY product_id, "timestamp" DESC
+            ),
+            fresh_pu AS (
+                SELECT pu.product_id, pu."timestamp", pu.price
+                FROM price_update_{{ g.suffix }} pu
+                    LEFT OUTER JOIN seed_pt
+                        ON pu.product_id = seed_pt.product_id
+                WHERE seed_pt."timestamp" IS NULL OR pu."timestamp" > seed_pt."timestamp"
+            )
+
+        -- All cache rows
+        SELECT user_id, product_id, "timestamp", cashflow_timestamp
+        FROM user_product_timeline_cache_{{ g.suffix }}
+
+        UNION ALL
+
+        -- One row for each price update and each user that has invested in the product
+        SELECT
+            latest_ccf.user_id,
+            fresh_pu.product_id,
+            fresh_pu."timestamp",
+            latest_ccf."timestamp" AS cashflow_timestamp
+        FROM fresh_pu
+            INNER JOIN LATERAL (
+                SELECT DISTINCT ON (ccf.user_id) ccf.user_id, ccf."timestamp"
+                FROM cumulative_cashflow ccf
+                WHERE
+                    ccf.product_id = fresh_pu.product_id AND
+                    ccf."timestamp" <= fresh_pu."timestamp"
+                ORDER BY ccf.user_id, ccf."timestamp" DESC
+            ) latest_ccf ON true;
+
+    CREATE OR REPLACE FUNCTION refresh_user_product_timeline_{{ g.suffix }}(
+        p_current_time TIMESTAMPTZ DEFAULT NOW()
+    )
+        RETURNS void AS $$
+        DECLARE v_watermark TIMESTAMPTZ;
+        BEGIN
+            SELECT MAX("timestamp") INTO v_watermark
+            FROM user_product_timeline_cache_{{ g.suffix }};
+
+            INSERT INTO user_product_timeline_cache_{{ g.suffix }} (
+                user_id, product_id, "timestamp", cashflow_timestamp
+            )
+            SELECT user_id, product_id, "timestamp", cashflow_timestamp
+            FROM user_product_timeline_{{ g.suffix }}
+            WHERE v_watermark IS NULL OR "timestamp" > v_watermark;
+
+            {% if g.cache_retention %}
+
+                -- Delete old rows beyond retention period, but keep at least one row per user-product
+                WITH latest_up AS (
+                    SELECT DISTINCT ON (user_id, product_id)
+                        user_id, product_id, "timestamp"
+                    FROM user_product_timeline_cache_{{ g.suffix }}
+                    ORDER BY user_id, product_id, "timestamp" DESC
+                )
+                DELETE FROM user_product_timeline_cache_{{ g.suffix }} upt
+                WHERE
+                    upt."timestamp" < p_current_time - INTERVAL '{{ g.cache_retention }}' AND
+                    NOT EXISTS (
+                        SELECT 1
+                        FROM latest_up
+                        WHERE
+                            latest_up.user_id = upt.user_id AND
+                            latest_up.product_id = upt.product_id AND
+                            latest_up."timestamp" = upt."timestamp"
+                    );
+
+            {% endif %}
+        END;
+        $$ LANGUAGE plpgsql;
+
+{% endfor %}

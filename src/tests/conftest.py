@@ -40,7 +40,7 @@ def query(db_connection):
 
     with db_connection.cursor() as cursor:
         # Truncate tables in dependency order (CASCADE handles foreign keys)
-        cursor.execute('TRUNCATE TABLE "user", product, cashflow CASCADE')
+        cursor.execute('TRUNCATE TABLE cashflow, price_update CASCADE')
 
     def fn(q, params=None):
         with db_connection.cursor() as cursor:
@@ -56,14 +56,14 @@ def query(db_connection):
 
 @pytest.fixture
 def user(query) -> Callable[[str], str]:
+    """Generate consistent UUIDs for user names (no user table anymore)."""
+    import uuid
     users = {}
 
     def fn(seed: str) -> str:
         if seed not in users:
-            result = query(
-                """INSERT INTO "user" (name) VALUES (%s) RETURNING id""", (seed,)
-            )
-            users[seed] = result[0]["id"]
+            # Generate deterministic UUID from seed for consistency
+            users[seed] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"user:{seed}"))
         return users[seed]
 
     return fn
@@ -71,14 +71,14 @@ def user(query) -> Callable[[str], str]:
 
 @pytest.fixture
 def product(query) -> Callable[[str], str]:
+    """Generate consistent UUIDs for product names (no product table anymore)."""
+    import uuid
     products = {}
 
     def fn(seed: str) -> str:
         if seed not in products:
-            result = query(
-                "INSERT INTO product (name) VALUES (%s) RETURNING id", (seed,)
-            )
-            products[seed] = result[0]["id"]
+            # Generate deterministic UUID from seed for consistency
+            products[seed] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"product:{seed}"))
         return products[seed]
 
     return fn
@@ -141,17 +141,15 @@ def make_data(query, product, user):
                     query(
                         "INSERT INTO cashflow ("
                         "user_id, product_id, timestamp, units_delta, execution_price, "
-                        "execution_money, user_money, fees"
-                        ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                        "user_money"
+                        ") VALUES (%s, %s, %s, %s, %s, %s)",
                         (
                             user(user_name),
                             product(product_name),
                             timestamp,
                             units,
                             price,
-                            units * price,
-                            units * price,
-                            0,
+                            units * price,  # user_money = execution_money (fees=0 in this case)
                         ),
                     )
 

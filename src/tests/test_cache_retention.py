@@ -26,8 +26,8 @@ def test_repair_respects_retention_period_15min(query, user, product):
 
     query(
         """
-        INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, execution_money, user_money, fees)
-        VALUES (%(user_id)s, %(product_id)s, %(timestamp)s, 10, 100, 1000, 1001, 1)
+        INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money)
+        VALUES (%(user_id)s, %(product_id)s, %(timestamp)s, 10, 100, 1001)
         """,
         {
             "user_id": user("Alice"),
@@ -43,8 +43,8 @@ def test_repair_respects_retention_period_15min(query, user, product):
     old_time = now - datetime.timedelta(days=10)
     query(
         """
-        INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, execution_money, user_money, fees)
-        VALUES (%(user_id)s, %(product_id)s, %(timestamp)s, 5, 100, 500, 501, 1)
+        INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money)
+        VALUES (%(user_id)s, %(product_id)s, %(timestamp)s, 5, 100, 501)
         """,
         {
             "user_id": user("Alice"),
@@ -114,8 +114,8 @@ def test_view_works_with_retention(query, user, product):
 
         query(
             """
-            INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, execution_money, user_money, fees)
-            VALUES (%(user_id)s, %(product_id)s, %(timestamp)s, 1, %(price)s, %(price)s, %(cost)s, 0)
+            INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money)
+            VALUES (%(user_id)s, %(product_id)s, %(timestamp)s, 1, %(price)s, %(cost)s)
             """,
             {
                 "user_id": user("Alice"),
@@ -170,8 +170,8 @@ def test_user_timeline_with_retention(query, user, product):
 
         query(
             """
-            INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, execution_money, user_money, fees)
-            VALUES (%(user_id)s, %(product_id)s, %(timestamp)s, 10, 100, 1000, 1001, 1)
+            INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money)
+            VALUES (%(user_id)s, %(product_id)s, %(timestamp)s, 10, 100, 1001)
             """,
             {
                 "user_id": user("Alice"),

@@ -82,9 +82,6 @@ def refresh_and_retain(
             cur.execute(f"DELETE FROM user_product_timeline_cache_{suffix}")
             print(f"  - user_product_timeline_cache_{suffix}: {cur.rowcount:,} rows deleted")
 
-            cur.execute(f"DELETE FROM user_timeline_cache_{suffix}")
-            print(f"  - user_timeline_cache_{suffix}: {cur.rowcount:,} rows deleted")
-
         print("\n✓ All caches deleted")
         conn.close()
         return
@@ -102,10 +99,6 @@ def refresh_and_retain(
         start = time.time()
         cur.execute(f"SELECT refresh_user_product_timeline_{suffix}()")
         print(f"  - user_product_timeline_cache_{suffix} refreshed in {time.time() - start:.1f}s")
-
-        start = time.time()
-        cur.execute(f"SELECT refresh_user_timeline_{suffix}()")
-        print(f"  - user_timeline_cache_{suffix} refreshed in {time.time() - start:.1f}s")
 
     if percentage < 1.0:
         # Calculate percentile threshold for deletion
@@ -134,10 +127,6 @@ def refresh_and_retain(
                 cur.execute(f"DELETE FROM user_product_timeline_cache_{suffix} WHERE timestamp >= %s", (threshold,))
                 deleted_upt = cur.rowcount
                 print(f"  - user_product_timeline_cache_{suffix}: {deleted_upt:,} rows deleted")
-
-                cur.execute(f"DELETE FROM user_timeline_cache_{suffix} WHERE timestamp >= %s", (threshold,))
-                deleted_ut = cur.rowcount
-                print(f"  - user_timeline_cache_{suffix}: {deleted_ut:,} rows deleted")
         else:
             print("  No data in cache to delete")
 
@@ -150,7 +139,6 @@ def refresh_and_retain(
     for g in GRANULARITIES:
         suffix = g["suffix"]
         cur.execute(f"VACUUM ANALYZE user_product_timeline_cache_{suffix}")
-        cur.execute(f"VACUUM ANALYZE user_timeline_cache_{suffix}")
 
     print(f"  All tables vacuumed in {time.time() - start:.1f}s")
 

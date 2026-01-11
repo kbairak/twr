@@ -1,0 +1,41 @@
+CREATE TABLE price_update (
+    product_id UUID NOT NULL,
+    "timestamp" TIMESTAMPTZ NOT NULL,
+    price NUMERIC(20, 6) NOT NULL,
+    PRIMARY KEY (product_id, "timestamp")
+);
+CREATE INDEX idx_price_update_time ON price_update(product_id, "timestamp" DESC);
+
+SELECT create_hypertable('price_update', 'timestamp', chunk_time_interval => INTERVAL '1 month');
+ALTER TABLE price_update SET (
+    timescaledb.compress,
+    timescaledb.compress_segmentby = 'product_id',
+    timescaledb.compress_orderby = 'timestamp DESC'
+);
+SELECT add_compression_policy('price_update', INTERVAL '7 days');
+
+{% for g in GRANULARITIES %}
+
+    CREATE MATERIALIZED VIEW price_update_{{ g.suffix }}
+    WITH (timescaledb.continuous) AS
+    SELECT
+        product_id,
+        time_bucket('{{ g.interval }}', "timestamp") + '{{ g.interval }}' AS "timestamp",
+        last(price, "timestamp") AS price
+    FROM price_update
+    GROUP BY product_id, time_bucket('{{ g.interval }}', "timestamp")
+    WITH NO DATA;
+
+    SELECT add_continuous_aggregate_policy(
+        'price_update_{{ g.suffix }}',
+        start_offset => INTERVAL '1 month',
+        end_offset => INTERVAL '1 minute',
+        schedule_interval => INTERVAL '{{ g.interval }}'
+    );
+
+    CREATE INDEX idx_price_update_{{ g.suffix }}_product_timestamp
+        ON price_update_{{ g.suffix }}
+        (product_id, "timestamp" DESC)
+        INCLUDE (price);
+
+{% endfor %}
