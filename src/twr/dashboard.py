@@ -45,9 +45,7 @@ with tab1:
             start_time_input = st.time_input("Start Time", value=time(9, 30))
 
         with col2:
-            end_price = st.number_input(
-                "End Price ($)", min_value=0.01, value=150.0, step=0.01
-            )
+            end_price = st.number_input("End Price ($)", min_value=0.01, value=150.0, step=0.01)
             default_end_date = datetime.now().date() + timedelta(days=7)
             end_date = st.date_input("End Date", value=default_end_date)
             end_time_input = st.time_input("End Time", value=time(16, 0))
@@ -145,7 +143,9 @@ with tab2:
                 if users:
                     user_names = [u["name"] for u in users]
                     selected_user_name = st.selectbox("Select User", user_names)
-                    selected_user_id = next(u["id"] for u in users if u["name"] == selected_user_name)
+                    selected_user_id = next(
+                        u["id"] for u in users if u["name"] == selected_user_name
+                    )
                 else:
                     st.info("No users found. Create one below.")
                     selected_user_id = None
@@ -168,20 +168,24 @@ with tab2:
                 # Product selection
                 product_names_cf = [p["name"] for p in products_for_cashflow]
                 selected_product_name = st.selectbox("Select Product", product_names_cf)
-                selected_product_id = next(p["id"] for p in products_for_cashflow if p["name"] == selected_product_name)
+                selected_product_id = next(
+                    p["id"] for p in products_for_cashflow if p["name"] == selected_product_name
+                )
 
                 # Load price data for the selected product to populate the slider
                 price_df = load_price_data([selected_product_id])
 
                 if price_df.empty:
-                    st.warning(f"No price data found for {selected_product_name}. Generate prices first.")
+                    st.warning(
+                        f"No price data found for {selected_product_name}. Generate prices first."
+                    )
                 else:
                     # Time slider
-                    min_time = price_df['timestamp'].min().to_pydatetime()
-                    max_time = price_df['timestamp'].max().to_pydatetime()
+                    min_time = price_df["timestamp"].min().to_pydatetime()
+                    max_time = price_df["timestamp"].max().to_pydatetime()
 
                     # Store selected timestamp in session state for persistence
-                    if 'selected_cashflow_time' not in st.session_state:
+                    if "selected_cashflow_time" not in st.session_state:
                         st.session_state.selected_cashflow_time = min_time
 
                     selected_timestamp = st.slider(
@@ -190,16 +194,18 @@ with tab2:
                         max_value=max_time,
                         value=st.session_state.selected_cashflow_time,
                         format="YYYY-MM-DD HH:mm",
-                        help="Slide to select the exact time of the transaction"
+                        help="Slide to select the exact time of the transaction",
                     )
                     st.session_state.selected_cashflow_time = selected_timestamp
 
                     # Find and display the price at selected timestamp
-                    closest_idx = (price_df['timestamp'] - selected_timestamp).abs().idxmin()
-                    market_price = price_df.loc[closest_idx, 'price']
-                    actual_time = price_df.loc[closest_idx, 'timestamp']
+                    closest_idx = (price_df["timestamp"] - selected_timestamp).abs().idxmin()
+                    market_price = price_df.loc[closest_idx, "price"]
+                    actual_time = price_df.loc[closest_idx, "timestamp"]
 
-                    st.info(f"📊 Market price at {actual_time.strftime('%Y-%m-%d %H:%M:%S')}: **${market_price:.2f}**")
+                    st.info(
+                        f"📊 Market price at {actual_time.strftime('%Y-%m-%d %H:%M:%S')}: **${market_price:.2f}**"
+                    )
 
                     # Cashflow form
                     with st.form("cashflow_form"):
@@ -212,13 +218,13 @@ with tab2:
                                 "Units",
                                 value=10.0,
                                 step=0.01,
-                                help="Number of units to buy (positive) or sell (negative)"
+                                help="Number of units to buy (positive) or sell (negative)",
                             )
                             execution_price = st.number_input(
                                 "Price per Unit ($)",
                                 value=float(market_price),
                                 step=0.01,
-                                help="Execution price (defaults to market price)"
+                                help="Execution price (defaults to market price)",
                             )
 
                         with col2:
@@ -227,7 +233,7 @@ with tab2:
                                 value=0.0,
                                 min_value=0.0,
                                 step=0.01,
-                                help="Transaction fees"
+                                help="Transaction fees",
                             )
 
                         submit_cashflow = st.form_submit_button("Insert Cashflow", type="primary")
@@ -245,13 +251,17 @@ with tab2:
                                 execution_price=execution_price,
                                 fees=fees,
                             )
-                            st.success(f"✓ Cashflow inserted successfully!")
+                            st.success("✓ Cashflow inserted successfully!")
 
                             # Calculate what was inserted
                             execution_money = units_delta * execution_price
                             user_money = execution_money + fees
-                            st.info(f"User: **{selected_user_name}** | Product: **{selected_product_name}** | Time: {selected_timestamp.strftime('%Y-%m-%d %H:%M')}")
-                            st.info(f"Total cost: ${abs(user_money):.2f} (${abs(execution_money):.2f} + ${fees:.2f} fees)")
+                            st.info(
+                                f"User: **{selected_user_name}** | Product: **{selected_product_name}** | Time: {selected_timestamp.strftime('%Y-%m-%d %H:%M')}"
+                            )
+                            st.info(
+                                f"Total cost: ${abs(user_money):.2f} (${abs(execution_money):.2f} + ${fees:.2f} fees)"
+                            )
 
                         except Exception as e:
                             st.error(f"Error inserting cashflow: {e}")
@@ -315,7 +325,7 @@ with chart_tab1:
                     )
 
                     # Add vertical line at selected cashflow time (if one is selected)
-                    if 'selected_cashflow_time' in st.session_state:
+                    if "selected_cashflow_time" in st.session_state:
                         fig.add_vline(
                             x=st.session_state.selected_cashflow_time,
                             line_dash="dash",
@@ -380,7 +390,9 @@ with chart_tab2:
 
             if selected_user_names:
                 # Get user IDs for selected names
-                selected_user_ids = [u["id"] for u in users_for_timeline if u["name"] in selected_user_names]
+                selected_user_ids = [
+                    u["id"] for u in users_for_timeline if u["name"] in selected_user_names
+                ]
 
                 # Load timeline data
                 with st.spinner("Loading portfolio timeline..."):
@@ -390,7 +402,9 @@ with chart_tab2:
                     st.info("No timeline data found. Insert some cashflows first.")
                 else:
                     # Create a combined identifier for grouping
-                    timeline_df['user_product'] = timeline_df['user_name'] + ' - ' + timeline_df['product_name']
+                    timeline_df["user_product"] = (
+                        timeline_df["user_name"] + " - " + timeline_df["product_name"]
+                    )
 
                     # Create Plotly chart for market value
                     fig = px.line(
@@ -407,7 +421,7 @@ with chart_tab2:
                     )
 
                     # Add vertical line at selected cashflow time (if one is selected)
-                    if 'selected_cashflow_time' in st.session_state:
+                    if "selected_cashflow_time" in st.session_state:
                         fig.add_vline(
                             x=st.session_state.selected_cashflow_time,
                             line_dash="dash",
@@ -439,7 +453,11 @@ with chart_tab2:
                             )
 
                         with col3:
-                            total_value = timeline_df.groupby('timestamp')['market_value'].sum().iloc[-1] if len(timeline_df) > 0 else 0
+                            total_value = (
+                                timeline_df.groupby("timestamp")["market_value"].sum().iloc[-1]
+                                if len(timeline_df) > 0
+                                else 0
+                            )
                             st.metric("Latest Total Value", f"${total_value:,.2f}")
 
             else:

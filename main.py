@@ -11,7 +11,7 @@ from pathlib import Path
 
 # Import from twr package
 from twr import TWRDatabase
-from twr.generate import EventGenerator, calculate_missing_parameter, parse_time_interval
+from twr.generate import EventGenerator, calculate_missing_parameter
 from twr.benchmark import Benchmark
 
 # Import granularities for validation
@@ -25,7 +25,7 @@ finally:
     if str(migrations_dir) in sys.path:
         sys.path.remove(str(migrations_dir))
 
-VALID_GRANULARITIES = [g['suffix'] for g in GRANULARITIES]
+VALID_GRANULARITIES = [g["suffix"] for g in GRANULARITIES]
 
 
 def create_parser():
@@ -41,11 +41,15 @@ def create_parser():
     )
 
     # Global database connection options
-    parser.add_argument("--db-host", default="127.0.0.1", help="Database host (default: 127.0.0.1)")
+    parser.add_argument(
+        "--db-host", default="127.0.0.1", help="Database host (default: 127.0.0.1)"
+    )
     parser.add_argument("--db-port", type=int, default=5432, help="Database port (default: 5432)")
     parser.add_argument("--db-name", default="twr", help="Database name (default: twr)")
     parser.add_argument("--db-user", default="twr_user", help="Database user (default: twr_user)")
-    parser.add_argument("--db-password", default="twr_password", help="Database password (default: twr_password)")
+    parser.add_argument(
+        "--db-password", default="twr_password", help="Database password (default: twr_password)"
+    )
 
     # Create subparsers for main command groups
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -69,16 +73,18 @@ def create_parser():
         "--granularity",
         choices=VALID_GRANULARITIES + ["all"],
         default="all",
-        help=f"Which granularity to refresh (default: all)"
+        help="Which granularity to refresh (default: all)",
     )
 
     # db refresh-buckets
-    db_refresh_buckets_parser = db_subparsers.add_parser("refresh-buckets", help="Refresh continuous aggregates (TimescaleDB buckets)")
+    db_refresh_buckets_parser = db_subparsers.add_parser(
+        "refresh-buckets", help="Refresh continuous aggregates (TimescaleDB buckets)"
+    )
     db_refresh_buckets_parser.add_argument(
         "--granularity",
         choices=VALID_GRANULARITIES + ["all"],
         default="all",
-        help=f"Which granularity to refresh (default: all)"
+        help="Which granularity to refresh (default: all)",
     )
 
     # ===== ADD COMMAND GROUP =====
@@ -96,20 +102,13 @@ def create_parser():
     add_cashflow_parser.add_argument("--user", required=True, help="User name")
     add_cashflow_parser.add_argument("--product", required=True, help="Product name")
     add_cashflow_parser.add_argument(
-        "--units",
-        type=float,
-        help="Units bought/sold (positive=buy, negative=sell)"
+        "--units", type=float, help="Units bought/sold (positive=buy, negative=sell)"
     )
     add_cashflow_parser.add_argument(
-        "--money",
-        type=float,
-        help="Money amount (positive=buy, negative=sell)"
+        "--money", type=float, help="Money amount (positive=buy, negative=sell)"
     )
     add_cashflow_parser.add_argument(
-        "--fee",
-        type=float,
-        default=0,
-        help="Transaction fee (default: 0)"
+        "--fee", type=float, default=0, help="Transaction fee (default: 0)"
     )
     add_cashflow_parser.add_argument("--timestamp", help="ISO timestamp (default: now)")
 
@@ -121,65 +120,129 @@ def create_parser():
     query_all_parser = query_subparsers.add_parser("all", help="Show all tables and views")
     query_all_parser.add_argument("--user", help="Filter by user name")
     query_all_parser.add_argument("--product", help="Filter by product name")
-    query_all_parser.add_argument("--since", help="Filter results from this timestamp (ISO format)")
-    query_all_parser.add_argument("--until", help="Filter results until this timestamp (ISO format)")
+    query_all_parser.add_argument(
+        "--since", help="Filter results from this timestamp (ISO format)"
+    )
+    query_all_parser.add_argument(
+        "--until", help="Filter results until this timestamp (ISO format)"
+    )
 
     # query prices
     query_prices_parser = query_subparsers.add_parser("prices", help="Show product prices")
     query_prices_parser.add_argument("--product", help="Filter by product name")
-    query_prices_parser.add_argument("--since", help="Filter results from this timestamp (ISO format)")
-    query_prices_parser.add_argument("--until", help="Filter results until this timestamp (ISO format)")
+    query_prices_parser.add_argument(
+        "--since", help="Filter results from this timestamp (ISO format)"
+    )
+    query_prices_parser.add_argument(
+        "--until", help="Filter results until this timestamp (ISO format)"
+    )
 
     # query cashflows
     query_cashflows_parser = query_subparsers.add_parser("cashflows", help="Show user cash flows")
     query_cashflows_parser.add_argument("--user", help="Filter by user name")
     query_cashflows_parser.add_argument("--product", help="Filter by product name")
-    query_cashflows_parser.add_argument("--since", help="Filter results from this timestamp (ISO format)")
-    query_cashflows_parser.add_argument("--until", help="Filter results until this timestamp (ISO format)")
+    query_cashflows_parser.add_argument(
+        "--since", help="Filter results from this timestamp (ISO format)"
+    )
+    query_cashflows_parser.add_argument(
+        "--until", help="Filter results until this timestamp (ISO format)"
+    )
 
     # query timeline
-    query_timeline_parser = query_subparsers.add_parser("timeline", help="Show user-product timeline")
+    query_timeline_parser = query_subparsers.add_parser(
+        "timeline", help="Show user-product timeline"
+    )
     query_timeline_parser.add_argument("--user", help="Filter by user name")
     query_timeline_parser.add_argument("--product", help="Filter by product name")
-    query_timeline_parser.add_argument("--since", help="Filter results from this timestamp (ISO format)")
-    query_timeline_parser.add_argument("--until", help="Filter results until this timestamp (ISO format)")
+    query_timeline_parser.add_argument(
+        "--since", help="Filter results from this timestamp (ISO format)"
+    )
+    query_timeline_parser.add_argument(
+        "--until", help="Filter results until this timestamp (ISO format)"
+    )
 
     # query portfolio
-    query_portfolio_parser = query_subparsers.add_parser("portfolio", help="Show user portfolio timeline")
+    query_portfolio_parser = query_subparsers.add_parser(
+        "portfolio", help="Show user portfolio timeline"
+    )
     query_portfolio_parser.add_argument("--user", help="Filter by user name")
-    query_portfolio_parser.add_argument("--since", help="Filter results from this timestamp (ISO format)")
-    query_portfolio_parser.add_argument("--until", help="Filter results until this timestamp (ISO format)")
+    query_portfolio_parser.add_argument(
+        "--since", help="Filter results from this timestamp (ISO format)"
+    )
+    query_portfolio_parser.add_argument(
+        "--until", help="Filter results until this timestamp (ISO format)"
+    )
 
     # ===== GENERATE COMMAND =====
     generate_parser = subparsers.add_parser("generate", help="Generate synthetic test data")
 
     # 2-of-3 parameter model
     generate_parser.add_argument("--days", type=float, help="Number of trading days to simulate")
-    generate_parser.add_argument("--num-events", type=int, help="Total number of events to generate")
-    generate_parser.add_argument("--price-update-frequency", type=str, help="Price update interval (e.g., '2min', '5min', '1h')")
+    generate_parser.add_argument(
+        "--num-events", type=int, help="Total number of events to generate"
+    )
+    generate_parser.add_argument(
+        "--price-update-frequency",
+        type=str,
+        help="Price update interval (e.g., '2min', '5min', '1h')",
+    )
 
     # Standard parameters
-    generate_parser.add_argument("--num-users", type=int, default=5, help="Number of users (default: 5)")
-    generate_parser.add_argument("--num-products", type=int, default=10, help="Number of products (default: 10)")
-    generate_parser.add_argument("--price-delta-min", type=float, default=-0.02, help="Min price change %% (default: -0.02)")
-    generate_parser.add_argument("--price-delta-max", type=float, default=0.025, help="Max price change %% (default: 0.025)")
-    generate_parser.add_argument("--cashflow-min", type=float, default=50, help="Min cashflow amount (default: 50)")
-    generate_parser.add_argument("--cashflow-max", type=float, default=500, help="Max cashflow amount (default: 500)")
-    generate_parser.add_argument("--initial-price", type=float, default=100.0, help="Initial price for products (default: 100.0)")
-    generate_parser.add_argument("--existing-product-prob", type=float, default=0.9, help="Probability of investing in existing product (default: 0.9)")
+    generate_parser.add_argument(
+        "--num-users", type=int, default=5, help="Number of users (default: 5)"
+    )
+    generate_parser.add_argument(
+        "--num-products", type=int, default=10, help="Number of products (default: 10)"
+    )
+    generate_parser.add_argument(
+        "--price-delta-min", type=float, default=-0.02, help="Min price change %% (default: -0.02)"
+    )
+    generate_parser.add_argument(
+        "--price-delta-max", type=float, default=0.025, help="Max price change %% (default: 0.025)"
+    )
+    generate_parser.add_argument(
+        "--cashflow-min", type=float, default=50, help="Min cashflow amount (default: 50)"
+    )
+    generate_parser.add_argument(
+        "--cashflow-max", type=float, default=500, help="Max cashflow amount (default: 500)"
+    )
+    generate_parser.add_argument(
+        "--initial-price",
+        type=float,
+        default=100.0,
+        help="Initial price for products (default: 100.0)",
+    )
+    generate_parser.add_argument(
+        "--existing-product-prob",
+        type=float,
+        default=0.9,
+        help="Probability of investing in existing product (default: 0.9)",
+    )
 
     # ===== BENCHMARK COMMAND =====
     benchmark_parser = subparsers.add_parser("benchmark", help="Run performance benchmarks")
 
     # 2-of-3 parameter model
     benchmark_parser.add_argument("--days", type=float, help="Number of trading days to simulate")
-    benchmark_parser.add_argument("--num-events", type=int, help="Total number of events to generate")
-    benchmark_parser.add_argument("--price-update-frequency", type=str, help="Price update interval (e.g., '2min', '5min', '1h')")
+    benchmark_parser.add_argument(
+        "--num-events", type=int, help="Total number of events to generate"
+    )
+    benchmark_parser.add_argument(
+        "--price-update-frequency",
+        type=str,
+        help="Price update interval (e.g., '2min', '5min', '1h')",
+    )
 
     # Standard parameters
-    benchmark_parser.add_argument("--num-users", type=int, default=50, help="Number of users (default: 50)")
-    benchmark_parser.add_argument("--num-products", type=int, default=100, help="Number of products (default: 100)")
-    benchmark_parser.add_argument("--num-queries", type=int, default=100, help="Number of queries to sample (default: 100)")
+    benchmark_parser.add_argument(
+        "--num-users", type=int, default=50, help="Number of users (default: 50)"
+    )
+    benchmark_parser.add_argument(
+        "--num-products", type=int, default=100, help="Number of products (default: 100)"
+    )
+    benchmark_parser.add_argument(
+        "--num-queries", type=int, default=100, help="Number of queries to sample (default: 100)"
+    )
 
     return parser
 
@@ -198,7 +261,9 @@ def handle_db_commands(args, db):
     elif args.db_command == "refresh-buckets":
         db.refresh_buckets(granularity=args.granularity)
     else:
-        print("Error: No database command specified. Use 'uv run main.py db --help' for available commands.")
+        print(
+            "Error: No database command specified. Use 'uv run main.py db --help' for available commands."
+        )
         sys.exit(1)
 
 
@@ -213,10 +278,12 @@ def handle_add_commands(args, db):
             units=args.units,
             money=args.money,
             fee=args.fee,
-            timestamp=args.timestamp
+            timestamp=args.timestamp,
         )
     else:
-        print("Error: No add command specified. Use 'uv run main.py add --help' for available commands.")
+        print(
+            "Error: No add command specified. Use 'uv run main.py add --help' for available commands."
+        )
         sys.exit(1)
 
 
@@ -224,10 +291,10 @@ def handle_query_commands(args, db):
     """Handle query commands"""
     # Extract filter arguments
     filters = {
-        'user': getattr(args, 'user', None),
-        'product': getattr(args, 'product', None),
-        'since': getattr(args, 'since', None),
-        'until': getattr(args, 'until', None),
+        "user": getattr(args, "user", None),
+        "product": getattr(args, "product", None),
+        "since": getattr(args, "since", None),
+        "until": getattr(args, "until", None),
     }
 
     if args.query_command == "all":
@@ -241,7 +308,9 @@ def handle_query_commands(args, db):
     elif args.query_command == "portfolio":
         db.show_portfolio(**filters)
     else:
-        print("Error: No query command specified. Use 'uv run main.py query --help' for available commands.")
+        print(
+            "Error: No query command specified. Use 'uv run main.py query --help' for available commands."
+        )
         sys.exit(1)
 
 
@@ -253,17 +322,17 @@ def handle_generate_command(args):
             days=args.days,
             num_events=args.num_events,
             price_update_frequency=args.price_update_frequency,
-            num_products=args.num_products
+            num_products=args.num_products,
         )
     except ValueError as e:
         print(f"Error: {e}")
-        print("\nExactly 2 of the 3 parameters (--days, --num-events, --price-update-frequency) must be provided.")
+        print(
+            "\nExactly 2 of the 3 parameters (--days, --num-events, --price-update-frequency) must be provided."
+        )
         sys.exit(1)
 
     # Calculate end_date as today at market close
-    end_date = datetime.now(timezone.utc).replace(
-        hour=16, minute=0, second=0, microsecond=0
-    )
+    end_date = datetime.now(timezone.utc).replace(hour=16, minute=0, second=0, microsecond=0)
 
     # Display calculated parameters
     print("\n=== Calculated Parameters ===")
@@ -307,17 +376,17 @@ def handle_benchmark_command(args):
             days=args.days,
             num_events=args.num_events,
             price_update_frequency=args.price_update_frequency,
-            num_products=args.num_products
+            num_products=args.num_products,
         )
     except ValueError as e:
         print(f"Error: {e}")
-        print("\nExactly 2 of the 3 parameters (--days, --num-events, --price-update-frequency) must be provided.")
+        print(
+            "\nExactly 2 of the 3 parameters (--days, --num-events, --price-update-frequency) must be provided."
+        )
         sys.exit(1)
 
     # Calculate end_date as today at market close
-    end_date = datetime.now(timezone.utc).replace(
-        hour=16, minute=0, second=0, microsecond=0
-    )
+    end_date = datetime.now(timezone.utc).replace(hour=16, minute=0, second=0, microsecond=0)
 
     # Display calculated parameters
     print("\n=== Calculated Parameters ===")

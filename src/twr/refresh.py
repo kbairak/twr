@@ -33,7 +33,7 @@ except (FileNotFoundError, json.JSONDecodeError):
 def parse_percentage(percentage_str):
     """Parse percentage string like '50%' to float 0.5"""
     percentage_str = percentage_str.strip()
-    if percentage_str.endswith('%'):
+    if percentage_str.endswith("%"):
         percentage_str = percentage_str[:-1]
 
     try:
@@ -61,11 +61,7 @@ def refresh_and_retain(
     """
     # Connect with autocommit enabled (required for VACUUM)
     conn = psycopg2.connect(
-        host=db_host,
-        port=db_port,
-        database=db_name,
-        user=db_user,
-        password=db_password
+        host=db_host, port=db_port, database=db_name, user=db_user, password=db_password
     )
     conn.autocommit = True
     cur = conn.cursor()
@@ -87,7 +83,7 @@ def refresh_and_retain(
         return
 
     # Refresh all caches
-    print(f"Refreshing all caches (target retention: {percentage*100:.0f}%)...")
+    print(f"Refreshing all caches (target retention: {percentage * 100:.0f}%)...")
 
     start = time.time()
     cur.execute("SELECT refresh_cumulative_cashflow()")
@@ -102,10 +98,12 @@ def refresh_and_retain(
 
     if percentage < 1.0:
         # Calculate percentile threshold for deletion
-        print(f"\nDeleting cache to retain {percentage*100:.0f}%...")
+        print(f"\nDeleting cache to retain {percentage * 100:.0f}%...")
 
         # Get the percentile threshold from cumulative_cashflow_cache
-        percentile_value = 1.0 - percentage  # If we want to keep 50%, delete from 50th percentile onwards
+        percentile_value = (
+            1.0 - percentage
+        )  # If we want to keep 50%, delete from 50th percentile onwards
         cur.execute(f"""
             SELECT percentile_disc({percentile_value}) WITHIN GROUP (ORDER BY timestamp) AS threshold
             FROM cumulative_cashflow_cache
@@ -117,14 +115,19 @@ def refresh_and_retain(
             print(f"  Threshold timestamp: {threshold}")
 
             # Delete from all cache tables
-            cur.execute("DELETE FROM cumulative_cashflow_cache WHERE timestamp >= %s", (threshold,))
+            cur.execute(
+                "DELETE FROM cumulative_cashflow_cache WHERE timestamp >= %s", (threshold,)
+            )
             deleted_cc = cur.rowcount
             print(f"  - cumulative_cashflow_cache: {deleted_cc:,} rows deleted")
 
             for g in GRANULARITIES:
                 suffix = g["suffix"]
 
-                cur.execute(f"DELETE FROM user_product_timeline_cache_{suffix} WHERE timestamp >= %s", (threshold,))
+                cur.execute(
+                    f"DELETE FROM user_product_timeline_cache_{suffix} WHERE timestamp >= %s",
+                    (threshold,),
+                )
                 deleted_upt = cur.rowcount
                 print(f"  - user_product_timeline_cache_{suffix}: {deleted_upt:,} rows deleted")
         else:
@@ -143,7 +146,7 @@ def refresh_and_retain(
     print(f"  All tables vacuumed in {time.time() - start:.1f}s")
 
     conn.close()
-    print(f"\n✓ Cache refresh complete ({percentage*100:.0f}% retained)")
+    print(f"\n✓ Cache refresh complete ({percentage * 100:.0f}% retained)")
 
 
 if __name__ == "__main__":
@@ -156,14 +159,14 @@ Examples:
   %(prog)s 100%%     # Refresh and keep 100%%
   %(prog)s 50%%      # Refresh and keep oldest 50%%
   %(prog)s 0%%       # Delete all cache (no refresh)
-        """
+        """,
     )
 
     parser.add_argument(
         "percentage",
         nargs="?",
         default="100%",
-        help="Percentage of cache to retain (default: 100%%)"
+        help="Percentage of cache to retain (default: 100%%)",
     )
     parser.add_argument("--db-host", default="127.0.0.1", help="Database host")
     parser.add_argument("--db-port", type=int, default=5432, help="Database port")

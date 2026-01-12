@@ -190,8 +190,7 @@ def insert_product_and_prices(
 
             # Prepare batch data
             price_data = [
-                (product_id, timestamp, price)
-                for timestamp, price in timestamps_and_prices
+                (product_id, timestamp, price) for timestamp, price in timestamps_and_prices
             ]
 
             # Batch insert prices (update on conflict)
@@ -242,10 +241,7 @@ def create_user(user_name: str) -> str:
     """
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                'INSERT INTO "user" (name) VALUES (%s) RETURNING id',
-                (user_name,)
-            )
+            cur.execute('INSERT INTO "user" (name) VALUES (%s) RETURNING id', (user_name,))
             return str(cur.fetchone()[0])
 
 
@@ -283,8 +279,16 @@ def insert_cashflow(
                  execution_money, user_money, fees)
                 VALUES (%s::uuid, %s::uuid, %s, %s, %s, %s, %s, %s)
                 """,
-                (user_id, product_id, timestamp, units_delta, execution_price,
-                 execution_money, user_money, fees)
+                (
+                    user_id,
+                    product_id,
+                    timestamp,
+                    units_delta,
+                    execution_price,
+                    execution_money,
+                    user_money,
+                    fees,
+                ),
             )
 
 

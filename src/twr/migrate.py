@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 import psycopg2
-from jinja2 import Template
+from jinja2 import Environment, FileSystemLoader
 
 
 def _run_migration(connection, migration_file: Path, granularities: dict) -> None:
@@ -17,7 +17,9 @@ def _run_migration(connection, migration_file: Path, granularities: dict) -> Non
 
     # If it's a Jinja template, render it
     if migration_file.suffix == ".j2":
-        template = Template(content)
+        # Create environment with loader to support imports
+        env = Environment(loader=FileSystemLoader(migration_file.parent))
+        template = env.get_template(migration_file.name)
         content = template.render(GRANULARITIES=granularities)
 
     # Execute migration
@@ -42,11 +44,7 @@ def run_all_migrations(connection):
 
     # Get all migration files (both .sql and .sql.j2)
     migration_files = sorted(
-        [
-            f
-            for f in migrations_dir.iterdir()
-            if f.suffix == ".sql" or f.name.endswith(".sql.j2")
-        ]
+        [f for f in migrations_dir.iterdir() if f.suffix == ".sql" or f.name.endswith(".sql.j2")]
     )
 
     print(f"Found {len(migration_files)} migration files")

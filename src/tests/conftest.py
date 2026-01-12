@@ -40,7 +40,7 @@ def query(db_connection):
 
     with db_connection.cursor() as cursor:
         # Truncate tables in dependency order (CASCADE handles foreign keys)
-        cursor.execute('TRUNCATE TABLE cashflow, price_update CASCADE')
+        cursor.execute("TRUNCATE TABLE cashflow, price_update CASCADE")
 
     def fn(q, params=None):
         with db_connection.cursor() as cursor:
@@ -58,6 +58,7 @@ def query(db_connection):
 def user(query) -> Callable[[str], str]:
     """Generate consistent UUIDs for user names (no user table anymore)."""
     import uuid
+
     users = {}
 
     def fn(seed: str) -> str:
@@ -73,6 +74,7 @@ def user(query) -> Callable[[str], str]:
 def product(query) -> Callable[[str], str]:
     """Generate consistent UUIDs for product names (no product table anymore)."""
     import uuid
+
     products = {}
 
     def fn(seed: str) -> str:
@@ -130,11 +132,7 @@ def make_data(query, product, user):
                     except ValueError:
                         continue
                     price = sorted(
-                        [
-                            (t, p)
-                            for t, p in price_updates[product_name].items()
-                            if t <= timestamp
-                        ],
+                        [(t, p) for t, p in price_updates[product_name].items() if t <= timestamp],
                         key=lambda x: x[0],
                         reverse=True,
                     )[0][1]

@@ -215,9 +215,11 @@ class EventGenerator:
 
         # Generate synchronized price updates
         print(f"Generating {num_ticks:,} price ticks...")
-        for i, tick_time in enumerate(generate_trading_timestamps(
-            num_ticks, interval=price_update_interval, end_date=end_date
-        )):
+        for i, tick_time in enumerate(
+            generate_trading_timestamps(
+                num_ticks, interval=price_update_interval, end_date=end_date
+            )
+        ):
             # All products update at this tick (with millisecond jitter)
             for product in self.products:
                 jitter_ms = random.randint(0, 100)
@@ -258,9 +260,7 @@ class EventGenerator:
                 # Force to after-hours if not already
                 if MARKET_OPEN <= timestamp.time() <= MARKET_CLOSE:
                     # Shift to after market close
-                    timestamp = timestamp.replace(
-                        hour=16, minute=random.randint(0, 59)
-                    )
+                    timestamp = timestamp.replace(hour=16, minute=random.randint(0, 59))
 
             event = self._generate_cashflow_event(timestamp)
             if event:
@@ -268,9 +268,7 @@ class EventGenerator:
 
         # Sort and insert all events
         print()
-        self._batch_insert_all_events(
-            price_events, cashflow_events, batch_size
-        )
+        self._batch_insert_all_events(price_events, cashflow_events, batch_size)
 
     def _generate_cashflow_event(self, timestamp: datetime):
         """Generate a cashflow event at given timestamp"""
@@ -284,21 +282,14 @@ class EventGenerator:
             self.user_products[user] = set()
 
         # Choose product based on probability
-        user_existing_products = self.user_products[user] & set(
-            self.current_prices.keys()
-        )
+        user_existing_products = self.user_products[user] & set(self.current_prices.keys())
 
-        if (
-            user_existing_products
-            and random.random() < self.existing_product_probability
-        ):
+        if user_existing_products and random.random() < self.existing_product_probability:
             # 90% chance: pick from products the user already has
             product = random.choice(list(user_existing_products))
         else:
             # 10% chance: pick a new product
-            available_new_products = (
-                set(self.current_prices.keys()) - self.user_products[user]
-            )
+            available_new_products = set(self.current_prices.keys()) - self.user_products[user]
             if available_new_products:
                 product = random.choice(list(available_new_products))
             elif user_existing_products:
@@ -367,9 +358,7 @@ class EventGenerator:
             user_money,
         )
 
-    def _batch_insert_all_events(
-        self, price_events, cashflow_events, batch_size
-    ):
+    def _batch_insert_all_events(self, price_events, cashflow_events, batch_size):
         """Sort and batch insert all price and cashflow events"""
         cur = self.conn.cursor()
 
@@ -396,8 +385,7 @@ class EventGenerator:
             )  # Sort by user, product, timestamp
             print(f"\nInserting {len(cashflow_events):,} cashflow events...")
 
-            num_batches = (len(cashflow_events) + batch_size - 1) // batch_size
-            for batch_idx, i in enumerate(range(0, len(cashflow_events), batch_size)):
+            for _, i in enumerate(range(0, len(cashflow_events), batch_size)):
                 batch = cashflow_events[i : i + batch_size]
                 execute_values(
                     cur,
@@ -553,9 +541,7 @@ The third will be calculated automatically.
 
     # 2-of-3 parameter model
     parser.add_argument("--days", type=float, help="Number of trading days to simulate")
-    parser.add_argument(
-        "--num-events", type=int, help="Total number of events to generate"
-    )
+    parser.add_argument("--num-events", type=int, help="Total number of events to generate")
     parser.add_argument(
         "--price-update-frequency",
         type=str,
@@ -563,9 +549,7 @@ The third will be calculated automatically.
     )
 
     # Standard parameters
-    parser.add_argument(
-        "--num-users", type=int, default=5, help="Number of users (default: 5)"
-    )
+    parser.add_argument("--num-users", type=int, default=5, help="Number of users (default: 5)")
     parser.add_argument(
         "--num-products", type=int, default=10, help="Number of products (default: 10)"
     )
@@ -584,9 +568,7 @@ The third will be calculated automatically.
         parser.error(str(e))
 
     # Calculate end_date as today at market close
-    end_date = datetime.now(timezone.utc).replace(
-        hour=16, minute=0, second=0, microsecond=0
-    )
+    end_date = datetime.now(timezone.utc).replace(hour=16, minute=0, second=0, microsecond=0)
 
     # Display calculated parameters
     print("\n=== Calculated Parameters ===")
@@ -600,9 +582,7 @@ The third will be calculated automatically.
 
     gen = EventGenerator(num_users=args.num_users, num_products=args.num_products)
     try:
-        gen.generate_and_insert(
-            num_events, price_update_interval=frequency, end_date=end_date
-        )
+        gen.generate_and_insert(num_events, price_update_interval=frequency, end_date=end_date)
         print("\nRefreshing continuous aggregates for all granularities...")
         gen.refresh_continuous_aggregate()
     finally:

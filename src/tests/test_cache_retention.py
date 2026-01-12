@@ -57,8 +57,8 @@ def test_repair_respects_retention_period_15min(query, user, product):
     # Verify view still works correctly (computes from fresh data when needed)
     view_data = query(
         """
-        SELECT units_held
-        FROM user_product_timeline_15min
+        SELECT units
+        FROM user_product_timeline_business_15min
         WHERE user_id = %(user_id)s AND product_id = %(product_id)s
         ORDER BY timestamp DESC
         LIMIT 1
@@ -67,9 +67,7 @@ def test_repair_respects_retention_period_15min(query, user, product):
     )
 
     # Should show correct total units (10 + 5 = 15) even though old data may not be cached
-    assert view_data[0]["units_held"] == Decimal("15.000000"), (
-        "View should compute correct values"
-    )
+    assert view_data[0]["units"] == Decimal("15.000000"), "View should compute correct values"
 
     # Check that cache doesn't have an excessive amount of old data
     cache_count = query(
@@ -132,8 +130,8 @@ def test_view_works_with_retention(query, user, product):
     # Query view - should return all data within retention
     view_data = query(
         """
-        SELECT timestamp, units_held
-        FROM user_product_timeline_15min
+        SELECT timestamp, units
+        FROM user_product_timeline_business_15min
         WHERE user_id = %(user_id)s AND product_id = %(product_id)s
         ORDER BY timestamp
         """,
@@ -147,9 +145,7 @@ def test_view_works_with_retention(query, user, product):
 
     # Latest should have 3 units total
     latest = view_data[-1]
-    assert latest["units_held"] == Decimal("3.000000"), (
-        "View should show correct cumulative units"
-    )
+    assert latest["units"] == Decimal("3.000000"), "View should show correct cumulative units"
 
 
 def test_user_timeline_with_retention(query, user, product):
@@ -187,7 +183,7 @@ def test_user_timeline_with_retention(query, user, product):
     portfolio = query(
         """
         SELECT market_value, net_investment
-        FROM user_timeline_15min
+        FROM user_timeline_business_15min
         WHERE user_id = %(user_id)s
         ORDER BY timestamp DESC
         LIMIT 1

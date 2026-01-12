@@ -8,7 +8,6 @@ index-only scans on watermark calculations.
 
 import psycopg2
 import argparse
-import sys
 from pathlib import Path
 import json
 
@@ -34,11 +33,7 @@ def vacuum_all_caches(
 
     # Connect with autocommit enabled (required for VACUUM)
     conn = psycopg2.connect(
-        host=db_host,
-        port=db_port,
-        database=db_name,
-        user=db_user,
-        password=db_password
+        host=db_host, port=db_port, database=db_name, user=db_user, password=db_password
     )
     conn.autocommit = True
     cur = conn.cursor()

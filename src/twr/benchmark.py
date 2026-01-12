@@ -14,6 +14,7 @@ import time
 import psycopg2
 from pathlib import Path
 import json
+import random
 from generate import (
     EventGenerator,
     calculate_missing_parameter,
@@ -42,17 +43,13 @@ def format_time(seconds):
         return f"{seconds:.2f}s"
 
 
-def calculate_scenario_parameters(
-    num_scenarios=7, max_events=5_000_000, num_products=500
-):
+def calculate_scenario_parameters(num_scenarios=7, max_events=5_000_000, num_products=500):
     """Generate scenario list with linear spacing up to max_events.
 
     Returns:
         List of (days, num_events) tuples
     """
-    event_counts = [
-        int(max_events * (i + 1) / num_scenarios) for i in range(num_scenarios)
-    ]
+    event_counts = [int(max_events * (i + 1) / num_scenarios) for i in range(num_scenarios)]
     scenarios = []
     for num_events in event_counts:
         days, num_events, freq = calculate_missing_parameter(
@@ -94,8 +91,15 @@ class Benchmark:
         conn = self.get_connection()
         cur = conn.cursor()
 
-        # Truncate tables in correct order (respecting foreign keys)
-        cur.execute('TRUNCATE TABLE cashflow, price_update, product, "user" CASCADE')
+        # Truncate base tables
+        cur.execute("TRUNCATE TABLE cashflow, price_update CASCADE")
+
+        # Truncate cache tables
+        cur.execute("TRUNCATE TABLE cumulative_cashflow_cache")
+        for g in GRANULARITIES:
+            suffix = g["suffix"]
+            cur.execute(f"TRUNCATE TABLE user_product_timeline_cache_{suffix}")
+
         conn.commit()
         conn.close()
         print("  → Data cleared\n")
@@ -169,17 +173,22 @@ class Benchmark:
             )
             total_deleted += cur.rowcount
 
-            cur.execute(
-                f'DELETE FROM user_timeline_cache_{suffix} WHERE "timestamp" >= %s',
-                (threshold_timestamp,),
-            )
-            total_deleted += cur.rowcount
-
         conn.commit()
         return total_deleted
 
-    def measure_query_performance(self, cur, user_product_pairs, user_ids):
-        """Measure query performance for each view separately.
+    def measure_query_performance(
+        self, cur, user_product_pairs, user_ids, max_time_per_granularity=5.0
+    ):
+        """Measure query performance for each view separately using time-based random sampling.
+
+        For each granularity, randomly samples queries until max_time_per_granularity is exceeded,
+        then calculates the average query duration.
+
+        Args:
+            cur: Database cursor
+            user_product_pairs: List of (user_id, product_id) tuples
+            user_ids: List of user IDs
+            max_time_per_granularity: Maximum time in seconds to spend per granularity (default: 5.0)
 
         Returns:
             dict: {
@@ -192,30 +201,48 @@ class Benchmark:
         for g in GRANULARITIES:
             suffix = g["suffix"]
 
-            # Measure user_product_timeline
-            start = time.time()
-            for user_id, product_id in user_product_pairs:
+            # Measure user_product_timeline with random sampling
+            elapsed = 0
+            query_count = 0
+            start_overall = time.time()
+
+            while elapsed < max_time_per_granularity:
+                # Pick random user-product pair
+                user_id, product_id = random.choice(user_product_pairs)
+
                 cur.execute(
                     f"""
-                    SELECT * FROM user_product_timeline_{suffix}
+                    SELECT * FROM user_product_timeline_business_{suffix}
                     WHERE user_id = %s AND product_id = %s ORDER BY timestamp
                 """,
                     (user_id, product_id),
                 )
                 cur.fetchall()
-            results[f"upt_{suffix}_ms"] = (
-                (time.time() - start) / len(user_product_pairs)
-            ) * 1000
+                query_count += 1
+                elapsed = time.time() - start_overall
 
-            # Measure user_timeline
-            start = time.time()
-            for user_id in user_ids:
+            avg_time_ms = (elapsed / query_count) * 1000 if query_count > 0 else 0
+            results[f"upt_{suffix}_ms"] = avg_time_ms
+
+            # Measure user_timeline with random sampling
+            elapsed = 0
+            query_count = 0
+            start_overall = time.time()
+
+            while elapsed < max_time_per_granularity:
+                # Pick random user
+                user_id = random.choice(user_ids)
+
                 cur.execute(
-                    f"SELECT * FROM user_timeline_{suffix} WHERE user_id = %s ORDER BY timestamp",
+                    f"SELECT * FROM user_timeline_business_{suffix} WHERE user_id = %s ORDER BY timestamp",
                     (user_id,),
                 )
                 cur.fetchall()
-            results[f"ut_{suffix}_ms"] = ((time.time() - start) / len(user_ids)) * 1000
+                query_count += 1
+                elapsed = time.time() - start_overall
+
+            avg_time_ms = (elapsed / query_count) * 1000 if query_count > 0 else 0
+            results[f"ut_{suffix}_ms"] = avg_time_ms
 
         return results
 
@@ -225,9 +252,7 @@ class Benchmark:
         Returns:
             Tuple of (user_product_pairs, user_ids)
         """
-        cur.execute(
-            "SELECT DISTINCT user_id, product_id FROM cashflow LIMIT %s", (num_queries,)
-        )
+        cur.execute("SELECT DISTINCT user_id, product_id FROM cashflow LIMIT %s", (num_queries,))
         user_product_pairs = cur.fetchall()
 
         cur.execute("SELECT DISTINCT user_id FROM cashflow LIMIT %s", (num_queries,))
@@ -259,10 +284,6 @@ class Benchmark:
                 # Refresh user_product_timeline cache
                 cur.execute(f"SELECT refresh_user_product_timeline_{suffix}()")
                 cur.execute(f"VACUUM ANALYZE user_product_timeline_cache_{suffix}")
-
-                # Refresh user_timeline cache
-                cur.execute(f"SELECT refresh_user_timeline_{suffix}()")
-                cur.execute(f"VACUUM ANALYZE user_timeline_cache_{suffix}")
         finally:
             # Restore original autocommit setting
             conn.autocommit = old_autocommit
@@ -292,7 +313,7 @@ class Benchmark:
         results = {}
 
         # Step 1: Generate and insert events
-        print("[1/4] Generating and inserting events...")
+        print("[1/5] Generating and inserting events...")
         start = time.time()
         gen = EventGenerator(
             db_name=self.db_name,
@@ -310,7 +331,7 @@ class Benchmark:
         print(f"  → Inserted {num_events:,} events in {format_time(insert_time)}\n")
 
         # Step 2: Refresh continuous aggregates
-        print("[2/4] Refreshing continuous aggregates...")
+        print("[2/5] Refreshing continuous aggregates...")
         start = time.time()
         gen.refresh_continuous_aggregate()
         gen.close()
@@ -332,44 +353,22 @@ class Benchmark:
         user_ids = [row[0] for row in cur.fetchall()]
 
         # Step 3: Query performance (before cache refresh)
-        print("[3/4] Querying before cache refresh...")
+        print("[3/5] Querying before cache refresh (5s per granularity)...")
+        before_results = self.measure_query_performance(cur, user_product_pairs, user_ids)
+
         for g in GRANULARITIES:
             granularity = g["suffix"]
+            upt_time_ms = before_results[f"upt_{granularity}_ms"]
+            ut_time_ms = before_results[f"ut_{granularity}_ms"]
 
-            # Query user-products
-            start = time.time()
-            for user_id, product_id in user_product_pairs:
-                cur.execute(
-                    f"""
-                    SELECT * FROM user_product_timeline_{granularity}
-                    WHERE user_id = %s AND product_id = %s
-                    ORDER BY timestamp
-                """,
-                    (user_id, product_id),
-                )
-                cur.fetchall()
-            upt_time = (time.time() - start) / len(user_product_pairs)
-
-            # Query users
-            start = time.time()
-            for user_id in user_ids:
-                cur.execute(
-                    f"SELECT * FROM user_timeline_{granularity} WHERE user_id = %s ORDER BY timestamp",
-                    (user_id,),
-                )
-                cur.fetchall()
-            ut_time = (time.time() - start) / len(user_ids)
-
-            results[f"upt_before_{granularity}"] = upt_time
-            results[f"ut_before_{granularity}"] = ut_time
-            print(
-                f"  → {granularity}: user_product={upt_time * 1000:.1f}ms, user={ut_time * 1000:.1f}ms"
-            )
+            results[f"upt_before_{granularity}"] = upt_time_ms / 1000  # Convert to seconds
+            results[f"ut_before_{granularity}"] = ut_time_ms / 1000
+            print(f"  → {granularity}: user_product={upt_time_ms:.1f}ms, user={ut_time_ms:.1f}ms")
 
         print()
 
         # Step 4: Cache refresh
-        print("[4/4] Refreshing caches...")
+        print("[4/5] Refreshing caches...")
 
         # Refresh cumulative cashflow cache
         start = time.time()
@@ -385,61 +384,34 @@ class Benchmark:
             # Refresh user_product_timeline cache
             cur.execute(f"SELECT refresh_user_product_timeline_{granularity}()")
             conn.commit()
-            upt_time = time.time() - start
+            cache_refresh_time = time.time() - start
 
-            # Refresh user_timeline cache
-            start = time.time()
-            cur.execute(f"SELECT refresh_user_timeline_{granularity}()")
-            conn.commit()
-            ut_time = time.time() - start
-
-            cache_refresh_time = upt_time + ut_time
             results[f"cache_refresh_{granularity}"] = cache_refresh_time
             print(f"  → {granularity}: {format_time(cache_refresh_time)}")
 
         print()
 
         # Step 5: Query performance after cache refresh
-        print("Querying after cache refresh...")
+        print("[5/5] Querying after cache refresh (5s per granularity)...")
+        after_results = self.measure_query_performance(cur, user_product_pairs, user_ids)
+
         for g in GRANULARITIES:
             granularity = g["suffix"]
+            upt_time_ms = after_results[f"upt_{granularity}_ms"]
+            ut_time_ms = after_results[f"ut_{granularity}_ms"]
 
-            # Query user-products
-            start = time.time()
-            for user_id, product_id in user_product_pairs:
-                cur.execute(
-                    f"""
-                    SELECT * FROM user_product_timeline_{granularity}
-                    WHERE user_id = %s AND product_id = %s
-                    ORDER BY timestamp
-                """,
-                    (user_id, product_id),
-                )
-                cur.fetchall()
-            upt_time = (time.time() - start) / len(user_product_pairs)
-
-            # Query users
-            start = time.time()
-            for user_id in user_ids:
-                cur.execute(
-                    f"SELECT * FROM user_timeline_{granularity} WHERE user_id = %s ORDER BY timestamp",
-                    (user_id,),
-                )
-                cur.fetchall()
-            ut_time = (time.time() - start) / len(user_ids)
-
-            results[f"upt_after_{granularity}"] = upt_time
-            results[f"ut_after_{granularity}"] = ut_time
+            results[f"upt_after_{granularity}"] = upt_time_ms / 1000  # Convert to seconds
+            results[f"ut_after_{granularity}"] = ut_time_ms / 1000
 
             # Calculate speedup
             upt_before = results[f"upt_before_{granularity}"]
             ut_before = results[f"ut_before_{granularity}"]
-            upt_speedup = upt_before / upt_time if upt_time > 0 else 0
-            ut_speedup = ut_before / ut_time if ut_time > 0 else 0
+            upt_speedup = upt_before / (upt_time_ms / 1000) if upt_time_ms > 0 else 0
+            ut_speedup = ut_before / (ut_time_ms / 1000) if ut_time_ms > 0 else 0
 
             print(
-                f"  → {granularity}: user_product={upt_time * 1000:.1f}ms ({upt_speedup:.1f}x), "
-                f"user={ut_time * 1000:.1f}ms ({ut_speedup:.1f}x)"
+                f"  → {granularity}: user_product={upt_time_ms:.1f}ms ({upt_speedup:.1f}x), "
+                f"user={ut_time_ms:.1f}ms ({ut_speedup:.1f}x)"
             )
 
         print()
@@ -447,9 +419,7 @@ class Benchmark:
 
         # Display summary
         print("=== Summary ===")
-        print(
-            f"Continuous aggregate refresh: {format_time(results['ca_refresh_time'])}"
-        )
+        print(f"Continuous aggregate refresh: {format_time(results['ca_refresh_time'])}")
         for g in GRANULARITIES:
             granularity = g["suffix"]
             cache_time = results.get(f"cache_refresh_{granularity}", 0)
@@ -525,21 +495,15 @@ class Benchmark:
         if percentiles:
             print(f"[{scenario_num}] Deleting cache >= 75th percentile...")
             self.delete_cache_from_threshold(conn, percentiles["p75"])
-            query_75pct = self.measure_query_performance(
-                cur, user_product_pairs, user_ids
-            )
+            query_75pct = self.measure_query_performance(cur, user_product_pairs, user_ids)
 
             print(f"[{scenario_num}] Deleting cache >= 50th percentile...")
             self.delete_cache_from_threshold(conn, percentiles["p50"])
-            query_50pct = self.measure_query_performance(
-                cur, user_product_pairs, user_ids
-            )
+            query_50pct = self.measure_query_performance(cur, user_product_pairs, user_ids)
 
             print(f"[{scenario_num}] Deleting cache >= 25th percentile...")
             self.delete_cache_from_threshold(conn, percentiles["p25"])
-            query_25pct = self.measure_query_performance(
-                cur, user_product_pairs, user_ids
-            )
+            query_25pct = self.measure_query_performance(cur, user_product_pairs, user_ids)
 
         conn.close()
 
@@ -566,15 +530,11 @@ class Benchmark:
             List of result dicts
         """
         all_results = []
-        end_date = datetime.now(timezone.utc).replace(
-            hour=16, minute=0, second=0, microsecond=0
-        )
+        end_date = datetime.now(timezone.utc).replace(hour=16, minute=0, second=0, microsecond=0)
 
         for i, (days, num_events) in enumerate(scenarios, 1):
             print(f"\n{'=' * 80}")
-            print(
-                f"SCENARIO {i}/{len(scenarios)}: {days:.1f} days, {num_events:,} events"
-            )
+            print(f"SCENARIO {i}/{len(scenarios)}: {days:.1f} days, {num_events:,} events")
             print(f"{'=' * 80}")
 
             results = self.run_single_scenario(
@@ -596,9 +556,7 @@ def print_summary_table(all_results):
     """Print compact summary table matching README format."""
     for r in all_results:
         print(f"\n{'=' * 80}")
-        print(
-            f"Scenario {r['scenario']}: {r['days']:.1f} days, {r['num_events']:,} events"
-        )
+        print(f"Scenario {r['scenario']}: {r['days']:.1f} days, {r['num_events']:,} events")
         print(f"{'=' * 80}")
         print(f"Refresh all caches: {r['cache_refresh_time']:.1f}s")
 
@@ -618,12 +576,8 @@ def print_summary_table(all_results):
                     upt_key = f"upt_{suffix}_ms"
                     ut_key = f"ut_{suffix}_ms"
                     if upt_key in data and ut_key in data:
-                        print(
-                            f"    user-product-timeline-{suffix}:  {data[upt_key]:.0f}ms"
-                        )
-                        print(
-                            f"    user-timeline-{suffix}:          {data[ut_key]:.0f}ms"
-                        )
+                        print(f"    user-product-timeline-{suffix}:  {data[upt_key]:.0f}ms")
+                        print(f"    user-timeline-{suffix}:          {data[ut_key]:.0f}ms")
 
 
 if __name__ == "__main__":
@@ -654,9 +608,7 @@ Note: Exactly 2 of the 3 parameters (days, num-events, price-update-frequency) m
 
     # 2-of-3 parameter model (for single-scenario mode)
     parser.add_argument("--days", type=float, help="Number of trading days to simulate")
-    parser.add_argument(
-        "--num-events", type=int, help="Total number of events to generate"
-    )
+    parser.add_argument("--num-events", type=int, help="Total number of events to generate")
     parser.add_argument(
         "--price-update-frequency",
         type=str,
@@ -664,9 +616,7 @@ Note: Exactly 2 of the 3 parameters (days, num-events, price-update-frequency) m
     )
 
     # Standard parameters
-    parser.add_argument(
-        "--num-users", type=int, default=50, help="Number of users (default: 50)"
-    )
+    parser.add_argument("--num-users", type=int, default=50, help="Number of users (default: 50)")
     parser.add_argument(
         "--num-products",
         type=int,
@@ -701,9 +651,7 @@ Note: Exactly 2 of the 3 parameters (days, num-events, price-update-frequency) m
             print(f"  {i}. {days:5.1f} days → {events:,} events")
         print()
 
-        all_results = benchmark.run_multi_scenario_benchmark(
-            scenarios, args.num_queries
-        )
+        all_results = benchmark.run_multi_scenario_benchmark(scenarios, args.num_queries)
         print_summary_table(all_results)
     else:
         # Single-scenario mode (original behavior)
@@ -719,9 +667,7 @@ Note: Exactly 2 of the 3 parameters (days, num-events, price-update-frequency) m
             parser.error(str(e))
 
         # Calculate end_date as today at market close
-        end_date = datetime.now(timezone.utc).replace(
-            hour=16, minute=0, second=0, microsecond=0
-        )
+        end_date = datetime.now(timezone.utc).replace(hour=16, minute=0, second=0, microsecond=0)
 
         # Display calculated parameters
         print("\n=== Calculated Parameters ===")
