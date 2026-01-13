@@ -1,33 +1,41 @@
+{% from '05_user_product_timeline.sql.j2' import user_product_timeline %}
+{% from '04_cumulative_cashflow.sql.j2' import cumulative_cashflow %}
+
+{% macro user_product_timeline_business(g) %}
+    SELECT
+        upt.user_id, upt.product_id, upt."timestamp",
+        ccf.buy_units, ccf.sell_units, ccf.buy_cost, ccf.sell_proceeds, ccf.deposits,
+        ccf.withdrawals,
+        ccf.buy_units - ccf.sell_units AS units,
+        ccf.deposits - ccf.withdrawals AS net_investment,
+        ccf.deposits - ccf.buy_cost + ccf.withdrawals - ccf.sell_proceeds AS fees,
+        -- units * pu.price AS market_value
+        (ccf.buy_units - ccf.sell_units) * pu.price AS market_value,
+        ccf.buy_cost / NULLIF(ccf.buy_units, 0) AS avg_buy_cost,
+        -- units * avg_buy_cost AS cost_basis
+        (ccf.buy_units - ccf.sell_units) *
+            (ccf.buy_cost / NULLIF(ccf.buy_units, 0))
+            AS cost_basis,
+        -- market_value - cost_basis AS unrealized_returns or
+        -- units * (market_price - avg_buy_cost) AS unrealized_returns
+        (ccf.buy_units - ccf.sell_units) *
+            (pu.price - (ccf.buy_cost / NULLIF(ccf.buy_units, 0)))
+            AS unrealized_returns
+    FROM ({{ user_product_timeline(g) }}) upt
+        INNER JOIN price_update_{{ g.suffix }} pu ON
+            upt.product_id = pu.product_id AND upt."timestamp" = pu."timestamp"
+        INNER JOIN ({{ cumulative_cashflow() }}) ccf ON
+            upt.user_id = ccf.user_id AND
+            upt.product_id = ccf.product_id AND
+            upt.cashflow_timestamp = ccf."timestamp"
+{% endmacro %}
+
 {% for g in GRANULARITIES %}
     CREATE VIEW user_product_timeline_business_{{ g.suffix }} AS
-        SELECT
-            upt.user_id, upt.product_id, upt."timestamp",
-            ccf.buy_units, ccf.sell_units, ccf.buy_cost, ccf.sell_proceeds, ccf.deposits,
-            ccf.withdrawals,
-            ccf.buy_units - ccf.sell_units AS units,
-            ccf.deposits - ccf.withdrawals AS net_investment,
-            ccf.deposits - ccf.buy_cost + ccf.withdrawals - ccf.sell_proceeds AS fees,
-            -- units * pu.price AS market_value
-            (ccf.buy_units - ccf.sell_units) * pu.price AS market_value,
-            ccf.buy_cost / NULLIF(ccf.buy_units, 0) AS avg_buy_cost,
-            -- units * avg_buy_cost AS cost_basis
-            (ccf.buy_units - ccf.sell_units) *
-                (ccf.buy_cost / NULLIF(ccf.buy_units, 0))
-                AS cost_basis,
-            -- market_value - cost_basis AS unrealized_returns
-            (ccf.buy_units - ccf.sell_units) *
-                (pu.price - (ccf.buy_cost / NULLIF(ccf.buy_units, 0)))
-                AS unrealized_returns
-        FROM user_product_timeline_{{ g.suffix }} upt
-            INNER JOIN price_update_{{ g.suffix }} pu ON
-                upt.product_id = pu.product_id AND upt."timestamp" = pu."timestamp"
-            INNER JOIN cumulative_cashflow ccf ON
-                upt.user_id = ccf.user_id AND
-                upt.product_id = ccf.product_id AND
-                upt.cashflow_timestamp = ccf."timestamp";
+        {{ user_product_timeline_business(g) }};
 {% endfor %}
 
-CREATE VIEW user_product_timeline_latest AS
+{% macro user_product_timeline_latest() %}
     SELECT
         ccf.user_id,
         ccf.product_id,
@@ -60,11 +68,14 @@ CREATE VIEW user_product_timeline_latest AS
             sell_proceeds,
             deposits,
             withdrawals
-        FROM cumulative_cashflow
+        FROM ({{ cumulative_cashflow() }})
         ORDER BY user_id, product_id, "timestamp" DESC
     ) ccf
         INNER JOIN (
             SELECT DISTINCT ON (product_id) product_id, "timestamp", price
             FROM price_update
             ORDER BY product_id, "timestamp" DESC
-        ) pu ON ccf.product_id = pu.product_id;
+        ) pu ON ccf.product_id = pu.product_id
+{% endmacro %}
+
+CREATE VIEW user_product_timeline_latest AS {{ user_product_timeline_latest() }};
