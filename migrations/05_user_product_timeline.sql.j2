@@ -1,45 +1,3 @@
-{% macro seed_pt(g) %}
-    SELECT product_id, MAX("timestamp") as "timestamp"
-    FROM user_product_timeline_cache_{{ g.suffix }}
-    GROUP BY product_id
-{% endmacro %}
-
-{% macro fresh_pu(g) %}
-    SELECT pu.product_id, pu."timestamp"
-    FROM price_update_{{ g.suffix }} pu
-        LEFT OUTER JOIN ({{ seed_pt(g) }}) seed_pt
-            ON pu.product_id = seed_pt.product_id
-    WHERE seed_pt."timestamp" IS NULL OR pu."timestamp" > seed_pt."timestamp"
-{% endmacro %}
-
-{% from '04_cumulative_cashflow.sql.j2' import cumulative_cashflow %}
-
-{% macro user_product_timeline(g) %}
-    SELECT user_id, product_id, "timestamp", cashflow_timestamp
-    FROM user_product_timeline_cache_{{ g.suffix }}
-
-    UNION ALL
-
-    SELECT
-        latest_ccf.user_id,
-        fresh_pu.product_id,
-        fresh_pu."timestamp",
-        latest_ccf."timestamp" AS cashflow_timestamp
-    FROM ({{ fresh_pu(g) }}) fresh_pu
-        INNER JOIN LATERAL (
-            SELECT DISTINCT ON (ccf.user_id) ccf.user_id, ccf."timestamp"
-            FROM ({{ cumulative_cashflow() }}) ccf
-            WHERE ccf.product_id = fresh_pu.product_id AND ccf."timestamp" <= fresh_pu."timestamp"
-            ORDER BY ccf.user_id, ccf."timestamp" DESC
-        ) latest_ccf ON true
-{% endmacro %}
-
-{% macro latest_up(g) %}
-    SELECT DISTINCT ON (user_id, product_id) user_id, product_id, "timestamp"
-    FROM user_product_timeline_cache_{{ g.suffix }}
-    ORDER BY user_id, product_id, "timestamp" DESC
-{% endmacro %}
-
 {% for g in GRANULARITIES %}
 
     CREATE TABLE user_product_timeline_cache_{{ g.suffix }} (
@@ -64,10 +22,126 @@
     CREATE INDEX idx_user_product_timeline_cache_{{ g.suffix }}_timestamp
         ON user_product_timeline_cache_{{ g.suffix }}("timestamp" DESC);
 
-    CREATE VIEW user_product_timeline_{{ g.suffix }} AS {{ user_product_timeline(g) }};
+    CREATE FUNCTION seed_pt_{{ g.suffix }}(p_product_id UUID)
+        RETURNS TABLE(product_id UUID, "timestamp" TIMESTAMPTZ)
+        LANGUAGE plpgsql STABLE AS $$
+        BEGIN
+            {% macro query(w) %}
+                RETURN QUERY
+                SELECT DISTINCT ON (uptc.product_id) uptc.product_id, uptc."timestamp"
+                FROM user_product_timeline_cache_{{ g.suffix }} uptc
+                {{ w }}
+                ORDER BY uptc.product_id, uptc."timestamp" DESC
+            {% endmacro %}
+            IF p_product_id IS NULL THEN
+                {{ query('') }};
+            ELSE
+                {{ query('WHERE uptc.product_id = p_product_id') }};
+            END IF;
+        END;
+        $$;
+
+    CREATE FUNCTION fresh_pu_{{ g.suffix }}(p_product_id UUID, p_after TIMESTAMPTZ)
+        RETURNS TABLE(product_id UUID, "timestamp" TIMESTAMPTZ)
+        LANGUAGE plpgsql STABLE AS $$
+        BEGIN
+            {% macro query(w) %}
+                RETURN QUERY
+                SELECT pu.product_id, pu."timestamp"
+                FROM price_update_{{ g.suffix }} pu
+                    LEFT OUTER JOIN seed_pt_{{ g.suffix }}(p_product_id) seed_pt
+                        ON pu.product_id = seed_pt.product_id
+                WHERE (seed_pt."timestamp" IS NULL OR pu."timestamp" > seed_pt."timestamp") {{ w }}
+            {% endmacro %}
+            IF p_product_id IS NULL AND p_after IS NULL THEN
+                {{ query('') }};
+            ELSIF p_product_id IS NOT NULL AND p_after IS NULL THEN
+                {{ query('AND pu.product_id = p_product_id') }};
+            ELSIF p_product_id IS NULL AND p_after IS NOT NULL THEN
+                {{ query('AND pu."timestamp" > p_after') }};
+            ELSIF p_product_id IS NOT NULL AND p_after IS NOT NULL THEN
+                {{ query('AND pu.product_id = p_product_id AND pu."timestamp" > p_after') }};
+            END IF;
+        END;
+        $$;
+
+    CREATE FUNCTION user_product_timeline_{{ g.suffix }}(
+        p_user_id UUID, p_product_id UUID, p_now TIMESTAMPTZ DEFAULT NOW()
+    )
+        RETURNS TABLE(
+            user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, cashflow_timestamp TIMESTAMPTZ
+        )
+        LANGUAGE plpgsql STABLE AS $$
+        BEGIN
+            {% macro query(w1, w2) %}
+                RETURN QUERY
+                SELECT uptc.user_id, uptc.product_id, uptc."timestamp", uptc.cashflow_timestamp
+                FROM user_product_timeline_cache_{{ g.suffix }} uptc
+                WHERE
+                    true  -- Doing this so that the conditional filters can start with AND
+                    {{ w1 }}
+                    {% if g.cache_retention %}
+                        AND uptc."timestamp" >= p_now - '{{ g.cache_retention }}'::interval
+                    {% endif %}
+
+                UNION ALL
+
+                SELECT
+                    latest_ccf.user_id, fresh_pu.product_id, fresh_pu."timestamp",
+                    latest_ccf."timestamp" AS cashflow_timestamp
+                FROM fresh_pu_{{ g.suffix }}(
+                    p_product_id,
+                    {% if g.cache_retention %}p_now - '{{ g.cache_retention }}'::interval{% else %}NULL{% endif %}
+                ) fresh_pu
+                    INNER JOIN LATERAL (
+                        SELECT DISTINCT ON (ccf.user_id) ccf.user_id, ccf."timestamp"
+                        FROM cumulative_cashflow(p_user_id, p_product_id) ccf
+                        WHERE
+                            ccf.product_id = fresh_pu.product_id AND
+                            ccf."timestamp" <= fresh_pu."timestamp"
+                        ORDER BY ccf.user_id, ccf."timestamp" DESC
+                    ) latest_ccf ON true
+                {{ w2 }}
+            {% endmacro %}
+            IF p_user_id IS NULL AND p_product_id IS NULL THEN
+                {{ query('', '') }};
+            ELSIF p_user_id IS NOT NULL AND p_product_id IS NULL THEN
+                {{ query('AND uptc.user_id = p_user_id', '') }};
+            ELSIF p_user_id IS NULL AND p_product_id IS NOT NULL THEN
+                {{ query('AND uptc.product_id = p_product_id', 'WHERE fresh_pu.product_id = p_product_id') }};
+            ELSE
+                {{ query('AND uptc.user_id = p_user_id AND uptc.product_id = p_product_id', 'WHERE fresh_pu.product_id = p_product_id') }};
+            END IF;
+        END;
+        $$;
+
+    CREATE FUNCTION latest_up_{{ g.suffix }}(p_user_id UUID, p_product_id UUID)
+        RETURNS TABLE(user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ)
+        LANGUAGE plpgsql STABLE AS $$
+        BEGIN
+            {% macro query(w) %}
+                RETURN QUERY
+                SELECT DISTINCT ON (uptc.user_id, uptc.product_id)
+                    uptc.user_id, uptc.product_id, uptc."timestamp"
+                FROM user_product_timeline_cache_{{ g.suffix }} uptc
+                {{ w }}
+                ORDER BY uptc.user_id, uptc.product_id, uptc."timestamp" DESC
+            {% endmacro %}
+            IF p_user_id IS NULL AND p_product_id IS NULL THEN
+                {{ query('') }};
+            ELSIF p_user_id IS NOT NULL AND p_product_id IS NULL THEN
+                {{ query('WHERE uptc.user_id = p_user_id') }};
+            ELSIF p_user_id IS NULL AND p_product_id IS NOT NULL THEN
+                {{ query('WHERE uptc.product_id = p_product_id') }};
+            ELSE
+                {{ query('WHERE uptc.user_id = p_user_id AND uptc.product_id = p_product_id') }};
+            END IF;
+        END;
+        $$;
+
 
     CREATE OR REPLACE FUNCTION refresh_user_product_timeline_{{ g.suffix }}(
-        p_current_time TIMESTAMPTZ DEFAULT NOW()
+        p_now TIMESTAMPTZ DEFAULT NOW()
     )
         RETURNS void AS $$
         DECLARE v_watermark TIMESTAMPTZ;
@@ -79,7 +153,7 @@
                 user_id, product_id, "timestamp", cashflow_timestamp
             )
             SELECT user_id, product_id, "timestamp", cashflow_timestamp
-            FROM ({{ user_product_timeline(g) }})
+            FROM user_product_timeline_{{ g.suffix }}(NULL, NULL, p_now)
             WHERE v_watermark IS NULL OR "timestamp" > v_watermark;
 
             {% if g.cache_retention %}
@@ -88,10 +162,10 @@
                 -- user-product
                 DELETE FROM user_product_timeline_cache_{{ g.suffix }} upt
                 WHERE
-                    upt."timestamp" < p_current_time - INTERVAL '{{ g.cache_retention }}' AND
+                    upt."timestamp" < p_now - INTERVAL '{{ g.cache_retention }}' AND
                     NOT EXISTS (
                         SELECT 1
-                        FROM ({{ latest_up(g) }}) latest_up
+                        FROM latest_up_{{ g.suffix }}(NULL, NULL) latest_up
                         WHERE
                             latest_up.user_id = upt.user_id AND
                             latest_up.product_id = upt.product_id AND

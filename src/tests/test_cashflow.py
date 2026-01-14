@@ -188,7 +188,7 @@ def test_cumulative_cashflow(make_data, query, user, product):
     rows = query("""
         SELECT user_id, product_id, "timestamp",
                buy_units - sell_units AS units_held
-        FROM cumulative_cashflow
+        FROM cumulative_cashflow(NULL, NULL)
         ORDER BY "timestamp"
     """)
     assert rows == [
@@ -235,8 +235,7 @@ def test_user_product_timeline_includes_realtime_prices(make_data, query, user, 
     latest = query(
         """
         SELECT timestamp, market_value
-        FROM user_product_timeline_business_15min
-        WHERE user_id = %(user_id)s AND product_id = %(product_id)s
+        FROM user_product_timeline_business_15min(%(user_id)s, %(product_id)s)
         ORDER BY timestamp DESC LIMIT 1
         """,
         {"user_id": user("Alice"), "product_id": product("AAPL")},
@@ -266,8 +265,7 @@ def test_user_product_timeline_combines_cashflow_and_price_events(make_data, que
     timeline = query(
         """
         SELECT *
-        FROM user_product_timeline_business_15min
-        WHERE user_id = %(user_id)s AND product_id = %(product_id)s
+        FROM user_product_timeline_business_15min(%(user_id)s, %(product_id)s)
         ORDER BY timestamp
         """,
         {"user_id": user("Alice"), "product_id": product("AAPL")},
@@ -303,14 +301,13 @@ def test_user_timeline_aggregates_across_products(make_data, query, user, produc
     # Refresh continuous aggregate
     query("CALL refresh_continuous_aggregate('price_update_15min', NULL, NULL)")
 
-    # The timeline views may not return data without additional setup
+    # The timeline functions may not return data without additional setup
     # This test validates that the schema and queries work correctly when data is present
     # For now, we'll just verify the query syntax is correct by running it
     timeline = query(
         """
         SELECT *
-        FROM user_timeline_business_15min
-        WHERE user_id = %(user_id)s
+        FROM user_timeline_business_15min(%(user_id)s)
         ORDER BY timestamp
         """,
         {"user_id": user("Alice")},
@@ -420,7 +417,7 @@ def test_cumulative_cashflow_calculations(make_data, query, product, user):
                buy_units - sell_units AS units_held,
                deposits - withdrawals AS net_investment,
                deposits - buy_cost + sell_proceeds - withdrawals AS fees
-        FROM cumulative_cashflow
+        FROM cumulative_cashflow(NULL, NULL)
         ORDER BY timestamp
         """
     )
@@ -576,7 +573,7 @@ def test_out_of_order_cashflow_invalidates_cache(query, product, user):
                buy_units - sell_units AS units_held,
                deposits - withdrawals AS net_investment,
                deposits - buy_cost + sell_proceeds - withdrawals AS fees
-        FROM cumulative_cashflow WHERE product_id = %s ORDER BY timestamp
+        FROM cumulative_cashflow(NULL, NULL) WHERE product_id = %s ORDER BY timestamp
         """,
         (product("AAPL"),),
     )
@@ -741,7 +738,7 @@ def test_multi_product_cache_invalidation_isolation(query, product, user):
                buy_units - sell_units AS units_held,
                deposits - withdrawals AS net_investment,
                deposits - buy_cost + sell_proceeds - withdrawals AS fees
-        FROM cumulative_cashflow
+        FROM cumulative_cashflow(NULL, NULL)
         WHERE user_id = %(user_id)s AND product_id = %(product_a)s
         ORDER BY timestamp
         """,
@@ -800,7 +797,7 @@ def test_multi_product_cache_invalidation_isolation(query, product, user):
                buy_units - sell_units AS units_held,
                deposits - withdrawals AS net_investment,
                deposits - buy_cost + sell_proceeds - withdrawals AS fees
-        FROM cumulative_cashflow
+        FROM cumulative_cashflow(NULL, NULL)
         WHERE user_id = %(user_id)s AND product_id = %(product_b)s
         ORDER BY timestamp
         """,

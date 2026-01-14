@@ -1,279 +1,143 @@
-================================================================================
-Scenario 1: 6.6 days, 714,285 events
-================================================================================
-Refresh all caches: 400.2s
-Queries with 100% cache:
-    user-product-timeline-15min:  48ms
-    user-timeline-15min:          47ms
-    user-product-timeline-1h:  34ms
-    user-timeline-1h:          31ms
-    user-product-timeline-1d:  31ms
-    user-timeline-1d:          30ms
-Queries with 75% cache:
-    user-product-timeline-15min:  42ms
-    user-timeline-15min:          97ms
-    user-product-timeline-1h:  28ms
-    user-timeline-1h:          58ms
-    user-product-timeline-1d:  31ms
-    user-timeline-1d:          52ms
-Queries with 50% cache:
-    user-product-timeline-15min:  37ms
-    user-timeline-15min:          87ms
-    user-product-timeline-1h:  23ms
-    user-timeline-1h:          42ms
-    user-product-timeline-1d:  23ms
-    user-timeline-1d:          41ms
-Queries with 25% cache:
-    user-product-timeline-15min:  26ms
-    user-timeline-15min:          54ms
-    user-product-timeline-1h:  13ms
-    user-timeline-1h:          27ms
-    user-product-timeline-1d:  15ms
-    user-timeline-1d:          24ms
-Queries with 0% cache:
-    user-product-timeline-15min:  3ms
-    user-timeline-15min:          21ms
-    user-product-timeline-1h:  2ms
-    user-timeline-1h:          8ms
-    user-product-timeline-1d:  1ms
-    user-timeline-1d:          4ms
+❯ for days in $(echo 1 2 3 5 10 15 20); do
+  uv run src/twr/benchmark.py --price-update-frequency 2min --num-users 1000 --num-products 500 --days $days
+done
 
-================================================================================
-Scenario 2: 13.2 days, 1,428,571 events
-================================================================================
-Refresh all caches: 921.8s
-Queries with 100% cache:
-    user-product-timeline-15min:  113ms
-    user-timeline-15min:          103ms
-    user-product-timeline-1h:  78ms
-    user-timeline-1h:          72ms
-    user-product-timeline-1d:  71ms
-    user-timeline-1d:          66ms
-Queries with 75% cache:
-    user-product-timeline-15min:  96ms
-    user-timeline-15min:          198ms
-    user-product-timeline-1h:  61ms
-    user-timeline-1h:          118ms
-    user-product-timeline-1d:  60ms
-    user-timeline-1d:          100ms
-Queries with 50% cache:
-    user-product-timeline-15min:  72ms
-    user-timeline-15min:          153ms
-    user-product-timeline-1h:  46ms
-    user-timeline-1h:          91ms
-    user-product-timeline-1d:  42ms
-    user-timeline-1d:          68ms
-Queries with 25% cache:
-    user-product-timeline-15min:  47ms
-    user-timeline-15min:          111ms
-    user-product-timeline-1h:  41ms
-    user-timeline-1h:          68ms
-    user-product-timeline-1d:  40ms
-    user-timeline-1d:          56ms
-Queries with 0% cache:
-    user-product-timeline-15min:  4ms
-    user-timeline-15min:          41ms
-    user-product-timeline-1h:  4ms
-    user-timeline-1h:          34ms
-    user-product-timeline-1d:  1ms
-    user-timeline-1d:          3ms
+=== Calculated Parameters ===
+Trading days: 1.00
+Total events: 108,333
 
-================================================================================
-Scenario 3: 19.8 days, 2,142,857 events
-================================================================================
-Refresh all caches: 1615.1s
-Queries with 100% cache:
-    user-product-timeline-15min:  182ms
-    user-timeline-15min:          181ms
-    user-product-timeline-1h:  113ms
-    user-timeline-1h:          115ms
-    user-product-timeline-1d:  107ms
-    user-timeline-1d:          121ms
-Queries with 75% cache:
-    user-product-timeline-15min:  164ms
-    user-timeline-15min:          362ms
-    user-product-timeline-1h:  104ms
-    user-timeline-1h:          221ms
-    user-product-timeline-1d:  94ms
-    user-timeline-1d:          169ms
-Queries with 50% cache:
-    user-product-timeline-15min:  105ms
-    user-timeline-15min:          228ms
-    user-product-timeline-1h:  76ms
-    user-timeline-1h:          160ms
-    user-product-timeline-1d:  68ms
-    user-timeline-1d:          114ms
-Queries with 25% cache:
-    user-product-timeline-15min:  69ms
-    user-timeline-15min:          158ms
-    user-product-timeline-1h:  52ms
-    user-timeline-1h:          108ms
-    user-product-timeline-1d:  46ms
-    user-timeline-1d:          66ms
-Queries with 0% cache:
-    user-product-timeline-15min:  6ms
-    user-timeline-15min:          58ms
-    user-product-timeline-1h:  3ms
-    user-timeline-1h:          37ms
-    user-product-timeline-1d:  1ms
-    user-timeline-1d:          4ms
+[3/5] Querying before cache refresh (5s per granularity)...
+  → 15min: user_product=0.7ms, user=17.3ms
+  → 1h: user_product=0.5ms, user=5.6ms
+  → 1d: user_product=0.4ms, user=1.3ms
 
-================================================================================
-Scenario 4: 26.4 days, 2,857,142 events
-================================================================================
-Refresh all caches: 2397.1s
-Queries with 100% cache:
-    user-product-timeline-15min:  7754ms
-    user-timeline-15min:          295ms
-    user-product-timeline-1h:  180ms
-    user-timeline-1h:          190ms
-    user-product-timeline-1d:  149ms
-    user-timeline-1d:          148ms
-Queries with 75% cache:
-    user-product-timeline-15min:  294ms
-    user-timeline-15min:          474ms
-    user-product-timeline-1h:  156ms
-    user-timeline-1h:          324ms
-    user-product-timeline-1d:  131ms
-    user-timeline-1d:          258ms
-Queries with 50% cache:
-    user-product-timeline-15min:  164ms
-    user-timeline-15min:          334ms
-    user-product-timeline-1h:  122ms
-    user-timeline-1h:          238ms
-    user-product-timeline-1d:  100ms
-    user-timeline-1d:          158ms
-Queries with 25% cache:
-    user-product-timeline-15min:  101ms
-    user-timeline-15min:          190ms
-    user-product-timeline-1h:  76ms
-    user-timeline-1h:          167ms
-    user-product-timeline-1d:  62ms
-    user-timeline-1d:          96ms
-Queries with 0% cache:
-    user-product-timeline-15min:  7ms
-    user-timeline-15min:          54ms
-    user-product-timeline-1h:  4ms
-    user-timeline-1h:          60ms
-    user-product-timeline-1d:  2ms
-    user-timeline-1d:          7ms
+[4/5] Refreshing caches...
+  → Cumulative cashflow: 0.08s
+  → 15min: 2.89s
+  → 1h: 0.85s
+  → 1d: 0.12s
 
-================================================================================
-Scenario 5: 33.0 days, 3,571,428 events
-================================================================================
-Refresh all caches: 3167.7s
-Queries with 100% cache:
-    user-product-timeline-15min:  332ms
-    user-timeline-15min:          341ms
-    user-product-timeline-1h:  229ms
-    user-timeline-1h:          233ms
-    user-product-timeline-1d:  213ms
-    user-timeline-1d:          193ms
-Queries with 75% cache:
-    user-product-timeline-15min:  361ms
-    user-timeline-15min:          607ms
-    user-product-timeline-1h:  230ms
-    user-timeline-1h:          476ms
-    user-product-timeline-1d:  181ms
-    user-timeline-1d:          340ms
-Queries with 50% cache:
-    user-product-timeline-15min:  234ms
-    user-timeline-15min:          422ms
-    user-product-timeline-1h:  204ms
-    user-timeline-1h:          465ms
-    user-product-timeline-1d:  178ms
-    user-timeline-1d:          281ms
-Queries with 25% cache:
-    user-product-timeline-15min:  141ms
-    user-timeline-15min:          289ms
-    user-product-timeline-1h:  126ms
-    user-timeline-1h:          250ms
-    user-product-timeline-1d:  84ms
-    user-timeline-1d:          140ms
-Queries with 0% cache:
-    user-product-timeline-15min:  6ms
-    user-timeline-15min:          62ms
-    user-product-timeline-1h:  4ms
-    user-timeline-1h:          74ms
-    user-product-timeline-1d:  2ms
-    user-timeline-1d:          9ms
+[5/5] Querying after cache refresh (5s per granularity)...
+  → 15min: user_product=0.6ms (1.3x), user=6.4ms (2.7x)
+  → 1h: user_product=0.4ms (1.2x), user=3.1ms (1.8x)
+  → 1d: user_product=0.3ms (1.3x), user=0.9ms (1.4x)
 
-================================================================================
-Scenario 6: 39.6 days, 4,285,714 events
-================================================================================
-Refresh all caches: 3650.3s
-Queries with 100% cache:
-    user-product-timeline-15min:  361ms
-    user-timeline-15min:          379ms
-    user-product-timeline-1h:  269ms
-    user-timeline-1h:          262ms
-    user-product-timeline-1d:  232ms
-    user-timeline-1d:          220ms
-Queries with 75% cache:
-    user-product-timeline-15min:  387ms
-    user-timeline-15min:          658ms
-    user-product-timeline-1h:  304ms
-    user-timeline-1h:          523ms
-    user-product-timeline-1d:  236ms
-    user-timeline-1d:          381ms
-Queries with 50% cache:
-    user-product-timeline-15min:  207ms
-    user-timeline-15min:          437ms
-    user-product-timeline-1h:  186ms
-    user-timeline-1h:          363ms
-    user-product-timeline-1d:  160ms
-    user-timeline-1d:          266ms
-Queries with 25% cache:
-    user-product-timeline-15min:  144ms
-    user-timeline-15min:          278ms
-    user-product-timeline-1h:  164ms
-    user-timeline-1h:          308ms
-    user-product-timeline-1d:  83ms
-    user-timeline-1d:          145ms
-Queries with 0% cache:
-    user-product-timeline-15min:  10ms
-    user-timeline-15min:          87ms
-    user-product-timeline-1h:  6ms
-    user-timeline-1h:          107ms
-    user-product-timeline-1d:  7ms
-    user-timeline-1d:          18ms
+=== Calculated Parameters ===
+Trading days: 2.00
+Total events: 216,666
 
-================================================================================
-Scenario 7: 46.2 days, 5,000,000 events
-================================================================================
-Refresh all caches: 6395.3s
-Queries with 100% cache:
-    user-product-timeline-15min:  449ms
-    user-timeline-15min:          480ms
-    user-product-timeline-1h:  312ms
-    user-timeline-1h:          344ms
-    user-product-timeline-1d:  314ms
-    user-timeline-1d:          286ms
-Queries with 75% cache:
-    user-product-timeline-15min:  499ms
-    user-timeline-15min:          811ms
-    user-product-timeline-1h:  403ms
-    user-timeline-1h:          604ms
-    user-product-timeline-1d:  246ms
-    user-timeline-1d:          429ms
-Queries with 50% cache:
-    user-product-timeline-15min:  270ms
-    user-timeline-15min:          525ms
-    user-product-timeline-1h:  301ms
-    user-timeline-1h:          432ms
-    user-product-timeline-1d:  185ms
-    user-timeline-1d:          310ms
-Queries with 25% cache:
-    user-product-timeline-15min:  158ms
-    user-timeline-15min:          307ms
-    user-product-timeline-1h:  114ms
-    user-timeline-1h:          270ms
-    user-product-timeline-1d:  117ms
-    user-timeline-1d:          175ms
-Queries with 0% cache:
-    user-product-timeline-15min:  8ms
-    user-timeline-15min:          80ms
-    user-product-timeline-1h:  6ms
-    user-timeline-1h:          102ms
-    user-product-timeline-1d:  3ms
-    user-timeline-1d:          17ms
+[3/5] Querying before cache refresh (5s per granularity)...
+  → 15min: user_product=0.8ms, user=47.5ms
+  → 1h: user_product=0.5ms, user=14.2ms
+  → 1d: user_product=0.4ms, user=2.5ms
+
+[4/5] Refreshing caches...
+  → Cumulative cashflow: 0.17s
+  → 15min: 20.64s
+  → 1h: 6.13s
+  → 1d: 0.80s
+
+[5/5] Querying after cache refresh (5s per granularity)...
+  → 15min: user_product=0.7ms (1.1x), user=7.7ms (6.1x)
+  → 1h: user_product=0.5ms (1.2x), user=3.4ms (4.2x)
+  → 1d: user_product=0.6ms (0.7x), user=2.1ms (1.2x)
+
+=== Calculated Parameters ===
+Trading days: 3.00
+Total events: 325,000
+
+[3/5] Querying before cache refresh (5s per granularity)...
+  → 15min: user_product=1.1ms, user=87.6ms
+  → 1h: user_product=0.7ms, user=25.5ms
+  → 1d: user_product=0.4ms, user=4.1ms
+
+[4/5] Refreshing caches...
+  → Cumulative cashflow: 0.23s
+  → 15min: 47.00s
+  → 1h: 14.56s
+  → 1d: 1.80s
+
+[5/5] Querying after cache refresh (5s per granularity)...
+  → 15min: user_product=1.0ms (1.1x), user=12.4ms (7.1x)
+  → 1h: user_product=0.5ms (1.2x), user=4.3ms (6.0x)
+  → 1d: user_product=0.3ms (1.2x), user=1.7ms (2.3x)
+
+=== Calculated Parameters ===
+Trading days: 5.00
+Total events: 541,666
+
+[3/5] Querying before cache refresh (5s per granularity)...
+  → 15min: user_product=1.7ms, user=209.3ms
+  → 1h: user_product=0.8ms, user=61.9ms
+  → 1d: user_product=0.5ms, user=9.8ms
+
+[4/5] Refreshing caches...
+  → Cumulative cashflow: 0.39s
+  → 15min: 2m 14.3s
+  → 1h: 41.34s
+  → 1d: 6.25s
+
+[5/5] Querying after cache refresh (5s per granularity)...
+  → 15min: user_product=1.6ms (1.1x), user=50.0ms (4.2x)
+  → 1h: user_product=0.6ms (1.2x), user=7.6ms (8.1x)
+  → 1d: user_product=0.4ms (1.3x), user=2.3ms (4.3x)
+
+=== Calculated Parameters ===
+Trading days: 10.00
+Total events: 1,083,333
+
+[3/5] Querying before cache refresh (5s per granularity)...
+  → 15min: user_product=2.1ms, user=389.1ms
+  → 1h: user_product=1.2ms, user=211.6ms
+  → 1d: user_product=0.5ms, user=32.4ms
+
+[4/5] Refreshing caches...
+  → Cumulative cashflow: 0.76s
+  → 15min: 4m 43.6s
+  → 1h: 2m 39.6s
+  → 1d: 25.20s
+
+[5/5] Querying after cache refresh (5s per granularity)...
+  → 15min: user_product=2.0ms (1.1x), user=142.1ms (2.7x)
+  → 1h: user_product=1.1ms (1.1x), user=21.8ms (9.7x)
+  → 1d: user_product=0.4ms (1.4x), user=3.1ms (10.3x)
+
+=== Calculated Parameters ===
+Trading days: 15.00
+Total events: 1,625,000
+
+[3/5] Querying before cache refresh (5s per granularity)...
+  → 15min: user_product=2.2ms, user=578.3ms
+  → 1h: user_product=1.8ms, user=455.3ms
+  → 1d: user_product=0.6ms, user=65.5ms
+
+[4/5] Refreshing caches...
+  → Cumulative cashflow: 1.17s
+  → 15min: 7m 16.4s
+  → 1h: 6m 34.6s
+  → 1d: 58.22s
+
+[5/5] Querying after cache refresh (5s per granularity)...
+  → 15min: user_product=2.1ms (1.0x), user=183.5ms (3.2x)
+  → 1h: user_product=1.7ms (1.1x), user=111.3ms (4.1x)
+  → 1d: user_product=0.4ms (1.3x), user=4.8ms (13.6x)
+
+=== Calculated Parameters ===
+Trading days: 20.00
+Total events: 2,166,666
+
+[3/5] Querying before cache refresh (5s per granularity)...
+  → 15min: user_product=2.1ms, user=730.2ms
+  → 1h: user_product=2.2ms, user=812.1ms
+  → 1d: user_product=0.6ms, user=110.6ms
+
+[4/5] Refreshing caches...
+  → Cumulative cashflow: 1.53s
+  → 15min: 10m 1.0s
+  → 1h: 11m 32.2s
+  → 1d: 1m 45.5s
+
+[5/5] Querying after cache refresh (5s per granularity)...
+  → 15min: user_product=2.0ms (1.1x), user=286.6ms (2.5x)
+  → 1h: user_product=2.1ms (1.1x), user=238.6ms (3.4x)
+  → 1d: user_product=0.6ms (1.1x), user=7.5ms (14.7x)

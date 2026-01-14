@@ -25,10 +25,8 @@ CREATE OR REPLACE FUNCTION cashflow_repair()
             SELECT
                 user_id, product_id, "timestamp", buy_units, sell_units, buy_cost, sell_proceeds,
                 deposits, withdrawals
-            FROM cumulative_cashflow
+            FROM cumulative_cashflow(NEW.user_id, NEW.product_id)
             WHERE
-                user_id = NEW.user_id AND
-                product_id = NEW.product_id AND
                 (v_user_product_watermark IS NULL OR "timestamp" > v_user_product_watermark) AND
                 "timestamp" <= v_overall_watermark;
         END IF;
@@ -52,10 +50,8 @@ CREATE OR REPLACE FUNCTION cashflow_repair()
                     user_id, product_id, "timestamp", cashflow_timestamp
                 )
                 SELECT user_id, product_id, "timestamp", cashflow_timestamp
-                FROM user_product_timeline_{{ g.suffix }}
+                FROM user_product_timeline_{{ g.suffix }}(NEW.user_id, NEW.product_id)
                 WHERE
-                    user_id = NEW.user_id AND
-                    product_id = NEW.product_id AND
                     (
                         v_user_product_watermark IS NULL OR "timestamp" > v_user_product_watermark
                     ) AND

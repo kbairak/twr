@@ -54,12 +54,11 @@ def test_repair_respects_retention_period_15min(query, user, product):
     )
 
     # Trigger invalidates and repairs - repair should NOT cache the 10-day-old data
-    # Verify view still works correctly (computes from fresh data when needed)
+    # Verify function still works correctly (computes from fresh data when needed)
     view_data = query(
         """
         SELECT units
-        FROM user_product_timeline_business_15min
-        WHERE user_id = %(user_id)s AND product_id = %(product_id)s
+        FROM user_product_timeline_business_15min(%(user_id)s, %(product_id)s)
         ORDER BY timestamp DESC
         LIMIT 1
         """,
@@ -127,12 +126,11 @@ def test_view_works_with_retention(query, user, product):
     # Refresh continuous aggregate
     query("CALL refresh_continuous_aggregate('price_update_15min', NULL, NULL)")
 
-    # Query view - should return all data within retention
+    # Query function - should return all data within retention
     view_data = query(
         """
         SELECT timestamp, units
-        FROM user_product_timeline_business_15min
-        WHERE user_id = %(user_id)s AND product_id = %(product_id)s
+        FROM user_product_timeline_business_15min(%(user_id)s, %(product_id)s)
         ORDER BY timestamp
         """,
         {"user_id": user("Alice"), "product_id": product("AAPL")},
@@ -183,8 +181,7 @@ def test_user_timeline_with_retention(query, user, product):
     portfolio = query(
         """
         SELECT market_value, net_investment
-        FROM user_timeline_business_15min
-        WHERE user_id = %(user_id)s
+        FROM user_timeline_business_15min(%(user_id)s)
         ORDER BY timestamp DESC
         LIMIT 1
         """,

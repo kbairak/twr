@@ -211,10 +211,7 @@ class Benchmark:
                 user_id, product_id = random.choice(user_product_pairs)
 
                 cur.execute(
-                    f"""
-                    SELECT * FROM user_product_timeline_business_{suffix}
-                    WHERE user_id = %s AND product_id = %s ORDER BY timestamp
-                """,
+                    f"SELECT * FROM user_product_timeline_business_{suffix}(%s, %s)",
                     (user_id, product_id),
                 )
                 cur.fetchall()
@@ -234,7 +231,7 @@ class Benchmark:
                 user_id = random.choice(user_ids)
 
                 cur.execute(
-                    f"SELECT * FROM user_timeline_business_{suffix} WHERE user_id = %s ORDER BY timestamp",
+                    f"SELECT * FROM user_timeline_business_{suffix}(%s)",
                     (user_id,),
                 )
                 cur.fetchall()
