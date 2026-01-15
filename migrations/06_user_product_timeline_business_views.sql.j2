@@ -11,45 +11,34 @@
         )
         LANGUAGE plpgsql STABLE AS $$
         BEGIN
-            {% macro query(w) %}
-                RETURN QUERY
-                SELECT
-                    upt.user_id, upt.product_id, upt."timestamp",
-                    ccf.buy_units, ccf.sell_units, ccf.buy_cost, ccf.sell_proceeds, ccf.deposits,
-                    ccf.withdrawals,
-                    ccf.buy_units - ccf.sell_units AS units,
-                    ccf.deposits - ccf.withdrawals AS net_investment,
-                    ccf.deposits - ccf.buy_cost + ccf.withdrawals - ccf.sell_proceeds AS fees,
-                    -- units * pu.price AS market_value
-                    (ccf.buy_units - ccf.sell_units) * pu.price AS market_value,
-                    ccf.buy_cost / NULLIF(ccf.buy_units, 0) AS avg_buy_cost,
-                    -- units * avg_buy_cost AS cost_basis
-                    (ccf.buy_units - ccf.sell_units) *
-                        (ccf.buy_cost / NULLIF(ccf.buy_units, 0))
-                        AS cost_basis,
-                    -- market_value - cost_basis AS unrealized_returns or
-                    -- units * (market_price - avg_buy_cost) AS unrealized_returns
-                    (ccf.buy_units - ccf.sell_units) *
-                        (pu.price - (ccf.buy_cost / NULLIF(ccf.buy_units, 0)))
-                        AS unrealized_returns
-                FROM user_product_timeline_{{ g.suffix }}(p_user_id, p_product_id) upt
-                    INNER JOIN price_update_{{ g.suffix }} pu ON
-                        upt.product_id = pu.product_id AND upt."timestamp" = pu."timestamp"
-                    INNER JOIN cumulative_cashflow(p_user_id, p_product_id) ccf ON
-                        upt.user_id = ccf.user_id AND
-                        upt.product_id = ccf.product_id AND
-                        upt.cashflow_timestamp = ccf."timestamp"
-                {{ w }}
-            {% endmacro %}
-            IF p_user_id IS NULL AND p_product_id IS NULL THEN
-                {{ query('') }};
-            ELSIF p_user_id IS NOT NULL AND p_product_id IS NULL THEN
-                {{ query('WHERE upt.user_id = p_user_id') }};
-            ELSIF p_user_id IS NULL AND p_product_id IS NOT NULL THEN
-                {{ query('WHERE upt.product_id = p_product_id') }};
-            ELSE
-                {{ query('WHERE upt.user_id = p_user_id AND upt.product_id = p_product_id') }};
-            END IF;
+            RETURN QUERY
+            SELECT
+                upt.user_id, upt.product_id, upt."timestamp",
+                ccf.buy_units, ccf.sell_units, ccf.buy_cost, ccf.sell_proceeds, ccf.deposits,
+                ccf.withdrawals,
+                ccf.buy_units - ccf.sell_units AS units,
+                ccf.deposits - ccf.withdrawals AS net_investment,
+                ccf.deposits - ccf.buy_cost + ccf.withdrawals - ccf.sell_proceeds AS fees,
+                -- units * pu.price AS market_value
+                (ccf.buy_units - ccf.sell_units) * pu.price AS market_value,
+                ccf.buy_cost / NULLIF(ccf.buy_units, 0) AS avg_buy_cost,
+                -- units * avg_buy_cost AS cost_basis
+                (ccf.buy_units - ccf.sell_units) *
+                    (ccf.buy_cost / NULLIF(ccf.buy_units, 0))
+                    AS cost_basis,
+                -- market_value - cost_basis AS unrealized_returns or
+                -- units * (market_price - avg_buy_cost) AS unrealized_returns
+                (ccf.buy_units - ccf.sell_units) *
+                    (pu.price - (ccf.buy_cost / NULLIF(ccf.buy_units, 0)))
+                    AS unrealized_returns
+            FROM user_product_timeline_{{ g.suffix }}(p_user_id, p_product_id) upt
+                INNER JOIN price_update_{{ g.suffix }} pu ON
+                    upt.product_id = pu.product_id AND upt."timestamp" = pu."timestamp"
+                INNER JOIN cumulative_cashflow(p_user_id, p_product_id) ccf ON
+                    upt.user_id = ccf.user_id AND
+                    upt.product_id = ccf.product_id AND
+                    upt.cashflow_timestamp = ccf."timestamp"
+            WHERE upt.user_id = p_user_id AND upt.product_id = p_product_id;
         END;
         $$;
 
@@ -66,46 +55,35 @@ CREATE FUNCTION user_product_timeline_latest(p_user_id UUID, p_product_id UUID)
     )
     LANGUAGE plpgsql STABLE AS $$
     BEGIN
-        {% macro query(w) %}
-            RETURN QUERY
-            SELECT
-                ccf.user_id, ccf.product_id,
-                GREATEST(ccf."timestamp", pu."timestamp") as "timestamp",
-                ccf.buy_units, ccf.sell_units, ccf.buy_cost, ccf.sell_proceeds, ccf.deposits,
-                ccf.withdrawals,
-                ccf.buy_units - ccf.sell_units AS units,
-                ccf.deposits - ccf.withdrawals AS net_investment,
-                ccf.deposits - ccf.buy_cost + ccf.withdrawals - ccf.sell_proceeds AS fees,
-                (ccf.buy_units - ccf.sell_units) * pu.price AS market_value,
-                ccf.buy_cost / NULLIF(ccf.buy_units, 0) AS avg_buy_cost,
-                (ccf.buy_units - ccf.sell_units) *
-                    (ccf.buy_cost / NULLIF(ccf.buy_units, 0))
-                    AS cost_basis,
-                (ccf.buy_units - ccf.sell_units) *
-                    (pu.price - (ccf.buy_cost / NULLIF(ccf.buy_units, 0)))
-                    AS unrealized_returns
-            FROM (
-                SELECT DISTINCT ON (ccf.user_id, ccf.product_id)
-                    ccf.user_id, ccf.product_id, ccf."timestamp", ccf.buy_units, ccf.sell_units,
-                    ccf.buy_cost, ccf.sell_proceeds, ccf.deposits, ccf.withdrawals
-                FROM cumulative_cashflow(p_user_id, p_product_id) ccf
-                {{ w }}
-                ORDER BY ccf.user_id, ccf.product_id, ccf."timestamp" DESC
-            ) ccf
-                INNER JOIN (
-                    SELECT DISTINCT ON (pu.product_id) pu.product_id, pu."timestamp", pu.price
-                    FROM price_update pu
-                    ORDER BY pu.product_id, pu."timestamp" DESC
-                ) pu ON ccf.product_id = pu.product_id
-        {% endmacro %}
-        IF p_user_id IS NULL AND p_product_id IS NULL THEN
-            {{ query('') }};
-        ELSIF p_user_id IS NULL AND p_product_id IS NOT NULL THEN
-            {{ query('WHERE ccf.product_id = p_product_id') }};
-        ELSIF p_user_id IS NOT NULL AND p_product_id IS NULL THEN
-            {{ query('WHERE ccf.user_id = p_user_id') }};
-        ELSE
-            {{ query('WHERE ccf.user_id = p_user_id AND ccf.product_id = p_product_id') }};
-        END IF;
+        RETURN QUERY
+        SELECT
+            ccf.user_id, ccf.product_id,
+            GREATEST(ccf."timestamp", pu."timestamp") as "timestamp",
+            ccf.buy_units, ccf.sell_units, ccf.buy_cost, ccf.sell_proceeds, ccf.deposits,
+            ccf.withdrawals,
+            ccf.buy_units - ccf.sell_units AS units,
+            ccf.deposits - ccf.withdrawals AS net_investment,
+            ccf.deposits - ccf.buy_cost + ccf.withdrawals - ccf.sell_proceeds AS fees,
+            (ccf.buy_units - ccf.sell_units) * pu.price AS market_value,
+            ccf.buy_cost / NULLIF(ccf.buy_units, 0) AS avg_buy_cost,
+            (ccf.buy_units - ccf.sell_units) *
+                (ccf.buy_cost / NULLIF(ccf.buy_units, 0))
+                AS cost_basis,
+            (ccf.buy_units - ccf.sell_units) *
+                (pu.price - (ccf.buy_cost / NULLIF(ccf.buy_units, 0)))
+                AS unrealized_returns
+        FROM (
+            SELECT DISTINCT ON (ccf.user_id, ccf.product_id)
+                ccf.user_id, ccf.product_id, ccf."timestamp", ccf.buy_units, ccf.sell_units,
+                ccf.buy_cost, ccf.sell_proceeds, ccf.deposits, ccf.withdrawals
+            FROM cumulative_cashflow(p_user_id, p_product_id, true) ccf
+            WHERE ccf.user_id = p_user_id AND ccf.product_id = p_product_id
+            ORDER BY ccf.user_id, ccf.product_id, ccf."timestamp" DESC
+        ) ccf
+            INNER JOIN (
+                SELECT DISTINCT ON (pu.product_id) pu.product_id, pu."timestamp", pu.price
+                FROM price_update pu
+                ORDER BY pu.product_id, pu."timestamp" DESC
+            ) pu ON ccf.product_id = pu.product_id;
     END;
     $$;

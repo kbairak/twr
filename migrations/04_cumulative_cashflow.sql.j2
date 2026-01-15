@@ -49,7 +49,7 @@ CREATE FUNCTION seed_cf(p_user_id UUID, p_product_id UUID)
             ORDER BY ccfc.user_id, ccfc.product_id, ccfc."timestamp" DESC
         {% endmacro %}
         IF p_user_id IS NULL AND p_product_id IS NULL THEN
-            {{ query('') }};
+            {{ query() }};
         ELSIF p_user_id IS NOT NULL AND p_product_id IS NULL THEN
             {{ query('WHERE ccfc.user_id = p_user_id') }};
         ELSIF p_user_id IS NULL AND p_product_id IS NOT NULL THEN
@@ -87,7 +87,7 @@ CREATE FUNCTION fresh_cf(p_user_id UUID, p_product_id UUID)
             GROUP BY cf.user_id, cf.product_id, cf."timestamp"
         {% endmacro %}
         IF p_user_id IS NULL AND p_product_id IS NULL THEN
-            {{ query('') }};
+            {{ query() }};
         ELSIF p_user_id IS NOT NULL AND p_product_id IS NULL THEN
             {{ query('AND cf.user_id = p_user_id') }};
         ELSIF p_user_id IS NULL AND p_product_id IS NOT NULL THEN
@@ -98,7 +98,12 @@ CREATE FUNCTION fresh_cf(p_user_id UUID, p_product_id UUID)
     END;
     $$;
 
-CREATE FUNCTION cumulative_cashflow(p_user_id UUID, p_product_id UUID)
+CREATE FUNCTION cumulative_cashflow(
+    p_user_id UUID,
+    p_product_id UUID,
+    p_only_latest BOOLEAN DEFAULT FALSE,
+    p_after TIMESTAMPTZ DEFAULT NULL
+)
     RETURNS TABLE (
         user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, buy_units NUMERIC(20, 6),
         sell_units NUMERIC(20, 6), buy_cost NUMERIC(20, 6), sell_proceeds NUMERIC(20, 6),
@@ -106,13 +111,12 @@ CREATE FUNCTION cumulative_cashflow(p_user_id UUID, p_product_id UUID)
     )
     LANGUAGE plpgsql STABLE AS $$
     BEGIN
-        {% macro query(w1, w2) %}
+        {% macro query(w1='', w2='', o='') %}
             RETURN QUERY
             SELECT
-                cache.user_id, cache.product_id, cache."timestamp", cache.buy_units,
-                cache.sell_units, cache.buy_cost, cache.sell_proceeds, cache.deposits,
-                cache.withdrawals
-            FROM cumulative_cashflow_cache cache
+                ccfc.user_id, ccfc.product_id, ccfc."timestamp", ccfc.buy_units, ccfc.sell_units,
+                ccfc.buy_cost, ccfc.sell_proceeds, ccfc.deposits, ccfc.withdrawals
+            FROM cumulative_cashflow_cache ccfc
             {{ w1 }}
 
             UNION ALL
@@ -147,15 +151,33 @@ CREATE FUNCTION cumulative_cashflow(p_user_id UUID, p_product_id UUID)
                 ORDER BY fresh_cf."timestamp"
                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
             )
+            {{ o }}
         {% endmacro %}
         IF p_user_id IS NULL AND p_product_id IS NULL THEN
-            {{ query('', '') }};
+            {{ query() }};
         ELSIF p_user_id IS NOT NULL AND p_product_id IS NULL THEN
-            {{ query('WHERE cache.user_id = p_user_id', 'WHERE fresh_cf.user_id = p_user_id') }};
+            {{ query('WHERE ccfc.user_id = p_user_id', 'WHERE fresh_cf.user_id = p_user_id') }};
         ELSIF p_user_id IS NULL AND p_product_id IS NOT NULL THEN
-            {{ query('WHERE cache.product_id = p_product_id', 'WHERE fresh_cf.product_id = p_product_id') }};
+            {{ query(
+                'WHERE ccfc.product_id = p_product_id',
+                'WHERE fresh_cf.product_id = p_product_id'
+            ) }};
+        ELSIF p_only_latest THEN
+            {{ query(
+                'WHERE ccfc.user_id = p_user_id AND ccfc.product_id = p_product_id',
+                'WHERE fresh_cf.user_id = p_user_id AND fresh_cf.product_id = p_product_id',
+                'ORDER BY user_id, product_id, "timestamp" DESC LIMIT 1'
+            ) }};
+        ELSIF p_after IS NOT NULL THEN
+            {{ query(
+                'WHERE ccfc.user_id = p_user_id AND ccfc.product_id = p_product_id AND ccfc."timestamp" > p_after',
+                'WHERE fresh_cf.user_id = p_user_id AND fresh_cf.product_id = p_product_id AND fresh_cf."timestamp" > p_after'
+            ) }};
         ELSE
-            {{ query('WHERE cache.user_id = p_user_id AND cache.product_id = p_product_id', 'WHERE fresh_cf.user_id = p_user_id AND fresh_cf.product_id = p_product_id') }};
+            {{ query(
+                'WHERE ccfc.user_id = p_user_id AND ccfc.product_id = p_product_id',
+                'WHERE fresh_cf.user_id = p_user_id AND fresh_cf.product_id = p_product_id'
+            ) }};
         END IF;
     END;
     $$;

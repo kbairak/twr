@@ -26,7 +26,7 @@
         RETURNS TABLE(product_id UUID, "timestamp" TIMESTAMPTZ)
         LANGUAGE plpgsql STABLE AS $$
         BEGIN
-            {% macro query(w) %}
+            {% macro query(w='') %}
                 RETURN QUERY
                 SELECT DISTINCT ON (uptc.product_id) uptc.product_id, uptc."timestamp"
                 FROM user_product_timeline_cache_{{ g.suffix }} uptc
@@ -34,7 +34,7 @@
                 ORDER BY uptc.product_id, uptc."timestamp" DESC
             {% endmacro %}
             IF p_product_id IS NULL THEN
-                {{ query('') }};
+                {{ query() }};
             ELSE
                 {{ query('WHERE uptc.product_id = p_product_id') }};
             END IF;
@@ -45,7 +45,7 @@
         RETURNS TABLE(product_id UUID, "timestamp" TIMESTAMPTZ)
         LANGUAGE plpgsql STABLE AS $$
         BEGIN
-            {% macro query(w) %}
+            {% macro query(w='') %}
                 RETURN QUERY
                 SELECT pu.product_id, pu."timestamp"
                 FROM price_update_{{ g.suffix }} pu
@@ -54,7 +54,7 @@
                 WHERE (seed_pt."timestamp" IS NULL OR pu."timestamp" > seed_pt."timestamp") {{ w }}
             {% endmacro %}
             IF p_product_id IS NULL AND p_after IS NULL THEN
-                {{ query('') }};
+                {{ query() }};
             ELSIF p_product_id IS NOT NULL AND p_after IS NULL THEN
                 {{ query('AND pu.product_id = p_product_id') }};
             ELSIF p_product_id IS NULL AND p_after IS NOT NULL THEN
@@ -72,8 +72,13 @@
             user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, cashflow_timestamp TIMESTAMPTZ
         )
         LANGUAGE plpgsql STABLE AS $$
+        DECLARE
+            v_retention_period_start TIMESTAMPTZ;
         BEGIN
-            {% macro query(w1, w2) %}
+            {% if g.cache_retention %}
+                v_retention_period_start := p_now - '{{ g.cache_retention }}'::interval;
+            {% endif %}
+            {% macro query(w1='', w2='') %}
                 RETURN QUERY
                 SELECT uptc.user_id, uptc.product_id, uptc."timestamp", uptc.cashflow_timestamp
                 FROM user_product_timeline_cache_{{ g.suffix }} uptc
@@ -81,7 +86,7 @@
                     true  -- Doing this so that the conditional filters can start with AND
                     {{ w1 }}
                     {% if g.cache_retention %}
-                        AND uptc."timestamp" >= p_now - '{{ g.cache_retention }}'::interval
+                        AND uptc."timestamp" >= v_retention_period_start
                     {% endif %}
 
                 UNION ALL
@@ -91,11 +96,17 @@
                     latest_ccf."timestamp" AS cashflow_timestamp
                 FROM fresh_pu_{{ g.suffix }}(
                     p_product_id,
-                    {% if g.cache_retention %}p_now - '{{ g.cache_retention }}'::interval{% else %}NULL{% endif %}
+                    {% if g.cache_retention %}v_retention_period_start{% else %}NULL{% endif %}
                 ) fresh_pu
                     INNER JOIN LATERAL (
                         SELECT DISTINCT ON (ccf.user_id) ccf.user_id, ccf."timestamp"
-                        FROM cumulative_cashflow(p_user_id, p_product_id) ccf
+                        {% if g.cache_retention %}
+                            FROM cumulative_cashflow(
+                                p_user_id, p_product_id, FALSE, v_retention_period_start
+                            ) ccf
+                        {% else %}
+                            FROM cumulative_cashflow(p_user_id, p_product_id) ccf
+                        {% endif %}
                         WHERE
                             ccf.product_id = fresh_pu.product_id AND
                             ccf."timestamp" <= fresh_pu."timestamp"
@@ -104,13 +115,19 @@
                 {{ w2 }}
             {% endmacro %}
             IF p_user_id IS NULL AND p_product_id IS NULL THEN
-                {{ query('', '') }};
+                {{ query() }};
             ELSIF p_user_id IS NOT NULL AND p_product_id IS NULL THEN
-                {{ query('AND uptc.user_id = p_user_id', '') }};
+                {{ query('AND uptc.user_id = p_user_id') }};
             ELSIF p_user_id IS NULL AND p_product_id IS NOT NULL THEN
-                {{ query('AND uptc.product_id = p_product_id', 'WHERE fresh_pu.product_id = p_product_id') }};
+                {{ query(
+                    'AND uptc.product_id = p_product_id',
+                    'WHERE fresh_pu.product_id = p_product_id'
+                ) }};
             ELSE
-                {{ query('AND uptc.user_id = p_user_id AND uptc.product_id = p_product_id', 'WHERE fresh_pu.product_id = p_product_id') }};
+                {{ query(
+                    'AND uptc.user_id = p_user_id AND uptc.product_id = p_product_id',
+                    'WHERE fresh_pu.product_id = p_product_id'
+                ) }};
             END IF;
         END;
         $$;
@@ -119,7 +136,7 @@
         RETURNS TABLE(user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ)
         LANGUAGE plpgsql STABLE AS $$
         BEGIN
-            {% macro query(w) %}
+            {% macro query(w='') %}
                 RETURN QUERY
                 SELECT DISTINCT ON (uptc.user_id, uptc.product_id)
                     uptc.user_id, uptc.product_id, uptc."timestamp"
@@ -128,7 +145,7 @@
                 ORDER BY uptc.user_id, uptc.product_id, uptc."timestamp" DESC
             {% endmacro %}
             IF p_user_id IS NULL AND p_product_id IS NULL THEN
-                {{ query('') }};
+                {{ query() }};
             ELSIF p_user_id IS NOT NULL AND p_product_id IS NULL THEN
                 {{ query('WHERE uptc.user_id = p_user_id') }};
             ELSIF p_user_id IS NULL AND p_product_id IS NOT NULL THEN
