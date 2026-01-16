@@ -16,3 +16,6 @@ CREATE TABLE cashflow (
 
 CREATE INDEX idx_cashflow_user_product_time ON cashflow(user_id, product_id, "timestamp" DESC, id);
 CREATE INDEX idx_cashflow_timestamp ON cashflow("timestamp" DESC, id);
+
+COMMENT ON TABLE cashflow IS
+    'Raw cashflow events (buys/sells). Each row represents a single transaction with units, price, and total cost including fees.';

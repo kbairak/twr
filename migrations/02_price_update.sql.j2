@@ -1,10 +1,13 @@
 CREATE TABLE price_update (
     product_id UUID NOT NULL,
     "timestamp" TIMESTAMPTZ NOT NULL,
-    price NUMERIC(20, 6) NOT NULL,
-    PRIMARY KEY (product_id, "timestamp")
+    price NUMERIC(20, 6) NOT NULL
 );
-CREATE INDEX idx_price_update_time ON price_update(product_id, "timestamp" DESC);
+
+CREATE UNIQUE INDEX idx_price_update_time ON price_update(product_id, "timestamp" DESC);
+
+COMMENT ON TABLE price_update IS
+    'Raw price updates for products. TimescaleDB hypertable partitioned by timestamp with 1-month chunks. Compressed after 7 days.';
 
 SELECT create_hypertable('price_update', 'timestamp', chunk_time_interval => INTERVAL '1 month');
 ALTER TABLE price_update SET (

@@ -1,143 +1,273 @@
-❯ for days in $(echo 1 2 3 5 10 15 20); do
-  uv run src/twr/benchmark.py --price-update-frequency 2min --num-users 1000 --num-products 500 --days $days
-done
-
 === Calculated Parameters ===
 Trading days: 1.00
 Total events: 108,333
 
-[3/5] Querying before cache refresh (5s per granularity)...
-  → 15min: user_product=0.7ms, user=17.3ms
-  → 1h: user_product=0.5ms, user=5.6ms
-  → 1d: user_product=0.4ms, user=1.3ms
+[3/6] Querying with 0% cache (baseline, 5s per granularity)...
+  → 15min: user_product=0.7ms, user=27.3ms
+  → 1h: user_product=0.4ms, user=7.3ms
+  → 1d: user_product=0.4ms, user=1.6ms
 
-[4/5] Refreshing caches...
-  → Cumulative cashflow: 0.08s
-  → 15min: 2.89s
-  → 1h: 0.85s
-  → 1d: 0.12s
+[4/6] Refreshing caches...
+  → Cumulative cashflow: 0.49s
+  → 15min: 3.68s
+  → 1h: 2.36s
+  → 1d: 0.38s
 
-[5/5] Querying after cache refresh (5s per granularity)...
-  → 15min: user_product=0.6ms (1.3x), user=6.4ms (2.7x)
-  → 1h: user_product=0.4ms (1.2x), user=3.1ms (1.8x)
-  → 1d: user_product=0.3ms (1.3x), user=0.9ms (1.4x)
+[5/6] Querying with 100% cache (5s per granularity)...
+  → 15min: user_product=0.7ms, user=9.0ms
+  → 1h: user_product=0.5ms, user=5.4ms
+  → 1d: user_product=0.5ms, user=1.0ms
+
+[6/6] Progressive cache deletion and querying...
+  → Deleting cache >= 75th percentile...
+  → Querying with 75% cache (5s per granularity)...
+     15min: user_product=0.7ms, user=11.3ms
+     1h: user_product=0.5ms, user=5.4ms
+     1d: user_product=0.5ms, user=1.6ms
+
+  → Deleting cache >= 50th percentile...
+  → Querying with 50% cache (5s per granularity)...
+     15min: user_product=0.9ms, user=18.6ms
+     1h: user_product=0.6ms, user=8.7ms
+     1d: user_product=0.4ms, user=1.6ms
+
+  → Deleting cache >= 25th percentile...
+  → Querying with 25% cache (5s per granularity)...
+     15min: user_product=0.6ms, user=23.8ms
+     1h: user_product=0.5ms, user=6.8ms
+     1d: user_product=0.4ms, user=1.9ms
 
 === Calculated Parameters ===
 Trading days: 2.00
 Total events: 216,666
 
-[3/5] Querying before cache refresh (5s per granularity)...
-  → 15min: user_product=0.8ms, user=47.5ms
-  → 1h: user_product=0.5ms, user=14.2ms
-  → 1d: user_product=0.4ms, user=2.5ms
+[3/6] Querying with 0% cache (baseline, 5s per granularity)...
+  → 15min: user_product=0.8ms, user=63.9ms
+  → 1h: user_product=0.6ms, user=16.8ms
+  → 1d: user_product=0.4ms, user=2.9ms
 
-[4/5] Refreshing caches...
-  → Cumulative cashflow: 0.17s
-  → 15min: 20.64s
-  → 1h: 6.13s
-  → 1d: 0.80s
+[4/6] Refreshing caches...
+  → Cumulative cashflow: 0.34s
+  → 15min: 25.97s
+  → 1h: 7.31s
+  → 1d: 1.05s
 
-[5/5] Querying after cache refresh (5s per granularity)...
-  → 15min: user_product=0.7ms (1.1x), user=7.7ms (6.1x)
-  → 1h: user_product=0.5ms (1.2x), user=3.4ms (4.2x)
-  → 1d: user_product=0.6ms (0.7x), user=2.1ms (1.2x)
+[5/6] Querying with 100% cache (5s per granularity)...
+  → 15min: user_product=0.8ms, user=21.1ms
+  → 1h: user_product=0.5ms, user=5.1ms
+  → 1d: user_product=0.3ms, user=1.5ms
+
+[6/6] Progressive cache deletion and querying...
+  → Deleting cache >= 75th percentile...
+  → Querying with 75% cache (5s per granularity)...
+     15min: user_product=0.7ms, user=42.6ms
+     1h: user_product=0.5ms, user=12.1ms
+     1d: user_product=0.4ms, user=2.5ms
+
+  → Deleting cache >= 50th percentile...
+  → Querying with 50% cache (5s per granularity)...
+     15min: user_product=0.8ms, user=42.5ms
+     1h: user_product=0.5ms, user=11.4ms
+     1d: user_product=0.4ms, user=2.3ms
+
+  → Deleting cache >= 25th percentile...
+  → Querying with 25% cache (5s per granularity)...
+     15min: user_product=0.8ms, user=38.9ms
+     1h: user_product=0.6ms, user=10.9ms
+     1d: user_product=0.4ms, user=2.8ms
+
 
 === Calculated Parameters ===
 Trading days: 3.00
 Total events: 325,000
 
-[3/5] Querying before cache refresh (5s per granularity)...
-  → 15min: user_product=1.1ms, user=87.6ms
-  → 1h: user_product=0.7ms, user=25.5ms
-  → 1d: user_product=0.4ms, user=4.1ms
+[3/6] Querying with 0% cache (baseline, 5s per granularity)...
+  → 15min: user_product=1.0ms, user=133.8ms
+  → 1h: user_product=0.6ms, user=32.1ms
+  → 1d: user_product=0.4ms, user=5.0ms
 
-[4/5] Refreshing caches...
-  → Cumulative cashflow: 0.23s
-  → 15min: 47.00s
-  → 1h: 14.56s
-  → 1d: 1.80s
+[4/6] Refreshing caches...
+  → Cumulative cashflow: 0.81s
+  → 15min: 56.65s
+  → 1h: 16.99s
+  → 1d: 2.02s
 
-[5/5] Querying after cache refresh (5s per granularity)...
-  → 15min: user_product=1.0ms (1.1x), user=12.4ms (7.1x)
-  → 1h: user_product=0.5ms (1.2x), user=4.3ms (6.0x)
-  → 1d: user_product=0.3ms (1.2x), user=1.7ms (2.3x)
+[5/6] Querying with 100% cache (5s per granularity)...
+  → 15min: user_product=0.8ms, user=54.0ms
+  → 1h: user_product=0.8ms, user=11.0ms
+  → 1d: user_product=0.3ms, user=2.0ms
+
+[6/6] Progressive cache deletion and querying...
+  → Deleting cache >= 75th percentile...
+  → Querying with 75% cache (5s per granularity)...
+     15min: user_product=0.9ms, user=73.4ms
+     1h: user_product=0.6ms, user=16.2ms
+     1d: user_product=0.4ms, user=3.1ms
+
+  → Deleting cache >= 50th percentile...
+  → Querying with 50% cache (5s per granularity)...
+     15min: user_product=0.9ms, user=85.8ms
+     1h: user_product=0.6ms, user=20.8ms
+     1d: user_product=0.4ms, user=3.9ms
+
+  → Deleting cache >= 25th percentile...
+  → Querying with 25% cache (5s per granularity)...
+     15min: user_product=1.0ms, user=98.8ms
+     1h: user_product=0.7ms, user=23.2ms
+     1d: user_product=0.5ms, user=4.7ms
 
 === Calculated Parameters ===
 Trading days: 5.00
 Total events: 541,666
 
-[3/5] Querying before cache refresh (5s per granularity)...
-  → 15min: user_product=1.7ms, user=209.3ms
-  → 1h: user_product=0.8ms, user=61.9ms
-  → 1d: user_product=0.5ms, user=9.8ms
+[3/6] Querying with 0% cache (baseline, 5s per granularity)...
+  → 15min: user_product=1.7ms, user=348.6ms
+  → 1h: user_product=0.8ms, user=73.2ms
+  → 1d: user_product=0.5ms, user=9.2ms
 
-[4/5] Refreshing caches...
-  → Cumulative cashflow: 0.39s
-  → 15min: 2m 14.3s
-  → 1h: 41.34s
-  → 1d: 6.25s
+[4/6] Refreshing caches...
+  → Cumulative cashflow: 0.85s
+  → 15min: 3m 50.6s
+  → 1h: 45.53s
+  → 1d: 5.49s
 
-[5/5] Querying after cache refresh (5s per granularity)...
-  → 15min: user_product=1.6ms (1.1x), user=50.0ms (4.2x)
-  → 1h: user_product=0.6ms (1.2x), user=7.6ms (8.1x)
-  → 1d: user_product=0.4ms (1.3x), user=2.3ms (4.3x)
+[5/6] Querying with 100% cache (5s per granularity)...
+  → 15min: user_product=1.3ms, user=148.3ms
+  → 1h: user_product=0.6ms, user=18.4ms
+  → 1d: user_product=0.3ms, user=2.8ms
+
+[6/6] Progressive cache deletion and querying...
+  → Deleting cache >= 75th percentile...
+  → Querying with 75% cache (5s per granularity)...
+     15min: user_product=1.8ms, user=180.9ms
+     1h: user_product=0.7ms, user=32.2ms
+     1d: user_product=0.5ms, user=5.8ms
+
+  → Deleting cache >= 50th percentile...
+  → Querying with 50% cache (5s per granularity)...
+     15min: user_product=1.6ms, user=227.6ms
+     1h: user_product=0.7ms, user=47.2ms
+     1d: user_product=0.5ms, user=7.6ms
+
+  → Deleting cache >= 25th percentile...
+  → Querying with 25% cache (5s per granularity)...
+     15min: user_product=1.2ms, user=272.6ms
+     1h: user_product=0.8ms, user=59.8ms
+     1d: user_product=0.5ms, user=8.2ms
 
 === Calculated Parameters ===
 Trading days: 10.00
 Total events: 1,083,333
 
-[3/5] Querying before cache refresh (5s per granularity)...
-  → 15min: user_product=2.1ms, user=389.1ms
-  → 1h: user_product=1.2ms, user=211.6ms
-  → 1d: user_product=0.5ms, user=32.4ms
+[3/6] Querying with 0% cache (baseline, 5s per granularity)...
+  → 15min: user_product=1.7ms, user=932.9ms
+  → 1h: user_product=1.1ms, user=299.0ms
+  → 1d: user_product=0.5ms, user=30.2ms
 
-[4/5] Refreshing caches...
-  → Cumulative cashflow: 0.76s
-  → 15min: 4m 43.6s
-  → 1h: 2m 39.6s
-  → 1d: 25.20s
+[4/6] Refreshing caches...
+  → Cumulative cashflow: 1.35s
+  → 15min: 6m 5.6s
+  → 1h: 2m 54.6s
+  → 1d: 26.98s
 
-[5/5] Querying after cache refresh (5s per granularity)...
-  → 15min: user_product=2.0ms (1.1x), user=142.1ms (2.7x)
-  → 1h: user_product=1.1ms (1.1x), user=21.8ms (9.7x)
-  → 1d: user_product=0.4ms (1.4x), user=3.1ms (10.3x)
+[5/6] Querying with 100% cache (5s per granularity)...
+  → 15min: user_product=2.6ms, user=544.4ms
+  → 1h: user_product=1.0ms, user=107.2ms
+  → 1d: user_product=0.4ms, user=6.5ms
+
+[6/6] Progressive cache deletion and querying...
+  → Deleting cache >= 75th percentile...
+  → Querying with 75% cache (5s per granularity)...
+     15min: user_product=1.9ms, user=802.6ms
+     1h: user_product=1.1ms, user=193.2ms
+     1d: user_product=0.5ms, user=17.2ms
+
+  → Deleting cache >= 50th percentile...
+  → Querying with 50% cache (5s per granularity)...
+     15min: user_product=1.8ms, user=844.5ms
+     1h: user_product=1.0ms, user=225.3ms
+     1d: user_product=0.5ms, user=24.1ms
+
+  → Deleting cache >= 25th percentile...
+  → Querying with 25% cache (5s per granularity)...
+     15min: user_product=2.2ms, user=963.6ms
+     1h: user_product=1.6ms, user=273.4ms
+     1d: user_product=0.6ms, user=28.8ms
 
 === Calculated Parameters ===
 Trading days: 15.00
 Total events: 1,625,000
 
-[3/5] Querying before cache refresh (5s per granularity)...
-  → 15min: user_product=2.2ms, user=578.3ms
-  → 1h: user_product=1.8ms, user=455.3ms
-  → 1d: user_product=0.6ms, user=65.5ms
+[3/6] Querying with 0% cache (baseline, 5s per granularity)...
+  → 15min: user_product=1.5ms, user=1296.2ms
+  → 1h: user_product=1.3ms, user=722.8ms
+  → 1d: user_product=0.5ms, user=72.3ms
 
-[4/5] Refreshing caches...
-  → Cumulative cashflow: 1.17s
-  → 15min: 7m 16.4s
-  → 1h: 6m 34.6s
-  → 1d: 58.22s
+[4/6] Refreshing caches...
+  → Cumulative cashflow: 3.43s
+  → 15min: 11m 37.6s
+  → 1h: 9m 28.6s
+  → 1d: 1m 10.9s
 
-[5/5] Querying after cache refresh (5s per granularity)...
-  → 15min: user_product=2.1ms (1.0x), user=183.5ms (3.2x)
-  → 1h: user_product=1.7ms (1.1x), user=111.3ms (4.1x)
-  → 1d: user_product=0.4ms (1.3x), user=4.8ms (13.6x)
+[5/6] Querying with 100% cache (5s per granularity)...
+  → 15min: user_product=2.6ms, user=791.2ms
+  → 1h: user_product=1.2ms, user=251.9ms
+  → 1d: user_product=0.4ms, user=10.5ms
+
+[6/6] Progressive cache deletion and querying...
+  → Deleting cache >= 75th percentile...
+  → Querying with 75% cache (5s per granularity)...
+     15min: user_product=2.9ms, user=1308.6ms
+     1h: user_product=1.5ms, user=486.8ms
+     1d: user_product=0.6ms, user=30.6ms
+
+  → Deleting cache >= 50th percentile...
+  → Querying with 50% cache (5s per granularity)...
+     15min: user_product=2.7ms, user=1950.9ms
+     1h: user_product=2.1ms, user=899.2ms
+     1d: user_product=0.7ms, user=57.8ms
+
+  → Deleting cache >= 25th percentile...
+  → Querying with 25% cache (5s per granularity)...
+     15min: user_product=2.5ms, user=1930.3ms
+     1h: user_product=1.7ms, user=821.3ms
+     1d: user_product=0.8ms, user=81.1ms
 
 === Calculated Parameters ===
 Trading days: 20.00
 Total events: 2,166,666
 
-[3/5] Querying before cache refresh (5s per granularity)...
-  → 15min: user_product=2.1ms, user=730.2ms
-  → 1h: user_product=2.2ms, user=812.1ms
-  → 1d: user_product=0.6ms, user=110.6ms
+[3/6] Querying with 0% cache (baseline, 5s per granularity)...
+  → 15min: user_product=1.9ms, user=2077.8ms
+  → 1h: user_product=1.9ms, user=1595.5ms
+  → 1d: user_product=0.7ms, user=141.9ms
 
-[4/5] Refreshing caches...
-  → Cumulative cashflow: 1.53s
-  → 15min: 10m 1.0s
-  → 1h: 11m 32.2s
-  → 1d: 1m 45.5s
+[4/6] Refreshing caches...
+  → Cumulative cashflow: 9.71s
+  → 15min: 15m 50.0s
+  → 1h: 15m 4.3s
+  → 1d: 2m 28.9s
 
-[5/5] Querying after cache refresh (5s per granularity)...
-  → 15min: user_product=2.0ms (1.1x), user=286.6ms (2.5x)
-  → 1h: user_product=2.1ms (1.1x), user=238.6ms (3.4x)
-  → 1d: user_product=0.6ms (1.1x), user=7.5ms (14.7x)
+[5/6] Querying with 100% cache (5s per granularity)...
+  → 15min: user_product=7.3ms, user=2012.9ms
+  → 1h: user_product=2.5ms, user=800.6ms
+  → 1d: user_product=0.9ms, user=29.4ms
+
+[6/6] Progressive cache deletion and querying...
+  → Deleting cache >= 75th percentile...
+  → Querying with 75% cache (5s per granularity)...
+     15min: user_product=4.5ms, user=2732.3ms
+     1h: user_product=3.3ms, user=1281.3ms
+     1d: user_product=1.1ms, user=70.6ms
+
+  → Deleting cache >= 50th percentile...
+  → Querying with 50% cache (5s per granularity)...
+     15min: user_product=3.6ms, user=2619.1ms
+     1h: user_product=3.3ms, user=1574.3ms
+     1d: user_product=1.2ms, user=96.8ms
+
+  → Deleting cache >= 25th percentile...
+  → Querying with 25% cache (5s per granularity)...
+     15min: user_product=3.1ms, user=2685.5ms
+     1h: user_product=3.6ms, user=1828.1ms
+     1d: user_product=1.0ms, user=137.8ms

@@ -22,6 +22,16 @@
     CREATE INDEX idx_user_product_timeline_cache_{{ g.suffix }}_timestamp
         ON user_product_timeline_cache_{{ g.suffix }}("timestamp" DESC);
 
+    COMMENT ON TABLE user_product_timeline_cache_{{ g.suffix }} IS
+        'Cached timeline combining price updates with cashflow timestamps at {{ g.suffix }} granularity. Cache retention: {{ g.cache_retention if g.cache_retention else "unlimited" }}.';
+
+    -- seed_pt_{{ g.suffix }}: Returns the most recent cached timeline timestamp for each product
+    --
+    -- Purpose: Serves as a watermark to avoid recalculating timelines from the beginning
+    -- Returns: Latest timestamp from user_product_timeline_cache_{{ g.suffix }} for each product
+    -- Performance: O(1) per product due to DISTINCT ON with DESC index
+    -- Parameters:
+    --   - p_product_id: Filter by product (NULL = all products)
     CREATE FUNCTION seed_pt_{{ g.suffix }}(p_product_id UUID)
         RETURNS TABLE(product_id UUID, "timestamp" TIMESTAMPTZ)
         LANGUAGE plpgsql STABLE AS $$
@@ -41,6 +51,14 @@
         END;
         $$;
 
+    -- fresh_pu_{{ g.suffix }}: Returns new price update timestamps that haven't been cached yet
+    --
+    -- Purpose: Gets price updates newer than the latest cached entry (seed)
+    -- Returns: Timestamps from price_update_{{ g.suffix }} that need to be added to timeline
+    -- Performance: Index scan from seed timestamp onward
+    -- Parameters:
+    --   - p_product_id: Filter by product (NULL = all products)
+    --   - p_after: Only return timestamps after this point (NULL = use seed)
     CREATE FUNCTION fresh_pu_{{ g.suffix }}(p_product_id UUID, p_after TIMESTAMPTZ)
         RETURNS TABLE(product_id UUID, "timestamp" TIMESTAMPTZ)
         LANGUAGE plpgsql STABLE AS $$
@@ -65,6 +83,16 @@
         END;
         $$;
 
+    -- user_product_timeline_{{ g.suffix }}: Returns timeline of (user, product, price_time, cashflow_time)
+    --
+    -- Purpose: Main query interface for user-product timeline at {{ g.suffix }} granularity
+    -- Returns: Union of cached data + fresh price updates with their associated cashflow timestamps
+    -- Performance: Cached portion is fast; fresh portion uses LATERAL join to find latest cashflow
+    -- Note: Respects cache_retention period ({{ g.cache_retention if g.cache_retention else "unlimited" }})
+    -- Parameters:
+    --   - p_user_id: Filter by user (NULL = all users)
+    --   - p_product_id: Filter by product (NULL = all products)
+    --   - p_now: Current time for retention calculation (default: NOW())
     CREATE FUNCTION user_product_timeline_{{ g.suffix }}(
         p_user_id UUID, p_product_id UUID, p_now TIMESTAMPTZ DEFAULT NOW()
     )
@@ -132,6 +160,14 @@
         END;
         $$;
 
+    -- latest_up_{{ g.suffix }}: Returns the most recent timeline entry for each (user, product) pair
+    --
+    -- Purpose: Helper function for retention policy - keeps at least one row per user-product
+    -- Returns: Latest timestamp for each (user, product) from the cache
+    -- Performance: DISTINCT ON with DESC index
+    -- Parameters:
+    --   - p_user_id: Filter by user (NULL = all users)
+    --   - p_product_id: Filter by product (NULL = all products)
     CREATE FUNCTION latest_up_{{ g.suffix }}(p_user_id UUID, p_product_id UUID)
         RETURNS TABLE(user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ)
         LANGUAGE plpgsql STABLE AS $$
@@ -156,11 +192,19 @@
         END;
         $$;
 
-
+    -- refresh_user_product_timeline_{{ g.suffix }}: Updates the timeline cache and enforces retention
+    --
+    -- Purpose: Materialization job to move computed timelines into cache
+    -- Side effects: Inserts new rows and deletes old rows (if retention policy applies)
+    -- Performance: Processes all uncached timeline entries
+    -- Usage: Call periodically to keep cache up-to-date
+    -- Parameters:
+    --   - p_now: Current time for retention calculation (default: NOW())
     CREATE OR REPLACE FUNCTION refresh_user_product_timeline_{{ g.suffix }}(
         p_now TIMESTAMPTZ DEFAULT NOW()
     )
-        RETURNS void AS $$
+        RETURNS void
+        LANGUAGE plpgsql VOLATILE AS $$
         DECLARE v_watermark TIMESTAMPTZ;
         BEGIN
             SELECT MAX("timestamp") INTO v_watermark
@@ -191,6 +235,6 @@
 
             {% endif %}
         END;
-        $$ LANGUAGE plpgsql;
+        $$;
 
 {% endfor %}

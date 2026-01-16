@@ -1,5 +1,16 @@
+-- cashflow_repair: Trigger function to maintain cache consistency after cashflow inserts
+--
+-- Purpose: Invalidates and repairs cached data when new cashflow events are inserted
+-- Triggers: AFTER INSERT ON cashflow FOR EACH ROW
+-- Side effects:
+--   - Deletes affected rows from cumulative_cashflow_cache
+--   - Deletes affected rows from user_product_timeline_cache_* tables
+--   - Re-inserts corrected data up to the overall watermark
+-- Performance: Executed per row, so bulk inserts will trigger this multiple times
+-- Note: Only repairs data up to existing watermark to avoid cache-ahead issues
 CREATE OR REPLACE FUNCTION cashflow_repair()
-    RETURNS TRIGGER AS $$
+    RETURNS TRIGGER
+    LANGUAGE plpgsql VOLATILE AS $$
     DECLARE
         v_overall_watermark TIMESTAMPTZ;
         v_user_product_watermark TIMESTAMPTZ;
@@ -61,7 +72,7 @@ CREATE OR REPLACE FUNCTION cashflow_repair()
         {% endfor %}
         RETURN NEW;
     END;
-    $$ LANGUAGE plpgsql;
+    $$;
 
 CREATE TRIGGER cashflow_repair
     AFTER INSERT ON cashflow

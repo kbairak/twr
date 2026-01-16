@@ -43,24 +43,6 @@ def format_time(seconds):
         return f"{seconds:.2f}s"
 
 
-def calculate_scenario_parameters(num_scenarios=7, max_events=5_000_000, num_products=500):
-    """Generate scenario list with linear spacing up to max_events.
-
-    Returns:
-        List of (days, num_events) tuples
-    """
-    event_counts = [int(max_events * (i + 1) / num_scenarios) for i in range(num_scenarios)]
-    scenarios = []
-    for num_events in event_counts:
-        days, num_events, freq = calculate_missing_parameter(
-            num_events=num_events,
-            price_update_frequency="2min",
-            num_products=num_products,
-        )
-        scenarios.append((days, num_events))
-    return scenarios
-
-
 class Benchmark:
     def __init__(
         self,
@@ -310,7 +292,7 @@ class Benchmark:
         results = {}
 
         # Step 1: Generate and insert events
-        print("[1/5] Generating and inserting events...")
+        print("[1/6] Generating and inserting events...")
         start = time.time()
         gen = EventGenerator(
             db_name=self.db_name,
@@ -328,7 +310,7 @@ class Benchmark:
         print(f"  → Inserted {num_events:,} events in {format_time(insert_time)}\n")
 
         # Step 2: Refresh continuous aggregates
-        print("[2/5] Refreshing continuous aggregates...")
+        print("[2/6] Refreshing continuous aggregates...")
         start = time.time()
         gen.refresh_continuous_aggregate()
         gen.close()
@@ -349,232 +331,190 @@ class Benchmark:
         cur.execute("SELECT DISTINCT user_id FROM cashflow LIMIT %s", (num_queries,))
         user_ids = [row[0] for row in cur.fetchall()]
 
-        # Step 3: Query performance (before cache refresh)
-        print("[3/5] Querying before cache refresh (5s per granularity)...")
-        before_results = self.measure_query_performance(cur, user_product_pairs, user_ids)
+        # Step 3: Query performance with 0% cache (baseline)
+        print("[3/6] Querying with 0% cache (baseline, 5s per granularity)...")
+        query_0pct = self.measure_query_performance(cur, user_product_pairs, user_ids)
 
         for g in GRANULARITIES:
             granularity = g["suffix"]
-            upt_time_ms = before_results[f"upt_{granularity}_ms"]
-            ut_time_ms = before_results[f"ut_{granularity}_ms"]
+            upt_time_ms = query_0pct[f"upt_{granularity}_ms"]
+            ut_time_ms = query_0pct[f"ut_{granularity}_ms"]
 
-            results[f"upt_before_{granularity}"] = upt_time_ms / 1000  # Convert to seconds
-            results[f"ut_before_{granularity}"] = ut_time_ms / 1000
+            results[f"upt_0pct_{granularity}"] = upt_time_ms / 1000  # Convert to seconds
+            results[f"ut_0pct_{granularity}"] = ut_time_ms / 1000
             print(f"  → {granularity}: user_product={upt_time_ms:.1f}ms, user={ut_time_ms:.1f}ms")
 
         print()
 
-        # Step 4: Cache refresh
-        print("[4/5] Refreshing caches...")
-
-        # Refresh cumulative cashflow cache
-        start = time.time()
-        cur.execute("SELECT refresh_cumulative_cashflow()")
+        # Commit any pending transaction before changing autocommit
         conn.commit()
-        cumulative_refresh_time = time.time() - start
-        print(f"  → Cumulative cashflow: {format_time(cumulative_refresh_time)}")
 
-        for g in GRANULARITIES:
-            granularity = g["suffix"]
+        # Step 4: Cache refresh
+        print("[4/6] Refreshing caches...")
+
+        # Enable autocommit for VACUUM operations
+        old_autocommit = conn.autocommit
+        conn.autocommit = True
+
+        try:
+            # Refresh cumulative cashflow cache
             start = time.time()
+            cur.execute("SELECT refresh_cumulative_cashflow()")
+            # VACUUM to update visibility map for efficient watermark scans
+            cur.execute("VACUUM ANALYZE cumulative_cashflow_cache")
+            cumulative_refresh_time = time.time() - start
+            print(f"  → Cumulative cashflow: {format_time(cumulative_refresh_time)}")
 
-            # Refresh user_product_timeline cache
-            cur.execute(f"SELECT refresh_user_product_timeline_{granularity}()")
-            conn.commit()
-            cache_refresh_time = time.time() - start
+            for g in GRANULARITIES:
+                granularity = g["suffix"]
+                start = time.time()
 
-            results[f"cache_refresh_{granularity}"] = cache_refresh_time
-            print(f"  → {granularity}: {format_time(cache_refresh_time)}")
+                # Refresh user_product_timeline cache
+                cur.execute(f"SELECT refresh_user_product_timeline_{granularity}()")
+                cur.execute(f"VACUUM ANALYZE user_product_timeline_cache_{granularity}")
+                cache_refresh_time = time.time() - start
+
+                results[f"cache_refresh_{granularity}"] = cache_refresh_time
+                print(f"  → {granularity}: {format_time(cache_refresh_time)}")
+        finally:
+            # Restore original autocommit setting
+            conn.autocommit = old_autocommit
 
         print()
 
-        # Step 5: Query performance after cache refresh
-        print("[5/5] Querying after cache refresh (5s per granularity)...")
-        after_results = self.measure_query_performance(cur, user_product_pairs, user_ids)
+        # Get percentile thresholds for progressive cache deletion
+        percentiles = self.get_cache_percentile_thresholds(conn)
+
+        # Step 5: Query performance with 100% cache
+        print("[5/6] Querying with 100% cache (5s per granularity)...")
+        query_100pct = self.measure_query_performance(cur, user_product_pairs, user_ids)
 
         for g in GRANULARITIES:
             granularity = g["suffix"]
-            upt_time_ms = after_results[f"upt_{granularity}_ms"]
-            ut_time_ms = after_results[f"ut_{granularity}_ms"]
+            upt_time_ms = query_100pct[f"upt_{granularity}_ms"]
+            ut_time_ms = query_100pct[f"ut_{granularity}_ms"]
 
-            results[f"upt_after_{granularity}"] = upt_time_ms / 1000  # Convert to seconds
-            results[f"ut_after_{granularity}"] = ut_time_ms / 1000
-
-            # Calculate speedup
-            upt_before = results[f"upt_before_{granularity}"]
-            ut_before = results[f"ut_before_{granularity}"]
-            upt_speedup = upt_before / (upt_time_ms / 1000) if upt_time_ms > 0 else 0
-            ut_speedup = ut_before / (ut_time_ms / 1000) if ut_time_ms > 0 else 0
-
-            print(
-                f"  → {granularity}: user_product={upt_time_ms:.1f}ms ({upt_speedup:.1f}x), "
-                f"user={ut_time_ms:.1f}ms ({ut_speedup:.1f}x)"
-            )
+            results[f"upt_100pct_{granularity}"] = upt_time_ms / 1000  # Convert to seconds
+            results[f"ut_100pct_{granularity}"] = ut_time_ms / 1000
+            print(f"  → {granularity}: user_product={upt_time_ms:.1f}ms, user={ut_time_ms:.1f}ms")
 
         print()
+
+        # Step 6: Progressive cache deletion and queries
+        print("[6/6] Progressive cache deletion and querying...")
+
+        # Store query results for different cache levels
+        query_75pct = query_50pct = query_25pct = None
+
+        if percentiles:
+            # 75% cache (delete >= 75th percentile)
+            print("  → Deleting cache >= 75th percentile...")
+            self.delete_cache_from_threshold(conn, percentiles["p75"])
+
+            # VACUUM ANALYZE after deletion
+            conn.commit()  # Commit before changing autocommit
+            conn.autocommit = True
+            try:
+                cur.execute("VACUUM ANALYZE cumulative_cashflow_cache")
+                for g in GRANULARITIES:
+                    cur.execute(f"VACUUM ANALYZE user_product_timeline_cache_{g['suffix']}")
+            finally:
+                conn.autocommit = old_autocommit
+
+            print("  → Querying with 75% cache (5s per granularity)...")
+            query_75pct = self.measure_query_performance(cur, user_product_pairs, user_ids)
+            for g in GRANULARITIES:
+                granularity = g["suffix"]
+                upt_time_ms = query_75pct[f"upt_{granularity}_ms"]
+                ut_time_ms = query_75pct[f"ut_{granularity}_ms"]
+                results[f"upt_75pct_{granularity}"] = upt_time_ms / 1000
+                results[f"ut_75pct_{granularity}"] = ut_time_ms / 1000
+                print(f"     {granularity}: user_product={upt_time_ms:.1f}ms, user={ut_time_ms:.1f}ms")
+            print()
+
+            # 50% cache (delete >= 50th percentile)
+            print("  → Deleting cache >= 50th percentile...")
+            self.delete_cache_from_threshold(conn, percentiles["p50"])
+
+            # VACUUM ANALYZE after deletion
+            conn.commit()  # Commit before changing autocommit
+            conn.autocommit = True
+            try:
+                cur.execute("VACUUM ANALYZE cumulative_cashflow_cache")
+                for g in GRANULARITIES:
+                    cur.execute(f"VACUUM ANALYZE user_product_timeline_cache_{g['suffix']}")
+            finally:
+                conn.autocommit = old_autocommit
+
+            print("  → Querying with 50% cache (5s per granularity)...")
+            query_50pct = self.measure_query_performance(cur, user_product_pairs, user_ids)
+            for g in GRANULARITIES:
+                granularity = g["suffix"]
+                upt_time_ms = query_50pct[f"upt_{granularity}_ms"]
+                ut_time_ms = query_50pct[f"ut_{granularity}_ms"]
+                results[f"upt_50pct_{granularity}"] = upt_time_ms / 1000
+                results[f"ut_50pct_{granularity}"] = ut_time_ms / 1000
+                print(f"     {granularity}: user_product={upt_time_ms:.1f}ms, user={ut_time_ms:.1f}ms")
+            print()
+
+            # 25% cache (delete >= 25th percentile)
+            print("  → Deleting cache >= 25th percentile...")
+            self.delete_cache_from_threshold(conn, percentiles["p25"])
+
+            # VACUUM ANALYZE after deletion
+            conn.commit()  # Commit before changing autocommit
+            conn.autocommit = True
+            try:
+                cur.execute("VACUUM ANALYZE cumulative_cashflow_cache")
+                for g in GRANULARITIES:
+                    cur.execute(f"VACUUM ANALYZE user_product_timeline_cache_{g['suffix']}")
+            finally:
+                conn.autocommit = old_autocommit
+
+            print("  → Querying with 25% cache (5s per granularity)...")
+            query_25pct = self.measure_query_performance(cur, user_product_pairs, user_ids)
+            for g in GRANULARITIES:
+                granularity = g["suffix"]
+                upt_time_ms = query_25pct[f"upt_{granularity}_ms"]
+                ut_time_ms = query_25pct[f"ut_{granularity}_ms"]
+                results[f"upt_25pct_{granularity}"] = upt_time_ms / 1000
+                results[f"ut_25pct_{granularity}"] = ut_time_ms / 1000
+                print(f"     {granularity}: user_product={upt_time_ms:.1f}ms, user={ut_time_ms:.1f}ms")
+            print()
+
         conn.close()
 
         # Display summary
-        print("=== Summary ===")
-        print(f"Continuous aggregate refresh: {format_time(results['ca_refresh_time'])}")
+        print("=== Query Performance Summary ===")
+        print(f"Continuous aggregate refresh: {format_time(results['ca_refresh_time'])}\n")
+
+        # Show cache refresh times
+        print("Cache refresh times:")
+        print(f"  Cumulative cashflow: {format_time(cumulative_refresh_time)}")
         for g in GRANULARITIES:
             granularity = g["suffix"]
             cache_time = results.get(f"cache_refresh_{granularity}", 0)
-            print(f"Cache refresh ({granularity}): {format_time(cache_time)}")
-
+            print(f"  {granularity}: {format_time(cache_time)}")
         print()
-        return results
 
-    def run_single_scenario(
-        self,
-        scenario_num,
-        days,
-        num_events,
-        num_users,
-        num_products,
-        num_queries,
-        price_update_interval,
-        end_date,
-    ):
-        """Run complete benchmark for one scenario.
-
-        Returns:
-            dict: Results with measurements for all cache levels
-        """
-        # 1. Reset database
-        print(f"[{scenario_num}] Resetting database...")
-        self.reset_database()
-
-        # 2. Generate and insert events
-        print(f"[{scenario_num}] Generating {num_events:,} events...")
-        gen = EventGenerator(
-            db_host=self.db_host,
-            db_port=self.db_port,
-            db_name=self.db_name,
-            db_user=self.db_user,
-            db_password=self.db_password,
-            num_users=num_users,
-            num_products=num_products,
-        )
-        # Parse interval string to timedelta if needed
-        if isinstance(price_update_interval, str):
-            price_update_interval = parse_time_interval(price_update_interval)
-        gen.generate_and_insert(
-            num_events, price_update_interval=price_update_interval, end_date=end_date
-        )
-
-        print(f"[{scenario_num}] Refreshing TimescaleDB continuous aggregates...")
-        gen.refresh_continuous_aggregate()
-        gen.close()
-
-        # 3. Get sample queries
-        conn = self.get_connection()
-        cur = conn.cursor()
-        user_product_pairs, user_ids = self.get_sample_queries(cur, num_queries)
-
-        # 4. Query with 0% cache (baseline - ONLY TIME WE QUERY EMPTY CACHE)
-        print(f"[{scenario_num}] Querying with 0% cache (baseline)...")
-        query_0pct = self.measure_query_performance(cur, user_product_pairs, user_ids)
-
-        # 5. Refresh all caches
-        print(f"[{scenario_num}] Refreshing all caches...")
-        cache_refresh_time = self.refresh_all_caches(conn)
-
-        # 6. Get percentile thresholds
-        percentiles = self.get_cache_percentile_thresholds(conn)
-
-        # 7. Query with 100% cache
-        print(f"[{scenario_num}] Querying with 100% cache...")
-        query_100pct = self.measure_query_performance(cur, user_product_pairs, user_ids)
-
-        # 8. Progressive cache reduction
-        query_75pct = query_50pct = query_25pct = None
-        if percentiles:
-            print(f"[{scenario_num}] Deleting cache >= 75th percentile...")
-            self.delete_cache_from_threshold(conn, percentiles["p75"])
-            query_75pct = self.measure_query_performance(cur, user_product_pairs, user_ids)
-
-            print(f"[{scenario_num}] Deleting cache >= 50th percentile...")
-            self.delete_cache_from_threshold(conn, percentiles["p50"])
-            query_50pct = self.measure_query_performance(cur, user_product_pairs, user_ids)
-
-            print(f"[{scenario_num}] Deleting cache >= 25th percentile...")
-            self.delete_cache_from_threshold(conn, percentiles["p25"])
-            query_25pct = self.measure_query_performance(cur, user_product_pairs, user_ids)
-
-        conn.close()
-
-        return {
-            "scenario": scenario_num,
-            "days": days,
-            "num_events": num_events,
-            "cache_refresh_time": cache_refresh_time,
-            "query_0pct": query_0pct,
-            "query_25pct": query_25pct,
-            "query_50pct": query_50pct,
-            "query_75pct": query_75pct,
-            "query_100pct": query_100pct,
-        }
-
-    def run_multi_scenario_benchmark(self, scenarios, num_queries=100):
-        """Run benchmark across multiple scenarios.
-
-        Args:
-            scenarios: List of (days, num_events) tuples
-            num_queries: Number of sample queries per scenario
-
-        Returns:
-            List of result dicts
-        """
-        all_results = []
-        end_date = datetime.now(timezone.utc).replace(hour=16, minute=0, second=0, microsecond=0)
-
-        for i, (days, num_events) in enumerate(scenarios, 1):
-            print(f"\n{'=' * 80}")
-            print(f"SCENARIO {i}/{len(scenarios)}: {days:.1f} days, {num_events:,} events")
-            print(f"{'=' * 80}")
-
-            results = self.run_single_scenario(
-                scenario_num=i,
-                days=days,
-                num_events=num_events,
-                num_users=10_000,
-                num_products=500,
-                num_queries=num_queries,
-                price_update_interval="2min",
-                end_date=end_date,
-            )
-            all_results.append(results)
-
-        return all_results
-
-
-def print_summary_table(all_results):
-    """Print compact summary table matching README format."""
-    for r in all_results:
-        print(f"\n{'=' * 80}")
-        print(f"Scenario {r['scenario']}: {r['days']:.1f} days, {r['num_events']:,} events")
-        print(f"{'=' * 80}")
-        print(f"Refresh all caches: {r['cache_refresh_time']:.1f}s")
-
-        # Print each cache level
-        for cache_label, cache_key in [
-            ("100%", "query_100pct"),
-            ("75%", "query_75pct"),
-            ("50%", "query_50pct"),
-            ("25%", "query_25pct"),
-            ("0%", "query_0pct"),
-        ]:
-            if cache_key in r and r[cache_key]:
-                data = r[cache_key]
-                print(f"Queries with {cache_label} cache:")
+        # Show query performance at each cache level
+        for cache_level, cache_pct in [("100%", "100pct"), ("75%", "75pct"), ("50%", "50pct"), ("25%", "25pct"), ("0%", "0pct")]:
+            # Check if we have results for this cache level
+            has_results = any(f"upt_{cache_pct}_{g['suffix']}" in results for g in GRANULARITIES)
+            if has_results:
+                print(f"Queries with {cache_level} cache:")
                 for g in GRANULARITIES:
-                    suffix = g["suffix"]
-                    upt_key = f"upt_{suffix}_ms"
-                    ut_key = f"ut_{suffix}_ms"
-                    if upt_key in data and ut_key in data:
-                        print(f"    user-product-timeline-{suffix}:  {data[upt_key]:.0f}ms")
-                        print(f"    user-timeline-{suffix}:          {data[ut_key]:.0f}ms")
+                    granularity = g["suffix"]
+                    upt_key = f"upt_{cache_pct}_{granularity}"
+                    ut_key = f"ut_{cache_pct}_{granularity}"
+                    if upt_key in results and ut_key in results:
+                        upt_ms = results[upt_key] * 1000
+                        ut_ms = results[ut_key] * 1000
+                        print(f"  user-product-timeline-{granularity}: {upt_ms:.0f}ms")
+                        print(f"  user-timeline-{granularity}:         {ut_ms:.0f}ms")
+                print()
+
+        return results
 
 
 if __name__ == "__main__":
@@ -596,14 +536,7 @@ Note: Exactly 2 of the 3 parameters (days, num-events, price-update-frequency) m
         """,
     )
 
-    # Multi-scenario mode
-    parser.add_argument(
-        "--multi-scenario",
-        action="store_true",
-        help="Run multi-scenario benchmark (7 scenarios, 500 products, up to 2 months)",
-    )
-
-    # 2-of-3 parameter model (for single-scenario mode)
+    # 2-of-3 parameter model
     parser.add_argument("--days", type=float, help="Number of trading days to simulate")
     parser.add_argument("--num-events", type=int, help="Total number of events to generate")
     parser.add_argument(
@@ -631,56 +564,35 @@ Note: Exactly 2 of the 3 parameters (days, num-events, price-update-frequency) m
 
     benchmark = Benchmark()
 
-    if args.multi_scenario:
-        # Run multi-scenario benchmark
-        print("\n=== MULTI-SCENARIO BENCHMARK ===")
-        print("Parameters:")
-        print("  - 7 scenarios")
-        print("  - 10,000 users")
-        print("  - 500 products")
-        print("  - 2min price updates")
-        print("  - Up to ~5M events (~2 months)")
-        print()
-
-        scenarios = calculate_scenario_parameters()
-        print("Scenario plan:")
-        for i, (days, events) in enumerate(scenarios, 1):
-            print(f"  {i}. {days:5.1f} days → {events:,} events")
-        print()
-
-        all_results = benchmark.run_multi_scenario_benchmark(scenarios, args.num_queries)
-        print_summary_table(all_results)
-    else:
-        # Single-scenario mode (original behavior)
-        # Calculate missing parameter
-        try:
-            days, num_events, frequency = calculate_missing_parameter(
-                days=args.days,
-                num_events=args.num_events,
-                price_update_frequency=args.price_update_frequency,
-                num_products=args.num_products,
-            )
-        except ValueError as e:
-            parser.error(str(e))
-
-        # Calculate end_date as today at market close
-        end_date = datetime.now(timezone.utc).replace(hour=16, minute=0, second=0, microsecond=0)
-
-        # Display calculated parameters
-        print("\n=== Calculated Parameters ===")
-        print(f"Trading days: {days:.2f}")
-        print(f"Total events: {num_events:,}")
-        print(f"Price update frequency: {frequency}")
-        print(f"Number of users: {args.num_users}")
-        print(f"Number of products: {args.num_products}")
-        print(f"End date: {end_date.date()}")
-        print()
-
-        benchmark.run(
-            num_events=num_events,
-            num_users=args.num_users,
+    # Calculate missing parameter
+    try:
+        days, num_events, frequency = calculate_missing_parameter(
+            days=args.days,
+            num_events=args.num_events,
+            price_update_frequency=args.price_update_frequency,
             num_products=args.num_products,
-            num_queries=args.num_queries,
-            price_update_interval=frequency,
-            end_date=end_date,
         )
+    except ValueError as e:
+        parser.error(str(e))
+
+    # Calculate end_date as today at market close
+    end_date = datetime.now(timezone.utc).replace(hour=16, minute=0, second=0, microsecond=0)
+
+    # Display calculated parameters
+    print("\n=== Calculated Parameters ===")
+    print(f"Trading days: {days:.2f}")
+    print(f"Total events: {num_events:,}")
+    print(f"Price update frequency: {frequency}")
+    print(f"Number of users: {args.num_users}")
+    print(f"Number of products: {args.num_products}")
+    print(f"End date: {end_date.date()}")
+    print()
+
+    benchmark.run(
+        num_events=num_events,
+        num_users=args.num_users,
+        num_products=args.num_products,
+        num_queries=args.num_queries,
+        price_update_interval=frequency,
+        end_date=end_date,
+    )

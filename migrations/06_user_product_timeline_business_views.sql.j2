@@ -1,5 +1,18 @@
 {% for g in GRANULARITIES %}
 
+    -- user_product_timeline_business_{{ g.suffix }}: Returns complete business metrics timeline
+    --
+    -- Purpose: Main business query interface combining timeline, prices, and cashflows
+    -- Returns: Full timeline with all computed business metrics:
+    --   - Raw cashflow totals: buy_units, sell_units, buy_cost, sell_proceeds, deposits, withdrawals
+    --   - Derived metrics: units (current holdings), net_investment, fees
+    --   - Market metrics: market_value (units * price), avg_buy_cost, cost_basis
+    --   - Performance: unrealized_returns (market_value - cost_basis)
+    -- Performance: Joins cached timeline with prices and cashflows
+    -- Parameters:
+    --   - p_user_id: Required - specific user to query
+    --   - p_product_id: Required - specific product to query
+    -- Note: Both parameters are required (no NULL values allowed)
     CREATE FUNCTION user_product_timeline_business_{{ g.suffix }}(p_user_id UUID, p_product_id UUID)
         RETURNS TABLE(
             user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, buy_units NUMERIC(20, 6),
@@ -44,6 +57,15 @@
 
 {% endfor %}
 
+-- user_product_timeline_latest: Returns the most recent business metrics (real-time)
+--
+-- Purpose: Fast query for current portfolio position without granularity bucketing
+-- Returns: Single row with latest business metrics using raw price_update table
+-- Performance: Uses DISTINCT ON to get latest cashflow and price - very fast
+-- Parameters:
+--   - p_user_id: Required - specific user to query
+--   - p_product_id: Required - specific product to query
+-- Note: Uses price_update base table (not bucketed) for maximum freshness
 CREATE FUNCTION user_product_timeline_latest(p_user_id UUID, p_product_id UUID)
     RETURNS TABLE(
         user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, buy_units NUMERIC(20, 6),

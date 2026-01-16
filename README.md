@@ -321,94 +321,9 @@ Provide **any 2 of these 3 parameters**, and the third is calculated automatical
 
 ### Benchmarks
 
-The benchmark script measures query performance at different cache retention levels across multiple scenarios.
+The benchmark script measures query performance at different cache levels (0%, 25%, 50%, 75%, 100%) to evaluate the impact of caching on query performance.
 
-**Run multi-scenario benchmark:**
-
-```bash
-# 7 scenarios: 10,000 users, 500 products, 2min price updates, up to ~2 months
-# WARNING: This will take several hours to complete all 7 scenarios
-PYTHONPATH=src uv run python -m twr.benchmark --multi-scenario
-```
-
-**Scenarios tested:**
-
-1. ~714k events (6.6 days)
-2. ~1.4M events (13.2 days)
-3. ~2.1M events (19.8 days)
-4. ~2.9M events (26.4 days)
-5. ~3.6M events (33 days)
-6. ~4.3M events (39.6 days)
-7. ~5M events (46.2 days / ~2 months)
-
-**For each scenario, the benchmark:**
-
-1. Resets the database (drops and recreates schema)
-2. Generates and inserts events
-3. Refreshes TimescaleDB continuous aggregates
-4. Queries with **0% cache** (baseline - before any caching)
-5. Refreshes all caches (cumulative_cashflow + user_product_timeline_X + user_timeline_X for X in 15min, 1h, 1d)
-6. Queries with **100% cache**
-7. Progressively deletes cache and queries:
-   - Delete >= 75th percentile → query with **75% cache** (oldest 75% retained)
-   - Delete >= 50th percentile → query with **50% cache** (oldest 50% retained)
-   - Delete >= 25th percentile → query with **25% cache** (oldest 25% retained)
-
-**How cache reduction works:**
-
-- Percentiles are calculated from the ORIGINAL 100% cache using timestamp distribution
-- Deletion is progressive: each step deletes from the remaining cache
-- This simulates realistic scenarios where older data is cached and newer data is computed on-the-fly
-
-**Example output format:**
-
-```
-================================================================================
-Scenario 1: 6.6 days, 714,285 events
-================================================================================
-Refresh all caches: 43.2s
-Queries with 100% cache:
-    user-product-timeline-15min:  12ms
-    user-timeline-15min:          8ms
-    user-product-timeline-1h:     10ms
-    user-timeline-1h:             6ms
-    user-product-timeline-1d:     8ms
-    user-timeline-1d:             5ms
-Queries with 75% cache:
-    user-product-timeline-15min:  15ms
-    user-timeline-15min:          10ms
-    user-product-timeline-1h:     12ms
-    user-timeline-1h:             8ms
-    user-product-timeline-1d:     9ms
-    user-timeline-1d:             6ms
-Queries with 50% cache:
-    user-product-timeline-15min:  25ms
-    user-timeline-15min:          18ms
-    user-product-timeline-1h:     20ms
-    user-timeline-1h:             14ms
-    user-product-timeline-1d:     15ms
-    user-timeline-1d:             10ms
-Queries with 25% cache:
-    user-product-timeline-15min:  45ms
-    user-timeline-15min:          32ms
-    user-product-timeline-1h:     38ms
-    user-timeline-1h:             26ms
-    user-product-timeline-1d:     28ms
-    user-timeline-1d:             19ms
-Queries with 0% cache:
-    user-product-timeline-15min:  120ms
-    user-timeline-15min:          85ms
-    user-product-timeline-1h:     95ms
-    user-timeline-1h:             68ms
-    user-product-timeline-1d:     72ms
-    user-timeline-1d:             51ms
-```
-
-*Note: Values above are examples. Actual results will vary based on hardware.*
-
-**Running single scenarios:**
-
-You can also run individual scenarios for testing:
+**Running the benchmark:**
 
 ```bash
 # Generate 10 days of data
@@ -416,4 +331,35 @@ PYTHONPATH=src uv run python -m twr.benchmark --days 10 --price-update-frequency
 
 # Generate specific number of events
 PYTHONPATH=src uv run python -m twr.benchmark --days 5 --num-events 100000 --num-users 500 --num-products 50
+
+# Generate 50k events with 5min price updates
+PYTHONPATH=src uv run python -m twr.benchmark --num-events 50000 --price-update-frequency 5min
 ```
+
+**What the benchmark measures:**
+
+For each run, the benchmark:
+
+1. Clears existing data
+2. Generates and inserts events
+3. Refreshes TimescaleDB continuous aggregates
+4. **Queries with 0% cache** (baseline - before any caching)
+5. Refreshes all caches with VACUUM ANALYZE (cumulative_cashflow + user_product_timeline for all granularities)
+6. **Queries with 100% cache**
+7. Progressively deletes cache and queries:
+   - Delete >= 75th percentile timestamp → **query with 75% cache** (oldest 75% retained)
+   - Delete >= 50th percentile timestamp → **query with 50% cache** (oldest 50% retained)
+   - Delete >= 25th percentile timestamp → **query with 25% cache** (oldest 25% retained)
+
+**How cache reduction works:**
+
+- Percentiles are calculated from the full cache using timestamp distribution
+- Deletion is progressive: each step deletes from the remaining cache
+- VACUUM ANALYZE runs after each deletion to update statistics
+- This simulates realistic scenarios where older data is cached and newer data is computed on-the-fly
+
+**Example output:**
+
+The benchmark outputs query times for each granularity (15min, 1h, 1d) at each cache level, along with cache refresh times. This helps understand the performance tradeoffs between cache size and query speed.
+
+*Note: Actual results will vary based on hardware, data size, and PostgreSQL configuration.*

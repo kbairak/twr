@@ -31,6 +31,17 @@ CREATE INDEX idx_cumulative_cashflow_cache_product
 CREATE INDEX idx_cumulative_cashflow_cache_timestamp
     ON cumulative_cashflow_cache("timestamp" DESC);
 
+COMMENT ON TABLE cumulative_cashflow_cache IS
+    'Materialized running totals of cashflows. Avoids repeated window function calculations by caching cumulative sums of buy/sell units, costs, deposits, and withdrawals.';
+
+-- seed_cf: Returns the most recent cached cumulative cashflow for each (user, product) pair
+--
+-- Purpose: Serves as a starting point to avoid recalculating from the beginning of time
+-- Returns: Latest row from cumulative_cashflow_cache for matching user/product pairs
+-- Performance: O(1) per (user, product) pair due to DISTINCT ON with DESC index
+-- Parameters:
+--   - p_user_id: Filter by user (NULL = all users)
+--   - p_product_id: Filter by product (NULL = all products)
 CREATE FUNCTION seed_cf(p_user_id UUID, p_product_id UUID)
     RETURNS TABLE (
         user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, buy_units NUMERIC(20, 6),
@@ -60,6 +71,12 @@ CREATE FUNCTION seed_cf(p_user_id UUID, p_product_id UUID)
     END;
     $$;
 
+-- fresh_cf: Returns new cashflow events that haven't been cached yet
+--
+-- Purpose: Gets cashflows newer than the latest cached entry (seed)
+-- Returns: Aggregated cashflows grouped by (user, product, timestamp)
+-- Performance: Scans cashflow table from seed timestamp onward
+-- Note: Joins with seed_cf to determine the watermark for each (user, product)
 CREATE FUNCTION fresh_cf(p_user_id UUID, p_product_id UUID)
     RETURNS TABLE (
         user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, units_delta NUMERIC(20, 6),
@@ -98,6 +115,17 @@ CREATE FUNCTION fresh_cf(p_user_id UUID, p_product_id UUID)
     END;
     $$;
 
+-- cumulative_cashflow: Returns running totals of cashflows (cached + fresh)
+--
+-- Purpose: Main query interface for cumulative cashflow data
+-- Returns: Union of cached data + computed running totals from fresh cashflows
+-- Performance:
+--   - Cached portion: Index lookup
+--   - Fresh portion: Window function over uncached rows only
+-- Parameters:
+--   - p_user_id, p_product_id: Filter by user/product (NULL = all)
+--   - p_only_latest: If TRUE, returns only the most recent row (faster)
+--   - p_after: Only return rows after this timestamp
 CREATE FUNCTION cumulative_cashflow(
     p_user_id UUID,
     p_product_id UUID,
@@ -149,7 +177,6 @@ CREATE FUNCTION cumulative_cashflow(
             WINDOW w AS (
                 PARTITION BY fresh_cf.user_id, fresh_cf.product_id
                 ORDER BY fresh_cf."timestamp"
-                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
             )
             {{ o }}
         {% endmacro %}
@@ -182,8 +209,15 @@ CREATE FUNCTION cumulative_cashflow(
     END;
     $$;
 
+-- refresh_cumulative_cashflow: Updates the cumulative_cashflow_cache table
+--
+-- Purpose: Materialization job to move computed cashflows into cache
+-- Side effects: Inserts new rows into cumulative_cashflow_cache
+-- Performance: Processes all uncached (user, product, timestamp) combinations
+-- Usage: Call periodically (e.g., every 5 minutes) to keep cache up-to-date
 CREATE OR REPLACE FUNCTION refresh_cumulative_cashflow(p_current_time TIMESTAMPTZ DEFAULT now())
-    RETURNS void AS $$
+    RETURNS void
+    LANGUAGE plpgsql VOLATILE AS $$
     DECLARE v_watermark TIMESTAMPTZ;
     BEGIN
         SELECT MAX("timestamp") INTO v_watermark
@@ -199,4 +233,4 @@ CREATE OR REPLACE FUNCTION refresh_cumulative_cashflow(p_current_time TIMESTAMPT
         FROM cumulative_cashflow(NULL, NULL) ccf
         WHERE v_watermark IS NULL OR ccf."timestamp" > v_watermark;
     END;
-    $$ LANGUAGE plpgsql;
+    $$;
