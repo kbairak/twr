@@ -8,16 +8,47 @@ The intended use for this system includes 3 main processes:
 - You setup periodic tasks to refresh caches in order to speed up queries
 - You query investment performance data on the other end: per investment (user-product) and per user
 
-### Layer 0: Raw data: Cashflow
+## Data model
 
-We define a `cashflow` table that stores transaction events as deltas. Each row represents a buy or sell transaction with:
+This system starts from simple data and builds layer on top of layer until it can provide meaningful aggregate information for an investment service.
 
-- `user_id`, `product_id`, `timestamp` (identity)
-- `units_delta` (positive for buys, negative for sells)
-- `execution_price` (price per unit)
-- `execution_money` (units_delta × execution_price)
-- `user_money` (what left/entered the user's bank account)
-- `fees` (should equal user_money - execution_money)
+### Raw data: Cash-flow and Price Update
+
+The price update table simply has:
+
+- `product_id`
+- `timestamp`
+- `price`
+
+and requires no further explanation.
+
+Cash-flow has:
+
+- `id` (for idempotency checks)
+
+- `user_id`
+- `product_id`
+- `timestamp`
+
+- `units_delta`
+- `execution_price`
+- `user_money`
+
+and the following values can be easily derived:
+
+- `execution_money` = `units_delta` × `execution_price`
+- `fees` = `user_money` - `execution_money`
+- `user_price` = user_money / units_delta
+
+Notes:
+
+1. Cash-flows represents deltas, not cumulative totals. It is data related to a single transaction. The fact that we save single transactions allows us to support out-of-order inserts while still being able to compute cumulative totals later, via mechanisms that will be explained later
+2. We need to explain what the 'execution_' and 'user_' prefixes mean: 'execution_money' is the amount that the provider _claims_ they converted into/from units at 'execution_price' units of currency per unit. 'user_money' is the amount that the user actually lost or gained. This allows us to calculate fees, both individually and cumulatively
+3. 'user_id'
+
+### Price update time buckets and granularities
+
+We use timescaledb continuous aggregates to create time buckets for price updates. This allows us to reduce the number of events we need to process when building timelines later. The various bucketing policies are configured in `migrations/granularities.json`, which allows for easy customization. The SQL code used for the timescaledb instructions and the rest of the aggregation logic is generated using Jinja2 templates which use `granularities.json` as context. Timescaledb is also used to compress the price update tables without sacrificing query performance.
 
 The challenge: we want cumulative running totals (units held, total invested, etc.) over time.
 
@@ -362,4 +393,13 @@ For each run, the benchmark:
 
 The benchmark outputs query times for each granularity (15min, 1h, 1d) at each cache level, along with cache refresh times. This helps understand the performance tradeoffs between cache size and query speed.
 
-*Note: Actual results will vary based on hardware, data size, and PostgreSQL configuration.*
+_Note: Actual results will vary based on hardware, data size, and PostgreSQL configuration._
+
+## TODOs
+
+- [x] Refresh cache in chunks
+- [ ] Potential gap because of how watermarks work
+- [ ] Compress more tables
+- [ ] Rewrite generator
+- [ ] Rewrite benchmark (fewer logs)
+- [ ] Rewrite tests

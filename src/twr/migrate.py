@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Migration runner for TWR schema."""
 
+import itertools
 import json
 import sys
 from pathlib import Path
@@ -19,6 +20,7 @@ def _run_migration(connection, migration_file: Path, granularities: dict) -> Non
     if migration_file.suffix == ".j2":
         # Create environment with loader to support imports
         env = Environment(loader=FileSystemLoader(migration_file.parent))
+        env.globals['itertools'] = itertools
         template = env.get_template(migration_file.name)
         content = template.render(GRANULARITIES=granularities)
 

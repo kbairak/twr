@@ -74,6 +74,8 @@ CREATE OR REPLACE FUNCTION cashflow_repair()
     END;
     $$;
 
+DROP TRIGGER IF EXISTS cashflow_repair ON cashflow;
+
 CREATE TRIGGER cashflow_repair
     AFTER INSERT ON cashflow
     FOR EACH ROW

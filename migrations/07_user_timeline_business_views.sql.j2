@@ -1,25 +1,30 @@
 {% for g in GRANULARITIES %}
 
-    CREATE FUNCTION user_timestamps_{{ g.suffix }}(p_user_id UUID)
+    CREATE OR REPLACE FUNCTION user_timestamps_{{ g.suffix }}(
+        p_user_id UUID,
+        p_now TIMESTAMPTZ DEFAULT NOW()
+    )
         RETURNS TABLE(user_id UUID, "timestamp" TIMESTAMPTZ)
         LANGUAGE plpgsql STABLE AS $$
         BEGIN
-            {% macro query(w='') %}
-                RETURN QUERY
-                SELECT DISTINCT upt.user_id, upt."timestamp"
-                FROM user_product_timeline_{{ g.suffix }}(p_user_id, NULL) upt
-                {{ w }}
-                ORDER BY upt."timestamp" DESC
-            {% endmacro %}
-            IF p_user_id IS NULL THEN
-                {{ query() }};
-            ELSE
-                {{ query('WHERE upt.user_id = p_user_id') }};
-            END IF;
+            RETURN QUERY
+            SELECT DISTINCT upt.user_id, upt."timestamp"
+            FROM user_product_timeline_{{ g.suffix }}(
+            p_user_id,
+            NULL,
+            {% if g.cache_retention %}
+                p_now - '{{ g.cache_retention }}'::interval
+            {% else %}
+                NULL
+            {% endif %}
+            ) upt;
         END;
         $$;
 
-    CREATE FUNCTION user_timeline_business_{{ g.suffix }}(p_user_id UUID)
+    CREATE OR REPLACE FUNCTION user_timeline_business_{{ g.suffix }}(
+        p_user_id UUID,
+        p_now TIMESTAMPTZ DEFAULT NOW()
+    )
         RETURNS TABLE(
             user_id UUID, "timestamp" TIMESTAMPTZ, deposits NUMERIC(20, 6),
             withdrawals NUMERIC(20, 6), buy_cost NUMERIC(20, 6), sell_proceeds NUMERIC(20, 6),
@@ -44,38 +49,23 @@
                 SUM(uptb.market_value) AS market_value,
                 SUM(uptb.cost_basis) AS cost_basis,
                 SUM(uptb.unrealized_returns) AS unrealized_returns
-            FROM user_timestamps_{{ g.suffix }}(p_user_id) ut
+            FROM user_timestamps_{{ g.suffix }}(p_user_id, p_now) ut
                 INNER JOIN LATERAL (
-                    SELECT DISTINCT ON (upt.user_id, upt.product_id)
-                        ccf.deposits, ccf.withdrawals, ccf.buy_cost, ccf.sell_proceeds,
-                        ccf.buy_units, ccf.sell_units,
-                        ccf.deposits - ccf.withdrawals AS net_investment,
-                        ccf.deposits - ccf.buy_cost + ccf.withdrawals - ccf.sell_proceeds AS fees,
-                        (ccf.buy_units - ccf.sell_units) * pu.price AS market_value,
-                        (ccf.buy_units - ccf.sell_units) *
-                            (ccf.buy_cost / NULLIF(ccf.buy_units, 0))
-                            AS cost_basis,
-                        (ccf.buy_units - ccf.sell_units) *
-                            (pu.price - (ccf.buy_cost / NULLIF(ccf.buy_units, 0)))
-                            AS unrealized_returns
-                    FROM user_product_timeline_{{ g.suffix }}(p_user_id, NULL) upt
-                        INNER JOIN price_update_{{ g.suffix }} pu ON
-                            upt.product_id = pu.product_id AND upt."timestamp" = pu."timestamp"
-                        INNER JOIN cumulative_cashflow(p_user_id, NULL) ccf ON
-                            upt.user_id = ccf.user_id AND
-                            upt.product_id = ccf.product_id AND
-                            upt.cashflow_timestamp = ccf."timestamp"
-                    WHERE upt.user_id = ut.user_id AND upt."timestamp" <= ut."timestamp"
-                    ORDER BY upt.user_id, upt.product_id, upt."timestamp" DESC
+                    SELECT DISTINCT ON (uptb.user_id, uptb.product_id)
+                        uptb.deposits, uptb.withdrawals, uptb.buy_cost, uptb.sell_proceeds,
+                        uptb.buy_units, uptb.sell_units, uptb.net_investment, uptb.fees,
+                        uptb.market_value, uptb.cost_basis, uptb.unrealized_returns
+                    FROM user_product_timeline_business_{{ g.suffix }}(p_user_id, NULL, p_now) uptb
+                    WHERE uptb.user_id = ut.user_id AND uptb."timestamp" <= ut."timestamp"
+                    ORDER BY uptb.user_id, uptb.product_id, uptb."timestamp" DESC
                 ) uptb ON true
-            WHERE ut.user_id = p_user_id
             GROUP BY ut.user_id, ut."timestamp";
         END;
         $$;
 
 {% endfor %}
 
-CREATE FUNCTION user_timeline_latest(p_user_id UUID)
+CREATE OR REPLACE FUNCTION user_timeline_latest(p_user_id UUID)
     RETURNS TABLE(
         user_id UUID, "timestamp" TIMESTAMPTZ, deposits NUMERIC(20, 6), withdrawals NUMERIC(20, 6),
         buy_cost NUMERIC(20, 6), sell_proceeds NUMERIC(20, 6), buy_units NUMERIC(20, 6),
@@ -102,7 +92,6 @@ CREATE FUNCTION user_timeline_latest(p_user_id UUID)
             SUM(uptl.cost_basis) AS cost_basis,
             SUM(uptl.unrealized_returns) AS unrealized_returns
         FROM user_product_timeline_latest(p_user_id, NULL) uptl
-        WHERE uptl.user_id = p_user_id
         GROUP BY uptl.user_id;
     END;
     $$;

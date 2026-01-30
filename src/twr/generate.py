@@ -6,7 +6,7 @@ import random
 import math
 import uuid
 import psycopg2
-from psycopg2.extras import execute_values
+from io import StringIO
 
 # Trading constants
 MARKET_OPEN = time(9, 30)  # 9:30 AM
@@ -178,7 +178,7 @@ class EventGenerator:
     def generate_and_insert(
         self,
         num_events: int,
-        batch_size: int = 10000,
+        batch_size: int = 1_000_000,
         price_update_interval: timedelta = None,
         end_date: datetime = None,
     ):
@@ -359,39 +359,65 @@ class EventGenerator:
         )
 
     def _batch_insert_all_events(self, price_events, cashflow_events, batch_size):
-        """Sort and batch insert all price and cashflow events"""
+        """Sort and insert all price and cashflow events using COPY (faster than execute_values)"""
         cur = self.conn.cursor()
 
-        # Insert price events
+        # Insert price events using COPY
         if price_events:
             price_events.sort(key=lambda x: (x[0], x[1]))
             print(f"Inserting {len(price_events):,} price events...")
 
-            num_batches = (len(price_events) + batch_size - 1) // batch_size
-            for batch_idx, i in enumerate(range(0, len(price_events), batch_size)):
+            for i in range(0, len(price_events), batch_size):
                 batch = price_events[i : i + batch_size]
-                execute_values(
-                    cur,
-                    "INSERT INTO price_update (product_id, timestamp, price) VALUES %s",
-                    batch,
-                    page_size=1000,
+
+                # Create tab-delimited buffer
+                buffer = StringIO()
+                for product_id, timestamp, price in batch:
+                    buffer.write(f"{product_id}\t{timestamp}\t{price}\n")
+
+                buffer.seek(0)
+                cur.copy_from(
+                    buffer, "price_update", columns=("product_id", "timestamp", "price"), sep="\t"
                 )
                 self.conn.commit()
 
-        # Insert cashflow events
+        # Insert cashflow events using COPY
         if cashflow_events:
             cashflow_events.sort(
                 key=lambda x: (x[0], x[1], x[2])
             )  # Sort by user, product, timestamp
             print(f"\nInserting {len(cashflow_events):,} cashflow events...")
 
-            for _, i in enumerate(range(0, len(cashflow_events), batch_size)):
+            for i in range(0, len(cashflow_events), batch_size):
                 batch = cashflow_events[i : i + batch_size]
-                execute_values(
-                    cur,
-                    "INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money) VALUES %s",
-                    batch,
-                    page_size=100,
+
+                # Create tab-delimited buffer
+                buffer = StringIO()
+                for (
+                    user_id,
+                    product_id,
+                    timestamp,
+                    units_delta,
+                    execution_price,
+                    user_money,
+                ) in batch:
+                    buffer.write(
+                        f"{user_id}\t{product_id}\t{timestamp}\t{units_delta}\t{execution_price}\t{user_money}\n"
+                    )
+
+                buffer.seek(0)
+                cur.copy_from(
+                    buffer,
+                    "cashflow",
+                    columns=(
+                        "user_id",
+                        "product_id",
+                        "timestamp",
+                        "units_delta",
+                        "execution_price",
+                        "user_money",
+                    ),
+                    sep="\t",
                 )
                 self.conn.commit()
 

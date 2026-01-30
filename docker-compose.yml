@@ -2,6 +2,7 @@ services:
   postgres:
     image: timescale/timescaledb:latest-pg16
     container_name: twr_postgres
+    shm_size: 1g
     environment:
       POSTGRES_DB: twr
       POSTGRES_USER: twr_user

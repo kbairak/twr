@@ -1,42 +1,87 @@
-CREATE TABLE price_update (
-    product_id UUID NOT NULL,
-    "timestamp" TIMESTAMPTZ NOT NULL,
-    price NUMERIC(20, 6) NOT NULL
+CREATE TABLE IF NOT EXISTS price_update (
+    product_id  UUID           NOT NULL,
+    "timestamp" TIMESTAMPTZ    NOT NULL,
+    price       NUMERIC(20, 6) NOT NULL
 );
 
-CREATE UNIQUE INDEX idx_price_update_time ON price_update(product_id, "timestamp" DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_price_update_time ON price_update(product_id, "timestamp" DESC);
 
-COMMENT ON TABLE price_update IS
-    'Raw price updates for products. TimescaleDB hypertable partitioned by timestamp with 1-month chunks. Compressed after 7 days.';
+-- Create hypertable only if not already a hypertable
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM timescaledb_information.hypertables
+        WHERE hypertable_name = 'price_update'
+    ) THEN
+        PERFORM create_hypertable('price_update', 'timestamp', chunk_time_interval => INTERVAL '1 month');
+    END IF;
+END $$;
 
-SELECT create_hypertable('price_update', 'timestamp', chunk_time_interval => INTERVAL '1 month');
-ALTER TABLE price_update SET (
-    timescaledb.compress,
-    timescaledb.compress_segmentby = 'product_id',
-    timescaledb.compress_orderby = 'timestamp DESC'
-);
-SELECT add_compression_policy('price_update', INTERVAL '7 days');
+-- Enable compression only if not already enabled
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM timescaledb_information.hypertables
+        WHERE hypertable_name = 'price_update' AND compression_enabled
+    ) THEN
+        ALTER TABLE price_update SET (
+            timescaledb.compress,
+            timescaledb.compress_segmentby = 'product_id',
+            timescaledb.compress_orderby   = 'timestamp DESC'
+        );
+    END IF;
+END $$;
+
+-- Add compression policy only if not already exists
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM timescaledb_information.jobs
+        WHERE proc_name = 'policy_compression' AND hypertable_name = 'price_update'
+    ) THEN
+        PERFORM add_compression_policy('price_update', INTERVAL '7 days');
+    END IF;
+END $$;
 
 {% for g in GRANULARITIES %}
 
-    CREATE MATERIALIZED VIEW price_update_{{ g.suffix }}
-    WITH (timescaledb.continuous) AS
-    SELECT
-        product_id,
-        time_bucket('{{ g.interval }}', "timestamp") + '{{ g.interval }}' AS "timestamp",
-        last(price, "timestamp") AS price
-    FROM price_update
-    GROUP BY product_id, time_bucket('{{ g.interval }}', "timestamp")
-    WITH NO DATA;
+    -- Create continuous aggregate only if it doesn't exist
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM timescaledb_information.continuous_aggregates
+            WHERE view_name = 'price_update_{{ g.suffix }}'
+        ) THEN
+            CREATE MATERIALIZED VIEW price_update_{{ g.suffix }}
+            WITH (timescaledb.continuous) AS
+            SELECT
+                product_id,
+                time_bucket('{{ g.interval }}', "timestamp") + '{{ g.interval }}' AS "timestamp",
+                last(price, "timestamp") AS price
+            FROM price_update
+            GROUP BY product_id, time_bucket('{{ g.interval }}', "timestamp")
+            WITH NO DATA;
+        END IF;
+    END $$;
 
-    SELECT add_continuous_aggregate_policy(
-        'price_update_{{ g.suffix }}',
-        start_offset => INTERVAL '1 month',
-        end_offset => INTERVAL '1 minute',
-        schedule_interval => INTERVAL '{{ g.interval }}'
-    );
+    -- Add continuous aggregate policy only if not already exists
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM timescaledb_information.jobs
+            WHERE proc_name = 'policy_refresh_continuous_aggregate'
+            AND hypertable_name = 'price_update_{{ g.suffix }}'
+        ) THEN
+            PERFORM add_continuous_aggregate_policy(
+                'price_update_{{ g.suffix }}',
+                start_offset      => INTERVAL '1 month',
+                end_offset        => INTERVAL '1 minute',
+                schedule_interval => INTERVAL '{{ g.interval }}'
+            );
+        END IF;
+    END $$;
 
-    CREATE INDEX idx_price_update_{{ g.suffix }}_product_timestamp
+    CREATE INDEX IF NOT EXISTS idx_price_update_{{ g.suffix }}_product_timestamp
         ON price_update_{{ g.suffix }}
         (product_id, "timestamp" DESC)
         INCLUDE (price);

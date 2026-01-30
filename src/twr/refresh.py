@@ -101,11 +101,9 @@ def refresh_and_retain(
         print(f"\nDeleting cache to retain {percentage * 100:.0f}%...")
 
         # Get the percentile threshold from cumulative_cashflow_cache
-        percentile_value = (
-            1.0 - percentage
-        )  # If we want to keep 50%, delete from 50th percentile onwards
+        # To keep oldest X%, delete from the Xth percentile onwards
         cur.execute(f"""
-            SELECT percentile_disc({percentile_value}) WITHIN GROUP (ORDER BY timestamp) AS threshold
+            SELECT percentile_disc({percentage}) WITHIN GROUP (ORDER BY timestamp) AS threshold
             FROM cumulative_cashflow_cache
         """)
         result = cur.fetchone()

@@ -11,9 +11,12 @@
     -- Performance: Joins cached timeline with prices and cashflows
     -- Parameters:
     --   - p_user_id: Required - specific user to query
-    --   - p_product_id: Required - specific product to query
-    -- Note: Both parameters are required (no NULL values allowed)
-    CREATE FUNCTION user_product_timeline_business_{{ g.suffix }}(p_user_id UUID, p_product_id UUID)
+    --   - p_product_id: Filter by product (NULL = all products)
+    CREATE OR REPLACE FUNCTION user_product_timeline_business_{{ g.suffix }}(
+        p_user_id UUID,
+        p_product_id UUID,
+        p_now TIMESTAMPTZ DEFAULT NOW()
+    )
         RETURNS TABLE(
             user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, buy_units NUMERIC(20, 6),
             sell_units NUMERIC(20, 6), buy_cost NUMERIC(20, 6), sell_proceeds NUMERIC(20, 6),
@@ -44,14 +47,14 @@
                 (ccf.buy_units - ccf.sell_units) *
                     (pu.price - (ccf.buy_cost / NULLIF(ccf.buy_units, 0)))
                     AS unrealized_returns
-            FROM user_product_timeline_{{ g.suffix }}(p_user_id, p_product_id) upt
+            FROM user_product_timeline_{{ g.suffix }}(p_user_id, p_product_id, {% if g.cache_retention %}p_now - '{{ g.cache_retention }}'::interval{% else %}NULL{% endif %}) upt
                 INNER JOIN price_update_{{ g.suffix }} pu ON
                     upt.product_id = pu.product_id AND upt."timestamp" = pu."timestamp"
                 INNER JOIN cumulative_cashflow(p_user_id, p_product_id) ccf ON
                     upt.user_id = ccf.user_id AND
                     upt.product_id = ccf.product_id AND
                     upt.cashflow_timestamp = ccf."timestamp"
-            WHERE upt.user_id = p_user_id AND upt.product_id = p_product_id;
+            WHERE upt.user_id = p_user_id AND (p_product_id IS NULL OR upt.product_id = p_product_id);
         END;
         $$;
 
@@ -66,7 +69,7 @@
 --   - p_user_id: Required - specific user to query
 --   - p_product_id: Required - specific product to query
 -- Note: Uses price_update base table (not bucketed) for maximum freshness
-CREATE FUNCTION user_product_timeline_latest(p_user_id UUID, p_product_id UUID)
+CREATE OR REPLACE FUNCTION user_product_timeline_latest(p_user_id UUID, p_product_id UUID)
     RETURNS TABLE(
         user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, buy_units NUMERIC(20, 6),
         sell_units NUMERIC(20, 6), buy_cost NUMERIC(20, 6), sell_proceeds NUMERIC(20, 6),
@@ -98,7 +101,7 @@ CREATE FUNCTION user_product_timeline_latest(p_user_id UUID, p_product_id UUID)
             SELECT DISTINCT ON (ccf.user_id, ccf.product_id)
                 ccf.user_id, ccf.product_id, ccf."timestamp", ccf.buy_units, ccf.sell_units,
                 ccf.buy_cost, ccf.sell_proceeds, ccf.deposits, ccf.withdrawals
-            FROM cumulative_cashflow(p_user_id, p_product_id, true) ccf
+            FROM cumulative_cashflow(p_user_id, p_product_id) ccf
             WHERE ccf.user_id = p_user_id AND ccf.product_id = p_product_id
             ORDER BY ccf.user_id, ccf.product_id, ccf."timestamp" DESC
         ) ccf

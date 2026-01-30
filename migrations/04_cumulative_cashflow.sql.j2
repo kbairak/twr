@@ -1,38 +1,37 @@
-CREATE TABLE cumulative_cashflow_cache (
+CREATE TABLE IF NOT EXISTS cumulative_cashflow_cache (
     -- Denormalized fields from cashflow for efficient querying
-    user_id UUID NOT NULL,
-    product_id UUID NOT NULL,
-    "timestamp" TIMESTAMPTZ NOT NULL,
+    user_id        UUID NOT NULL,
+    product_id     UUID NOT NULL,
+    "timestamp"    TIMESTAMPTZ NOT NULL,
 
     -- Monotonic totals - units (always increasing)
-    buy_units NUMERIC(20, 6),         -- Σ(units_delta) for buys only
-    sell_units NUMERIC(20, 6),        -- Σ(|units_delta|) for sells only
+    buy_units     NUMERIC(20, 6),  -- Σ(units_delta) for buys only
+    sell_units    NUMERIC(20, 6),  -- Σ(|units_delta|) for sells only
 
     -- Monotonic totals - execution_money (always increasing)
-    buy_cost NUMERIC(20, 6),          -- Σ(execution_money) for buys
-    sell_proceeds NUMERIC(20, 6),     -- Σ(|execution_money|) for sells
+    buy_cost      NUMERIC(20, 6),  -- Σ(execution_money) for buys
+    sell_proceeds NUMERIC(20, 6),  -- Σ(|execution_money|) for sells
 
     -- Monotonic totals - cash flows (always increasing)
-    deposits NUMERIC(20, 6),          -- Σ(user_money) for buys (what left bank)
-    withdrawals NUMERIC(20, 6),       -- Σ(|user_money|) for sells (what entered bank)
+    deposits      NUMERIC(20, 6),  -- Σ(user_money) for buys (what left bank)
+    withdrawals   NUMERIC(20, 6),  -- Σ(|user_money|) for sells (what entered bank)
 
     -- We can derive:
-    --   - units = buy_units - sell_units
-    --   - net_investment = deposits - withdrawals
-    --   - fees = deposits - buy_cost + withdrawals - sell_proceeds
+    --   - units          = buy_units - sell_units
+    --   - net_investment = deposits  - withdrawals
+    --   - fees           = deposits  - buy_cost + withdrawals - sell_proceeds
 
     CONSTRAINT unique_cashflow UNIQUE (user_id, product_id, "timestamp")
 );
 
-CREATE UNIQUE INDEX idx_cumulative_cashflow_cache_user_product
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cumulative_cashflow_cache_user_product
     ON cumulative_cashflow_cache(user_id, product_id, "timestamp" DESC);
-CREATE INDEX idx_cumulative_cashflow_cache_product
+CREATE INDEX IF NOT EXISTS idx_cumulative_cashflow_cache_user
+    ON cumulative_cashflow_cache(user_id, "timestamp" DESC);
+CREATE INDEX IF NOT EXISTS idx_cumulative_cashflow_cache_product
     ON cumulative_cashflow_cache(product_id, "timestamp" DESC);
-CREATE INDEX idx_cumulative_cashflow_cache_timestamp
+CREATE INDEX IF NOT EXISTS idx_cumulative_cashflow_cache_timestamp
     ON cumulative_cashflow_cache("timestamp" DESC);
-
-COMMENT ON TABLE cumulative_cashflow_cache IS
-    'Materialized running totals of cashflows. Avoids repeated window function calculations by caching cumulative sums of buy/sell units, costs, deposits, and withdrawals.';
 
 -- seed_cf: Returns the most recent cached cumulative cashflow for each (user, product) pair
 --
@@ -42,7 +41,7 @@ COMMENT ON TABLE cumulative_cashflow_cache IS
 -- Parameters:
 --   - p_user_id: Filter by user (NULL = all users)
 --   - p_product_id: Filter by product (NULL = all products)
-CREATE FUNCTION seed_cf(p_user_id UUID, p_product_id UUID)
+CREATE OR REPLACE FUNCTION seed_cf(p_user_id UUID, p_product_id UUID)
     RETURNS TABLE (
         user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, buy_units NUMERIC(20, 6),
         sell_units NUMERIC(20, 6), buy_cost NUMERIC(20, 6), sell_proceeds NUMERIC(20, 6),
@@ -50,23 +49,26 @@ CREATE FUNCTION seed_cf(p_user_id UUID, p_product_id UUID)
     )
     LANGUAGE plpgsql STABLE AS $$
     BEGIN
-        {% macro query(w) %}
+        {% macro query(filter_user, filter_product) %}
             RETURN QUERY
             SELECT DISTINCT ON (ccfc.user_id, ccfc.product_id)
                 ccfc.user_id, ccfc.product_id, ccfc."timestamp", ccfc.buy_units, ccfc.sell_units,
                 ccfc.buy_cost, ccfc.sell_proceeds, ccfc.deposits, ccfc.withdrawals
             FROM cumulative_cashflow_cache ccfc
-            {{ w }}
+            WHERE
+                TRUE
+                {% if filter_user %}   AND ccfc.user_id    = p_user_id   {% endif %}
+                {% if filter_product %}AND ccfc.product_id = p_product_id{% endif %}
             ORDER BY ccfc.user_id, ccfc.product_id, ccfc."timestamp" DESC
         {% endmacro %}
-        IF p_user_id IS NULL AND p_product_id IS NULL THEN
-            {{ query() }};
-        ELSIF p_user_id IS NOT NULL AND p_product_id IS NULL THEN
-            {{ query('WHERE ccfc.user_id = p_user_id') }};
-        ELSIF p_user_id IS NULL AND p_product_id IS NOT NULL THEN
-            {{ query('WHERE ccfc.product_id = p_product_id') }};
-        ELSE
-            {{ query('WHERE ccfc.user_id = p_user_id AND ccfc.product_id = p_product_id') }};
+
+        {% for fu, fp in itertools.product([True, False], repeat=2) %}
+            {% if loop.first %}IF{% else %}ELSIF{% endif %}
+                p_user_id    IS {% if fu %}NOT{% endif %} NULL AND
+                p_product_id IS {% if fp %}NOT{% endif %} NULL
+            THEN
+                {{ query(filter_user=fu, filter_product=fp) }};
+        {% endfor %}
         END IF;
     END;
     $$;
@@ -77,14 +79,21 @@ CREATE FUNCTION seed_cf(p_user_id UUID, p_product_id UUID)
 -- Returns: Aggregated cashflows grouped by (user, product, timestamp)
 -- Performance: Scans cashflow table from seed timestamp onward
 -- Note: Joins with seed_cf to determine the watermark for each (user, product)
-CREATE FUNCTION fresh_cf(p_user_id UUID, p_product_id UUID)
+-- Parameters:
+--   - p_user_id, p_product_id: Filter by user/product (NULL = all)
+--   - p_before: Only return rows before or at this timestamp (NULL = no upper bound)
+CREATE OR REPLACE FUNCTION fresh_cf(
+        p_user_id    UUID,
+        p_product_id UUID,
+        p_before     TIMESTAMPTZ DEFAULT NULL
+    )
     RETURNS TABLE (
         user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, units_delta NUMERIC(20, 6),
         execution_price NUMERIC(20, 6), user_money NUMERIC(20, 6), execution_money NUMERIC(20, 6)
     )
     LANGUAGE plpgsql STABLE AS $$
     BEGIN
-        {% macro query(w) %}
+        {% macro query(filter_user, filter_product, filter_before) %}
             RETURN QUERY
             SELECT
                 cf.user_id, cf.product_id, cf."timestamp",
@@ -100,17 +109,21 @@ CREATE FUNCTION fresh_cf(p_user_id UUID, p_product_id UUID)
             FROM cashflow cf
                 LEFT OUTER JOIN seed_cf(p_user_id, p_product_id) seed_cf
                     ON cf.user_id = seed_cf.user_id AND cf.product_id = seed_cf.product_id
-            WHERE (seed_cf."timestamp" IS NULL OR cf."timestamp" > seed_cf."timestamp") {{ w }}
+            WHERE
+                (seed_cf."timestamp" IS NULL OR cf."timestamp" > seed_cf."timestamp")
+                {% if filter_user %}   AND cf.user_id     = p_user_id   {% endif %}
+                {% if filter_product %}AND cf.product_id  = p_product_id{% endif %}
+                {% if filter_before %} AND cf."timestamp" <= p_before   {% endif %}
             GROUP BY cf.user_id, cf.product_id, cf."timestamp"
         {% endmacro %}
-        IF p_user_id IS NULL AND p_product_id IS NULL THEN
-            {{ query() }};
-        ELSIF p_user_id IS NOT NULL AND p_product_id IS NULL THEN
-            {{ query('AND cf.user_id = p_user_id') }};
-        ELSIF p_user_id IS NULL AND p_product_id IS NOT NULL THEN
-            {{ query('AND cf.product_id = p_product_id') }};
-        ELSE
-            {{ query('AND cf.user_id = p_user_id AND cf.product_id = p_product_id') }};
+        {% for fu, fp, fb in itertools.product([True, False], repeat=3) %}
+            {% if loop.first %}IF{% else %}ELSIF{% endif %}
+                p_user_id    IS {% if fu %}NOT{% endif %} NULL AND
+                p_product_id IS {% if fp %}NOT{% endif %} NULL AND
+                p_before     IS {% if fb %}NOT{% endif %} NULL
+            THEN
+                {{ query(filter_user=fu, filter_product=fp, filter_before=fb) }};
+        {% endfor %}
         END IF;
     END;
     $$;
@@ -124,14 +137,15 @@ CREATE FUNCTION fresh_cf(p_user_id UUID, p_product_id UUID)
 --   - Fresh portion: Window function over uncached rows only
 -- Parameters:
 --   - p_user_id, p_product_id: Filter by user/product (NULL = all)
---   - p_only_latest: If TRUE, returns only the most recent row (faster)
---   - p_after: Only return rows after this timestamp
-CREATE FUNCTION cumulative_cashflow(
-    p_user_id UUID,
-    p_product_id UUID,
-    p_only_latest BOOLEAN DEFAULT FALSE,
-    p_after TIMESTAMPTZ DEFAULT NULL
-)
+--   - p_after: Only return rows after this timestamp (NULL = no lower bound)
+--   - p_before: Only return rows before or at this timestamp (NULL = no upper bound)
+
+CREATE OR REPLACE FUNCTION cumulative_cashflow(
+        p_user_id    UUID,
+        p_product_id UUID,
+        p_after      TIMESTAMPTZ DEFAULT NULL,
+        p_before     TIMESTAMPTZ DEFAULT NULL
+    )
     RETURNS TABLE (
         user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, buy_units NUMERIC(20, 6),
         sell_units NUMERIC(20, 6), buy_cost NUMERIC(20, 6), sell_proceeds NUMERIC(20, 6),
@@ -139,72 +153,62 @@ CREATE FUNCTION cumulative_cashflow(
     )
     LANGUAGE plpgsql STABLE AS $$
     BEGIN
-        {% macro query(w1='', w2='', o='') %}
+        {% macro query(filter_user, filter_product, filter_after, filter_before) %}
             RETURN QUERY
             SELECT
                 ccfc.user_id, ccfc.product_id, ccfc."timestamp", ccfc.buy_units, ccfc.sell_units,
                 ccfc.buy_cost, ccfc.sell_proceeds, ccfc.deposits, ccfc.withdrawals
             FROM cumulative_cashflow_cache ccfc
-            {{ w1 }}
+            WHERE
+                TRUE
+                {% if filter_user %}    AND ccfc.user_id     =  p_user_id   {% endif %}
+                {% if filter_product %} AND ccfc.product_id  =  p_product_id{% endif %}
+                {% if filter_after %}   AND ccfc."timestamp" >  p_after     {% endif %}
+                {% if filter_before %}  AND ccfc."timestamp" <= p_before    {% endif %}
 
             UNION ALL
 
-            SELECT
-                fresh_cf.user_id, fresh_cf.product_id, fresh_cf."timestamp",
-                COALESCE(seed_cf.buy_units, 0) +
-                    SUM(CASE WHEN fresh_cf.units_delta > 0 THEN fresh_cf.units_delta ELSE 0 END)
-                    OVER w AS buy_units,
-                COALESCE(seed_cf.sell_units, 0) +
-                    SUM(CASE WHEN fresh_cf.units_delta < 0 THEN -fresh_cf.units_delta ELSE 0 END)
-                    OVER w AS sell_units,
-                COALESCE(seed_cf.buy_cost, 0) +
-                    SUM(CASE WHEN fresh_cf.units_delta > 0 THEN fresh_cf.execution_money ELSE 0 END)
-                    OVER w AS buy_cost,
-                COALESCE(seed_cf.sell_proceeds, 0) +
-                    SUM(CASE WHEN fresh_cf.units_delta < 0 THEN -fresh_cf.execution_money ELSE 0 END)
-                    OVER w AS sell_proceeds,
-                COALESCE(seed_cf.deposits, 0) +
-                    SUM(CASE WHEN fresh_cf.units_delta > 0 THEN fresh_cf.user_money ELSE 0 END)
-                    OVER w AS deposits,
-                COALESCE(seed_cf.withdrawals, 0) +
-                    SUM(CASE WHEN fresh_cf.units_delta < 0 THEN -fresh_cf.user_money ELSE 0 END)
-                    OVER w AS withdrawals
-            FROM fresh_cf(p_user_id, p_product_id) fresh_cf
-                LEFT OUTER JOIN seed_cf(p_user_id, p_product_id) seed_cf ON
-                    fresh_cf.user_id = seed_cf.user_id AND
-                    fresh_cf.product_id = seed_cf.product_id
-            {{ w2 }}
-            WINDOW w AS (
-                PARTITION BY fresh_cf.user_id, fresh_cf.product_id
-                ORDER BY fresh_cf."timestamp"
-            )
-            {{ o }}
+            SELECT * FROM (
+                SELECT
+                    fresh_cf.user_id, fresh_cf.product_id, fresh_cf."timestamp",
+                    COALESCE(seed_cf.buy_units, 0) +
+                        SUM(CASE WHEN fresh_cf.units_delta > 0 THEN fresh_cf.units_delta ELSE 0 END)
+                        OVER w AS buy_units,
+                    COALESCE(seed_cf.sell_units, 0) +
+                        SUM(CASE WHEN fresh_cf.units_delta < 0 THEN -fresh_cf.units_delta ELSE 0 END)
+                        OVER w AS sell_units,
+                    COALESCE(seed_cf.buy_cost, 0) +
+                        SUM(CASE WHEN fresh_cf.units_delta > 0 THEN fresh_cf.execution_money ELSE 0 END)
+                        OVER w AS buy_cost,
+                    COALESCE(seed_cf.sell_proceeds, 0) +
+                        SUM(CASE WHEN fresh_cf.units_delta < 0 THEN -fresh_cf.execution_money ELSE 0 END)
+                        OVER w AS sell_proceeds,
+                    COALESCE(seed_cf.deposits, 0) +
+                        SUM(CASE WHEN fresh_cf.units_delta > 0 THEN fresh_cf.user_money ELSE 0 END)
+                        OVER w AS deposits,
+                    COALESCE(seed_cf.withdrawals, 0) +
+                        SUM(CASE WHEN fresh_cf.units_delta < 0 THEN -fresh_cf.user_money ELSE 0 END)
+                        OVER w AS withdrawals
+                FROM fresh_cf(p_user_id, p_product_id, p_before) fresh_cf
+                    LEFT OUTER JOIN seed_cf(p_user_id, p_product_id) seed_cf ON
+                        fresh_cf.user_id = seed_cf.user_id AND
+                        fresh_cf.product_id = seed_cf.product_id
+                WINDOW w AS (
+                    PARTITION BY fresh_cf.user_id, fresh_cf.product_id
+                    ORDER BY fresh_cf."timestamp"
+                )
+            ) AS computed_fresh
+            {% if filter_after %}WHERE computed_fresh."timestamp" > p_after{% endif %}
         {% endmacro %}
-        IF p_user_id IS NULL AND p_product_id IS NULL THEN
-            {{ query() }};
-        ELSIF p_user_id IS NOT NULL AND p_product_id IS NULL THEN
-            {{ query('WHERE ccfc.user_id = p_user_id', 'WHERE fresh_cf.user_id = p_user_id') }};
-        ELSIF p_user_id IS NULL AND p_product_id IS NOT NULL THEN
-            {{ query(
-                'WHERE ccfc.product_id = p_product_id',
-                'WHERE fresh_cf.product_id = p_product_id'
-            ) }};
-        ELSIF p_only_latest THEN
-            {{ query(
-                'WHERE ccfc.user_id = p_user_id AND ccfc.product_id = p_product_id',
-                'WHERE fresh_cf.user_id = p_user_id AND fresh_cf.product_id = p_product_id',
-                'ORDER BY user_id, product_id, "timestamp" DESC LIMIT 1'
-            ) }};
-        ELSIF p_after IS NOT NULL THEN
-            {{ query(
-                'WHERE ccfc.user_id = p_user_id AND ccfc.product_id = p_product_id AND ccfc."timestamp" > p_after',
-                'WHERE fresh_cf.user_id = p_user_id AND fresh_cf.product_id = p_product_id AND fresh_cf."timestamp" > p_after'
-            ) }};
-        ELSE
-            {{ query(
-                'WHERE ccfc.user_id = p_user_id AND ccfc.product_id = p_product_id',
-                'WHERE fresh_cf.user_id = p_user_id AND fresh_cf.product_id = p_product_id'
-            ) }};
+        {% for fu, fp, fa, fb in itertools.product([True, False], repeat=4) %}
+            {% if loop.first %}IF{% else %}ELSIF{% endif %}
+                p_user_id    IS {% if fu %}NOT{% endif %} NULL AND
+                p_product_id IS {% if fp %}NOT{% endif %} NULL AND
+                p_after      IS {% if fa %}NOT{% endif %} NULL AND
+                p_before     IS {% if fb %}NOT{% endif %} NULL
+            THEN
+                {{ query(filter_user=fu, filter_product=fp, filter_after=fa, filter_before=fb) }};
+        {% endfor %}
         END IF;
     END;
     $$;
@@ -213,24 +217,45 @@ CREATE FUNCTION cumulative_cashflow(
 --
 -- Purpose: Materialization job to move computed cashflows into cache
 -- Side effects: Inserts new rows into cumulative_cashflow_cache
--- Performance: Processes all uncached (user, product, timestamp) combinations
+-- Performance: Processes data in 1-day chunks to limit memory usage
 -- Usage: Call periodically (e.g., every 5 minutes) to keep cache up-to-date
-CREATE OR REPLACE FUNCTION refresh_cumulative_cashflow(p_current_time TIMESTAMPTZ DEFAULT now())
+CREATE OR REPLACE FUNCTION refresh_cumulative_cashflow()
     RETURNS void
     LANGUAGE plpgsql VOLATILE AS $$
-    DECLARE v_watermark TIMESTAMPTZ;
+    DECLARE
+        v_watermark TIMESTAMPTZ;
+        v_inserted_count INT;
     BEGIN
-        SELECT MAX("timestamp") INTO v_watermark
-        FROM cumulative_cashflow_cache;
+        LOOP
+            -- Get current watermark
+            SELECT MAX("timestamp") INTO v_watermark
+            FROM cumulative_cashflow_cache;
 
-        INSERT INTO cumulative_cashflow_cache (
-            user_id, product_id, "timestamp", buy_units, sell_units, buy_cost, sell_proceeds,
-            deposits, withdrawals
-        )
-        SELECT
-            ccf.user_id, ccf.product_id, ccf."timestamp", ccf.buy_units, ccf.sell_units,
-            ccf.buy_cost, ccf.sell_proceeds, ccf.deposits, ccf.withdrawals
-        FROM cumulative_cashflow(NULL, NULL) ccf
-        WHERE v_watermark IS NULL OR ccf."timestamp" > v_watermark;
+            -- If no watermark, initialize from oldest cashflow - 1ms
+            IF v_watermark IS NULL THEN
+                SELECT MIN("timestamp") - INTERVAL '1 millisecond' INTO v_watermark
+                FROM cashflow;
+
+                -- Exit if no cashflows exist
+                EXIT WHEN v_watermark IS NULL;
+            END IF;
+
+            -- Insert one day's worth of data
+            WITH inserted AS (
+                INSERT INTO cumulative_cashflow_cache (
+                    user_id, product_id, "timestamp", buy_units, sell_units, buy_cost, sell_proceeds,
+                    deposits, withdrawals
+                )
+                SELECT
+                    ccf.user_id, ccf.product_id, ccf."timestamp", ccf.buy_units, ccf.sell_units,
+                    ccf.buy_cost, ccf.sell_proceeds, ccf.deposits, ccf.withdrawals
+                FROM cumulative_cashflow(NULL, NULL, v_watermark, v_watermark + INTERVAL '1 day') ccf
+                RETURNING 1
+            )
+            SELECT COUNT(*) INTO v_inserted_count FROM inserted;
+
+            -- Exit if no rows were inserted
+            EXIT WHEN v_inserted_count = 0;
+        END LOOP;
     END;
     $$;
