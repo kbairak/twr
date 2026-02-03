@@ -6,19 +6,85 @@
         product_id         UUID NOT NULL,
         "timestamp"        TIMESTAMPTZ NOT NULL,
 
-        -- Previous cumulative cashflow's timestamp, can be used in a JOIN to get more information
-        -- for that point in time
-        cashflow_timestamp TIMESTAMPTZ NOT NULL,
-
-        CONSTRAINT unique_user_product_timeline{{ g.suffix }} UNIQUE (user_id, product_id, "timestamp")
+        -- Reference timestamps for point-in-time lookups
+        cashflow_timestamp TIMESTAMPTZ NOT NULL,  -- Latest cashflow for this user-product at this time
+        price_timestamp    TIMESTAMPTZ NOT NULL   -- Latest price update for this product at this time
     );
 
-    CREATE INDEX IF NOT EXISTS idx_user_product_timeline_cache_{{ g.suffix }}_user_product
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_user_product_timeline_cache_{{ g.suffix }}_user_product_ts
         ON user_product_timeline_cache_{{ g.suffix }}(user_id, product_id, "timestamp" DESC);
-    CREATE INDEX IF NOT EXISTS idx_product_timeline_cache_{{ g.suffix }}_user_product
+    CREATE INDEX IF NOT EXISTS idx_user_product_timeline_cache_{{ g.suffix }}_user_ts
+        ON user_product_timeline_cache_{{ g.suffix }}(user_id, "timestamp" DESC);
+    CREATE INDEX IF NOT EXISTS idx_user_product_timeline_cache_{{ g.suffix }}_product_ts
         ON user_product_timeline_cache_{{ g.suffix }}(product_id, "timestamp" DESC);
-    CREATE INDEX IF NOT EXISTS idx_user_product_timeline_cache_{{ g.suffix }}_timestamp
+    CREATE INDEX IF NOT EXISTS idx_user_product_timeline_cache_{{ g.suffix }}_ts
         ON user_product_timeline_cache_{{ g.suffix }}("timestamp" DESC);
+
+    -- dense_price_update_{{ g.suffix }}: Returns prices with gaps forward-filled
+    --
+    -- Purpose: Creates a "densified" price table where every product has a price at every timestamp
+    --          by forward-filling gaps (carrying the last known price forward)
+    -- Returns: (product_id, timestamp, price) for all combinations
+    -- Performance: Uses window functions for efficient gap-filling
+    -- Parameters:
+    --   - p_product_id: Filter by product (NULL = all products)
+    --   - p_after: Only return timestamps after this point (NULL = no lower bound)
+    --   - p_before: Only return timestamps before or at this point (NULL = no upper bound)
+    CREATE OR REPLACE FUNCTION dense_price_update_{{ g.suffix }}(
+        p_product_id UUID DEFAULT NULL,
+        p_after TIMESTAMPTZ DEFAULT NULL,
+        p_before TIMESTAMPTZ DEFAULT NULL
+    )
+        RETURNS TABLE(
+            product_id UUID, "timestamp" TIMESTAMPTZ,
+            price NUMERIC(20, 6), price_timestamp TIMESTAMPTZ
+        )
+        LANGUAGE plpgsql STABLE AS $$
+        BEGIN
+            RETURN QUERY
+            WITH all_prices AS (
+                SELECT
+                    p.product_id,
+                    t.timestamp,
+                    pu.price,
+                    pu.timestamp as source_timestamp,
+                    COUNT(pu.price) OVER (
+                        PARTITION BY p.product_id
+                        ORDER BY t.timestamp
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                    ) as price_group
+                FROM (
+                    SELECT DISTINCT pu_t."timestamp"
+                    FROM price_update_{{ g.suffix }} pu_t
+                    WHERE TRUE
+                        AND (p_after IS NULL OR pu_t."timestamp" > p_after)
+                        AND (p_before IS NULL OR pu_t."timestamp" <= p_before)
+                ) t
+                CROSS JOIN (
+                    SELECT DISTINCT pu_p.product_id
+                    FROM price_update_{{ g.suffix }} pu_p
+                    WHERE p_product_id IS NULL OR pu_p.product_id = p_product_id
+                ) p
+                LEFT JOIN price_update_{{ g.suffix }} pu
+                    ON p.product_id = pu.product_id
+                    AND t.timestamp = pu.timestamp
+            )
+            SELECT
+                all_prices.product_id,
+                all_prices.timestamp,
+                FIRST_VALUE(all_prices.price) OVER (
+                    PARTITION BY all_prices.product_id, all_prices.price_group
+                    ORDER BY all_prices.timestamp
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                ) as price,
+                FIRST_VALUE(all_prices.source_timestamp) OVER (
+                    PARTITION BY all_prices.product_id, all_prices.price_group
+                    ORDER BY all_prices.timestamp
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                ) as price_timestamp
+            FROM all_prices;
+        END;
+        $$;
 
     -- seed_pt_{{ g.suffix }}: Returns the most recent cached timeline timestamp for each product
     --
@@ -71,9 +137,9 @@
                         ON pu.product_id = seed_pt.product_id
                 WHERE
                     (seed_pt."timestamp" IS NULL OR pu."timestamp" > seed_pt."timestamp")
-                    {% if filter_product %}AND pu.product_id  = p_product_id{% endif %}
-                    {% if filter_after %}  AND pu."timestamp" > p_after     {% endif %}
-                    {% if filter_before %} AND pu."timestamp" <= p_before   {% endif %}
+                    {% if filter_product %}AND pu.product_id  =  p_product_id{% endif %}
+                    {% if filter_after %}  AND pu."timestamp" >  p_after     {% endif %}
+                    {% if filter_before %} AND pu."timestamp" <= p_before    {% endif %}
             {% endmacro %}
             {% for fp, fa, fb in itertools.product([False, True], repeat=3) %}
                 {% if loop.first %}IF{% else %}ELSIF{% endif %}
@@ -99,19 +165,21 @@
     --   - p_after: Only return timestamps after this point (NULL = no lower bound)
     --   - p_before: Only return timestamps before or at this point (NULL = no upper bound)
     CREATE OR REPLACE FUNCTION user_product_timeline_{{ g.suffix }}(
-        p_user_id    UUID,
-        p_product_id UUID,
-        p_after      TIMESTAMPTZ DEFAULT NULL,
-        p_before     TIMESTAMPTZ DEFAULT NULL
-    )
+            p_user_id    UUID,
+            p_product_id UUID,
+            p_after      TIMESTAMPTZ DEFAULT NULL,
+            p_before     TIMESTAMPTZ DEFAULT NULL
+        )
         RETURNS TABLE(
-            user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, cashflow_timestamp TIMESTAMPTZ
+            user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ,
+            cashflow_timestamp TIMESTAMPTZ, price_timestamp TIMESTAMPTZ
         )
         LANGUAGE plpgsql STABLE AS $$
         BEGIN
             {% macro query(filter_user, filter_product, filter_after, filter_before) %}
                 RETURN QUERY
-                SELECT uptc.user_id, uptc.product_id, uptc."timestamp", uptc.cashflow_timestamp
+                SELECT uptc.user_id, uptc.product_id, uptc."timestamp",
+                       uptc.cashflow_timestamp, uptc.price_timestamp
                 FROM user_product_timeline_cache_{{ g.suffix }} uptc
                 WHERE
                     TRUE
@@ -122,23 +190,43 @@
 
                 UNION ALL
 
+                -- DENSIFIED fresh data: Creates rows for user's products × all fresh timestamps
+                -- Uses dense_price_update to handle price gaps via forward-filling
                 SELECT
-                    latest_ccf.user_id, fresh_pu.product_id, fresh_pu."timestamp",
-                    latest_ccf."timestamp" AS cashflow_timestamp
-                FROM fresh_pu_{{ g.suffix }}(
-                    p_product_id,
-                    p_after,
-                    p_before
-                ) fresh_pu
-                    INNER JOIN LATERAL (
-                        SELECT DISTINCT ON (ccf.user_id) ccf.user_id, ccf."timestamp"
-                        FROM cumulative_cashflow(p_user_id, p_product_id, p_after, p_before) ccf
-                        WHERE
-                            ccf.product_id   = fresh_pu.product_id AND
-                            ccf."timestamp" <= fresh_pu."timestamp"
-                        ORDER BY ccf.user_id, ccf."timestamp" DESC
-                    ) latest_ccf ON true
-                {% if filter_after %}WHERE fresh_pu."timestamp" > p_after{% endif %}
+                    user_products.user_id,
+                    user_products.product_id,
+                    fresh_timestamps."timestamp",
+                    latest_ccf."timestamp" AS cashflow_timestamp,
+                    dense_pu.price_timestamp
+                FROM (
+                    -- All fresh timestamps (where any product has a price update)
+                    SELECT DISTINCT pu."timestamp"
+                    FROM price_update_{{ g.suffix }} pu
+                        LEFT OUTER JOIN seed_pt_{{ g.suffix }}(NULL) seed_pt
+                            ON pu.product_id = seed_pt.product_id
+                    WHERE
+                        (seed_pt."timestamp" IS NULL OR pu."timestamp" > seed_pt."timestamp")
+                        {% if filter_after %}  AND pu."timestamp" >  p_after   {% endif %}
+                        {% if filter_before %} AND pu."timestamp" <= p_before  {% endif %}
+                ) fresh_timestamps
+                CROSS JOIN (
+                    -- User's products (filtered by p_user_id and p_product_id if provided)
+                    SELECT DISTINCT ccf.user_id, ccf.product_id
+                    FROM cumulative_cashflow(p_user_id, p_product_id) ccf
+                ) user_products
+                CROSS JOIN LATERAL (
+                    -- Latest cashflow for this user-product at or before this timestamp
+                    SELECT ccf."timestamp"
+                    FROM cumulative_cashflow(user_products.user_id, user_products.product_id) ccf
+                    WHERE ccf."timestamp" <= fresh_timestamps."timestamp"
+                    ORDER BY ccf."timestamp" DESC
+                    LIMIT 1
+                ) latest_ccf
+                -- Join with dense prices to get the actual price timestamp
+                -- Dense prices fill gaps, so every (product, timestamp) combo will match
+                INNER JOIN dense_price_update_{{ g.suffix }}(p_product_id, p_after, p_before) dense_pu
+                    ON dense_pu.product_id = user_products.product_id
+                    AND dense_pu."timestamp" = fresh_timestamps."timestamp"
             {% endmacro %}
             {% for fu, fp, fa, fb in itertools.product([False, True], repeat=4) %}
                 {% if loop.first %}IF{% else %}ELSIF{% endif %}
@@ -158,32 +246,15 @@
     -- Purpose: Helper function for retention policy - keeps at least one row per user-product
     -- Returns: Latest timestamp for each (user, product) from the cache
     -- Performance: DISTINCT ON with DESC index
-    -- Parameters:
-    --   - p_user_id: Filter by user (NULL = all users)
-    --   - p_product_id: Filter by product (NULL = all products)
-    CREATE OR REPLACE FUNCTION latest_up_{{ g.suffix }}(p_user_id UUID, p_product_id UUID)
+    CREATE OR REPLACE FUNCTION latest_up_{{ g.suffix }}()
         RETURNS TABLE(user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ)
         LANGUAGE plpgsql STABLE AS $$
         BEGIN
-            {% macro query(filter_user, filter_product) %}
-                RETURN QUERY
-                SELECT DISTINCT ON (uptc.user_id, uptc.product_id)
-                    uptc.user_id, uptc.product_id, uptc."timestamp"
-                FROM user_product_timeline_cache_{{ g.suffix }} uptc
-                WHERE
-                    TRUE
-                    {% if filter_user %}   AND uptc.user_id    = p_user_id   {% endif %}
-                    {% if filter_product %}AND uptc.product_id = p_product_id{% endif %}
-                ORDER BY uptc.user_id, uptc.product_id, uptc."timestamp" DESC
-            {% endmacro %}
-            {% for fu, fp in itertools.product([False, True], repeat=2) %}
-                {% if loop.first %}IF{% else %}ELSIF{% endif %}
-                    p_user_id    IS {% if fu %}NOT{% endif %} NULL AND
-                    p_product_id IS {% if fp %}NOT{% endif %} NULL
-                THEN
-                    {{ query(filter_user=fu, filter_product=fp) }};
-            {% endfor %}
-            END IF;
+            RETURN QUERY
+            SELECT DISTINCT ON (uptc.user_id, uptc.product_id)
+                uptc.user_id, uptc.product_id, uptc."timestamp"
+            FROM user_product_timeline_cache_{{ g.suffix }} uptc
+            ORDER BY uptc.user_id, uptc.product_id, uptc."timestamp" DESC;
         END;
         $$;
 
@@ -197,41 +268,49 @@
         RETURNS void
         LANGUAGE plpgsql VOLATILE AS $$
         DECLARE
-            v_watermark TIMESTAMPTZ;
-            v_inserted_count INT;
+            v_watermark     TIMESTAMPTZ;
+            v_max_timestamp TIMESTAMPTZ;
         BEGIN
+            -- Get the maximum timestamp from source data
+            SELECT MAX("timestamp") INTO v_max_timestamp
+            FROM price_update_{{ g.suffix }};
+
+            -- Exit if no price updates exist
+            IF v_max_timestamp IS NULL THEN
+                RETURN;
+            END IF;
+
+            -- Get current watermark
+            SELECT MAX("timestamp") INTO v_watermark
+            FROM user_product_timeline_cache_{{ g.suffix }};
+
+            -- If no watermark, initialize from oldest price update - 1ms
+            IF v_watermark IS NULL THEN
+                SELECT MIN("timestamp") - INTERVAL '1 millisecond' INTO v_watermark
+                FROM price_update_{{ g.suffix }};
+            END IF;
+
             LOOP
-                -- Get current watermark
-                SELECT MAX("timestamp") INTO v_watermark
-                FROM user_product_timeline_cache_{{ g.suffix }};
+                -- Exit if watermark has reached the end
+                EXIT WHEN v_watermark >= v_max_timestamp;
 
-                -- If no watermark, initialize from oldest price update - 1ms
-                IF v_watermark IS NULL THEN
-                    SELECT MIN("timestamp") - INTERVAL '1 millisecond' INTO v_watermark
-                    FROM price_update_{{ g.suffix }};
-
-                    -- Exit if no price updates exist
-                    EXIT WHEN v_watermark IS NULL;
-                END IF;
-
-                -- Insert one day's worth of data
-                WITH inserted AS (
-                    INSERT INTO user_product_timeline_cache_{{ g.suffix }} (
-                        user_id, product_id, "timestamp", cashflow_timestamp
-                    )
-                    SELECT user_id, product_id, "timestamp", cashflow_timestamp
-                    FROM user_product_timeline_{{ g.suffix }}(
-                        NULL,
-                        NULL,
-                        v_watermark,
-                        v_watermark + INTERVAL '1 day'
-                    )
-                    RETURNING 1
+                -- Insert one day's worth of data (or up to max_timestamp if less than a day remains)
+                INSERT INTO user_product_timeline_cache_{{ g.suffix }} (
+                    user_id, product_id, "timestamp", cashflow_timestamp, price_timestamp
                 )
-                SELECT COUNT(*) INTO v_inserted_count FROM inserted;
+                SELECT user_id, product_id, "timestamp", cashflow_timestamp, price_timestamp
+                FROM user_product_timeline_{{ g.suffix }}(
+                    NULL,
+                    NULL,
+                    v_watermark,
+                    LEAST(v_watermark + INTERVAL '1 day', v_max_timestamp)
+                );
 
-                -- Exit if no rows were inserted
-                EXIT WHEN v_inserted_count = 0;
+                -- Advance watermark by the range we just tried (not by what was inserted)
+                v_watermark := LEAST(v_watermark + INTERVAL '1 day', v_max_timestamp);
+
+                -- Update statistics after each chunk to help query planner (autovacuum handles bloat)
+                ANALYZE user_product_timeline_cache_{{ g.suffix }};
             END LOOP;
 
             {% if g.cache_retention %}
@@ -243,7 +322,7 @@
                     upt."timestamp" < NOW() - INTERVAL '{{ g.cache_retention }}' AND
                     NOT EXISTS (
                         SELECT 1
-                        FROM latest_up_{{ g.suffix }}(NULL, NULL) latest_up
+                        FROM latest_up_{{ g.suffix }}() latest_up
                         WHERE
                             latest_up.user_id     = upt.user_id AND
                             latest_up.product_id  = upt.product_id AND

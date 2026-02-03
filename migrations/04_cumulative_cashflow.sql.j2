@@ -14,19 +14,17 @@ CREATE TABLE IF NOT EXISTS cumulative_cashflow_cache (
 
     -- Monotonic totals - cash flows (always increasing)
     deposits      NUMERIC(20, 6),  -- Σ(user_money) for buys (what left bank)
-    withdrawals   NUMERIC(20, 6),  -- Σ(|user_money|) for sells (what entered bank)
+    withdrawals   NUMERIC(20, 6)   -- Σ(|user_money|) for sells (what entered bank)
 
     -- We can derive:
     --   - units          = buy_units - sell_units
     --   - net_investment = deposits  - withdrawals
     --   - fees           = deposits  - buy_cost + withdrawals - sell_proceeds
-
-    CONSTRAINT unique_cashflow UNIQUE (user_id, product_id, "timestamp")
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_cumulative_cashflow_cache_user_product
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cumulative_cashflow_cache_user_product_ts
     ON cumulative_cashflow_cache(user_id, product_id, "timestamp" DESC);
-CREATE INDEX IF NOT EXISTS idx_cumulative_cashflow_cache_user
+CREATE INDEX IF NOT EXISTS idx_cumulative_cashflow_cache_user_ts
     ON cumulative_cashflow_cache(user_id, "timestamp" DESC);
 CREATE INDEX IF NOT EXISTS idx_cumulative_cashflow_cache_product
     ON cumulative_cashflow_cache(product_id, "timestamp" DESC);
@@ -217,45 +215,53 @@ CREATE OR REPLACE FUNCTION cumulative_cashflow(
 --
 -- Purpose: Materialization job to move computed cashflows into cache
 -- Side effects: Inserts new rows into cumulative_cashflow_cache
--- Performance: Processes data in 1-day chunks to limit memory usage
+-- Performance: Processes data in 1-day chunks to limit memory usage with ANALYZE after each
 -- Usage: Call periodically (e.g., every 5 minutes) to keep cache up-to-date
 CREATE OR REPLACE FUNCTION refresh_cumulative_cashflow()
     RETURNS void
     LANGUAGE plpgsql VOLATILE AS $$
     DECLARE
         v_watermark TIMESTAMPTZ;
-        v_inserted_count INT;
+        v_max_timestamp TIMESTAMPTZ;
     BEGIN
+        -- Get the maximum timestamp from source data
+        SELECT MAX("timestamp") INTO v_max_timestamp
+        FROM cashflow;
+
+        -- Exit if no cashflows exist
+        IF v_max_timestamp IS NULL THEN
+            RETURN;
+        END IF;
+
+        -- Get current watermark
+        SELECT MAX("timestamp") INTO v_watermark
+        FROM cumulative_cashflow_cache;
+
+        -- If no watermark, initialize from oldest cashflow - 1ms
+        IF v_watermark IS NULL THEN
+            SELECT MIN("timestamp") - INTERVAL '1 millisecond' INTO v_watermark
+            FROM cashflow;
+        END IF;
+
         LOOP
-            -- Get current watermark
-            SELECT MAX("timestamp") INTO v_watermark
-            FROM cumulative_cashflow_cache;
+            -- Exit if watermark has reached the end
+            EXIT WHEN v_watermark >= v_max_timestamp;
 
-            -- If no watermark, initialize from oldest cashflow - 1ms
-            IF v_watermark IS NULL THEN
-                SELECT MIN("timestamp") - INTERVAL '1 millisecond' INTO v_watermark
-                FROM cashflow;
-
-                -- Exit if no cashflows exist
-                EXIT WHEN v_watermark IS NULL;
-            END IF;
-
-            -- Insert one day's worth of data
-            WITH inserted AS (
-                INSERT INTO cumulative_cashflow_cache (
-                    user_id, product_id, "timestamp", buy_units, sell_units, buy_cost, sell_proceeds,
-                    deposits, withdrawals
-                )
-                SELECT
-                    ccf.user_id, ccf.product_id, ccf."timestamp", ccf.buy_units, ccf.sell_units,
-                    ccf.buy_cost, ccf.sell_proceeds, ccf.deposits, ccf.withdrawals
-                FROM cumulative_cashflow(NULL, NULL, v_watermark, v_watermark + INTERVAL '1 day') ccf
-                RETURNING 1
+            -- Insert one day's worth of data (or up to max_timestamp if less than a day remains)
+            INSERT INTO cumulative_cashflow_cache (
+                user_id, product_id, "timestamp", buy_units, sell_units, buy_cost, sell_proceeds,
+                deposits, withdrawals
             )
-            SELECT COUNT(*) INTO v_inserted_count FROM inserted;
+            SELECT
+                ccf.user_id, ccf.product_id, ccf."timestamp", ccf.buy_units, ccf.sell_units,
+                ccf.buy_cost, ccf.sell_proceeds, ccf.deposits, ccf.withdrawals
+            FROM cumulative_cashflow(NULL, NULL, v_watermark, LEAST(v_watermark + INTERVAL '1 day', v_max_timestamp)) ccf;
 
-            -- Exit if no rows were inserted
-            EXIT WHEN v_inserted_count = 0;
+            -- Advance watermark by the range we just tried (not by what was inserted)
+            v_watermark := LEAST(v_watermark + INTERVAL '1 day', v_max_timestamp);
+
+            -- Update statistics after each chunk to help query planner (autovacuum handles bloat)
+            ANALYZE cumulative_cashflow_cache;
         END LOOP;
     END;
     $$;

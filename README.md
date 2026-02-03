@@ -403,3 +403,4 @@ _Note: Actual results will vary based on hardware, data size, and PostgreSQL con
 - [ ] Rewrite generator
 - [ ] Rewrite benchmark (fewer logs)
 - [ ] Rewrite tests
+- [ ] rename `user_product` to `investment` everywhere

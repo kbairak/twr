@@ -1,30 +1,19 @@
 {% for g in GRANULARITIES %}
 
-    CREATE OR REPLACE FUNCTION user_timestamps_{{ g.suffix }}(
-        p_user_id UUID,
-        p_now TIMESTAMPTZ DEFAULT NOW()
-    )
-        RETURNS TABLE(user_id UUID, "timestamp" TIMESTAMPTZ)
-        LANGUAGE plpgsql STABLE AS $$
-        BEGIN
-            RETURN QUERY
-            SELECT DISTINCT upt.user_id, upt."timestamp"
-            FROM user_product_timeline_{{ g.suffix }}(
-            p_user_id,
-            NULL,
-            {% if g.cache_retention %}
-                p_now - '{{ g.cache_retention }}'::interval
-            {% else %}
-                NULL
-            {% endif %}
-            ) upt;
-        END;
-        $$;
-
+    -- user_timeline_business_{{ g.suffix }}: Returns aggregated user timeline with business metrics
+    --
+    -- Purpose: Main query interface for user timeline at {{ g.suffix }} granularity
+    -- Returns: Aggregated portfolio metrics across all products for each (user, timestamp)
+    -- Performance: Simple GROUP BY aggregation over user_product_timeline_business
+    -- Parameters:
+    --   - p_user_id: Filter by user (NULL = all users)
+    --   - p_after: Only return timestamps after this point (default = retention start if configured)
+    --   - p_before: Only return timestamps before or at this point (NULL = no upper bound)
     CREATE OR REPLACE FUNCTION user_timeline_business_{{ g.suffix }}(
-        p_user_id UUID,
-        p_now TIMESTAMPTZ DEFAULT NOW()
-    )
+            p_user_id UUID,
+            p_after TIMESTAMPTZ DEFAULT {% if g.cache_retention %}NOW() - '{{ g.cache_retention }}'::interval{% else %}NULL{% endif %},
+            p_before TIMESTAMPTZ DEFAULT NULL
+        )
         RETURNS TABLE(
             user_id UUID, "timestamp" TIMESTAMPTZ, deposits NUMERIC(20, 6),
             withdrawals NUMERIC(20, 6), buy_cost NUMERIC(20, 6), sell_proceeds NUMERIC(20, 6),
@@ -34,32 +23,36 @@
         )
         LANGUAGE plpgsql STABLE AS $$
         BEGIN
-            RETURN QUERY
-            SELECT
-                ut.user_id, ut."timestamp",
-                SUM(uptb.deposits) AS deposits,
-                SUM(uptb.withdrawals) AS withdrawals,
-                SUM(uptb.buy_cost) AS buy_cost,
-                SUM(uptb.sell_proceeds) AS sell_proceeds,
-                SUM(uptb.buy_units) AS buy_units,
-                SUM(uptb.sell_units) AS sell_units,
-                SUM(uptb.net_investment) AS net_investment,
-                SUM(uptb.fees) AS fees,
-                SUM(uptb.buy_cost) / NULLIF(SUM(uptb.buy_units), 0) AS avg_buy_cost,
-                SUM(uptb.market_value) AS market_value,
-                SUM(uptb.cost_basis) AS cost_basis,
-                SUM(uptb.unrealized_returns) AS unrealized_returns
-            FROM user_timestamps_{{ g.suffix }}(p_user_id, p_now) ut
-                INNER JOIN LATERAL (
-                    SELECT DISTINCT ON (uptb.user_id, uptb.product_id)
-                        uptb.deposits, uptb.withdrawals, uptb.buy_cost, uptb.sell_proceeds,
-                        uptb.buy_units, uptb.sell_units, uptb.net_investment, uptb.fees,
-                        uptb.market_value, uptb.cost_basis, uptb.unrealized_returns
-                    FROM user_product_timeline_business_{{ g.suffix }}(p_user_id, NULL, p_now) uptb
-                    WHERE uptb.user_id = ut.user_id AND uptb."timestamp" <= ut."timestamp"
-                    ORDER BY uptb.user_id, uptb.product_id, uptb."timestamp" DESC
-                ) uptb ON true
-            GROUP BY ut.user_id, ut."timestamp";
+            {% macro query(filter_user, filter_after, filter_before) %}
+                RETURN QUERY
+                SELECT
+                    uptb.user_id, uptb."timestamp",
+                    SUM(uptb.deposits) AS deposits,
+                    SUM(uptb.withdrawals) AS withdrawals,
+                    SUM(uptb.buy_cost) AS buy_cost,
+                    SUM(uptb.sell_proceeds) AS sell_proceeds,
+                    SUM(uptb.buy_units) AS buy_units,
+                    SUM(uptb.sell_units) AS sell_units,
+                    SUM(uptb.net_investment) AS net_investment,
+                    SUM(uptb.fees) AS fees,
+                    SUM(uptb.buy_cost) / NULLIF(SUM(uptb.buy_units), 0) AS avg_buy_cost,
+                    SUM(uptb.market_value) AS market_value,
+                    SUM(uptb.cost_basis) AS cost_basis,
+                    SUM(uptb.unrealized_returns) AS unrealized_returns
+                FROM user_product_timeline_business_{{ g.suffix }}(
+                    p_user_id, NULL, p_after, p_before
+                ) uptb
+                GROUP BY uptb.user_id, uptb."timestamp"
+            {% endmacro %}
+            {% for fu, fa, fb in itertools.product([False, True], repeat=3) %}
+                {% if loop.first %}IF{% else %}ELSIF{% endif %}
+                    p_user_id IS {% if fu %}NOT{% endif %} NULL AND
+                    p_after   IS {% if fa %}NOT{% endif %} NULL AND
+                    p_before  IS {% if fb %}NOT{% endif %} NULL
+                THEN
+                    {{ query(filter_user=fu, filter_after=fa, filter_before=fb) }};
+            {% endfor %}
+            END IF;
         END;
         $$;
 

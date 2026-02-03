@@ -372,6 +372,7 @@ class Benchmark:
                 # Refresh user_product_timeline cache
                 cur.execute(f"SELECT refresh_user_product_timeline_{granularity}()")
                 cur.execute(f"VACUUM ANALYZE user_product_timeline_cache_{granularity}")
+
                 cache_refresh_time = time.time() - start
 
                 results[f"cache_refresh_{granularity}"] = cache_refresh_time

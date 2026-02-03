@@ -1,3 +1,4 @@
 - run the tests after each change to the code, command is `uv run pytest`. only run the tests when the code that the tests actually cover is changed
 - you can connect to the database with `PGPASSWORD=twr_password psql --host 127.0.0.1 twr twr_user`
 - uv run pytest can fail because of tetcontainers/macos issue. If this happens, simply rerun the tests
+- prefer `uv run src/twr/reset.py` to `uv run src/twr/migrate.py` or `uv run python -m twr.migrate`

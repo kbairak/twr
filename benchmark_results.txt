@@ -1,189 +1,671 @@
+
+
 === Calculated Parameters ===
 Trading days: 1.00
-Total events: 108,333
+Total events: 14,444
+Price update frequency: 0:15:00
+Number of users: 1000
+Number of products: 500
+End date: 2026-02-03
+
+
+=== TWR Database Benchmark ===
+Events: 14,444
+Users: 1,000
+Products: 500
+Query samples: 100
+Granularities: 15min, 1h, 1d
+
+Clearing existing data...
+  → Data cleared
+
+[1/6] Generating and inserting events...
+
+=== Event Generation Plan ===
+Total events: 14,444
+Price events: 12,999 (90%)
+  - Ticks: 26
+  - Products per tick: 500
+Cash flow events: 1,444 (10%)
+Price update interval: 0:15:00
+End date: 2026-02-03
+
+Generating 26 price ticks...
+
+Time range: 2026-02-03 to 2026-02-03
+Calendar days: 1
+Time span: 6:15:00.100000
+
+Generating 1,444 cash flows...
+
+Inserting 13,000 price events...
+
+Inserting 1,444 cashflow events...
+  → Inserted 14,444 events in 0.43s
+
+[2/6] Refreshing continuous aggregates...
+  Refreshing 15min buckets...
+  Refreshing 1h buckets...
+  Refreshing 1d buckets...
+  → Refreshed in 0.33s
+
 [3/6] Querying with 0% cache (baseline, 5s per granularity)...
-  → 15min: user_product=0.7ms, user=18.4ms
-  → 1h: user_product=0.5ms, user=6.1ms
-  → 1d: user_product=0.4ms, user=1.3ms
+  → 15min: user_product=5.4ms, user=24.2ms
+  → 1h: user_product=2.5ms, user=6.7ms
+  → 1d: user_product=0.8ms, user=1.2ms
 
 [4/6] Refreshing caches...
-  → Cumulative cashflow: 0.27s
-  → 15min: 3.21s
-  → 1h: 0.89s
-  → 1d: 0.01s
-
-[5/6] Querying with 100% cache (5s per granularity)...
-  → 15min: user_product=0.5ms, user=5.2ms
-  → 1h: user_product=0.4ms, user=2.7ms
-  → 1d: user_product=0.4ms, user=1.2ms
-
-[6/6] Progressive cache deletion and querying...
-  → Deleting cache >= 75th percentile...
-  → Querying with 75% cache (5s per granularity)...
-     15min: user_product=0.6ms, user=7.0ms
-     1h: user_product=0.5ms, user=3.9ms
-     1d: user_product=0.4ms, user=1.3ms
-
-  → Deleting cache >= 50th percentile...
-  → Querying with 50% cache (5s per granularity)...
-     15min: user_product=0.7ms, user=11.3ms
-     1h: user_product=0.5ms, user=4.4ms
-     1d: user_product=0.4ms, user=1.3ms
-
-  → Deleting cache >= 25th percentile...
-  → Querying with 25% cache (5s per granularity)...
-     15min: user_product=0.7ms, user=15.6ms
-     1h: user_product=0.5ms, user=5.4ms
-     1d: user_product=0.4ms, user=1.3ms
-
-=== Calculated Parameters ===
-Trading days: 15.00
-Total events: 1,625,000
-[3/6] Querying with 0% cache (baseline, 5s per granularity)...
-  → 15min: user_product=1.9ms, user=316.1ms
-  → 1h: user_product=1.7ms, user=493.0ms
-  → 1d: user_product=0.6ms, user=63.4ms
-
-[4/6] Refreshing caches...
-  → Cumulative cashflow: 2.95s
-  → 15min: 11.81s
-  → 1h: 3.62s
+  → Cumulative cashflow: 0.04s
+  → 15min: 1.20s
+  → 1h: 0.75s
   → 1d: 0.12s
 
 [5/6] Querying with 100% cache (5s per granularity)...
-  → 15min: user_product=1.8ms, user=278.3ms
-  → 1h: user_product=1.5ms, user=360.5ms
-  → 1d: user_product=0.6ms, user=61.9ms
+  → 15min: user_product=5.4ms, user=20.5ms
+  → 1h: user_product=2.4ms, user=8.4ms
+  → 1d: user_product=1.0ms, user=1.9ms
 
 [6/6] Progressive cache deletion and querying...
   → Deleting cache >= 75th percentile...
   → Querying with 75% cache (5s per granularity)...
-     15min: user_product=1.9ms, user=295.8ms
-     1h: user_product=1.5ms, user=368.9ms
-     1d: user_product=0.6ms, user=60.4ms
+     15min: user_product=8.1ms, user=23.2ms
+     1h: user_product=2.5ms, user=7.3ms
+     1d: user_product=0.7ms, user=1.5ms
 
   → Deleting cache >= 50th percentile...
   → Querying with 50% cache (5s per granularity)...
-     15min: user_product=1.9ms, user=308.4ms
-     1h: user_product=1.6ms, user=394.0ms
-     1d: user_product=0.6ms, user=62.8ms
+     15min: user_product=5.7ms, user=24.2ms
+     1h: user_product=2.9ms, user=8.9ms
+     1d: user_product=0.9ms, user=1.6ms
 
   → Deleting cache >= 25th percentile...
   → Querying with 25% cache (5s per granularity)...
-     15min: user_product=2.0ms, user=313.3ms
-     1h: user_product=1.6ms, user=382.6ms
-     1d: user_product=0.6ms, user=61.6ms
+     15min: user_product=7.0ms, user=22.9ms
+     1h: user_product=2.9ms, user=8.0ms
+     1d: user_product=0.7ms, user=1.6ms
+
+=== Query Performance Summary ===
+Continuous aggregate refresh: 0.33s
+
+Cache refresh times:
+  Cumulative cashflow: 0.04s
+  15min: 1.20s
+  1h: 0.75s
+  1d: 0.12s
+
+Queries with 100% cache:
+  user-product-timeline-15min: 5ms
+  user-timeline-15min:         20ms
+  user-product-timeline-1h: 2ms
+  user-timeline-1h:         8ms
+  user-product-timeline-1d: 1ms
+  user-timeline-1d:         2ms
+
+Queries with 75% cache:
+  user-product-timeline-15min: 8ms
+  user-timeline-15min:         23ms
+  user-product-timeline-1h: 3ms
+  user-timeline-1h:         7ms
+  user-product-timeline-1d: 1ms
+  user-timeline-1d:         2ms
+
+Queries with 50% cache:
+  user-product-timeline-15min: 6ms
+  user-timeline-15min:         24ms
+  user-product-timeline-1h: 3ms
+  user-timeline-1h:         9ms
+  user-product-timeline-1d: 1ms
+  user-timeline-1d:         2ms
+
+Queries with 25% cache:
+  user-product-timeline-15min: 7ms
+  user-timeline-15min:         23ms
+  user-product-timeline-1h: 3ms
+  user-timeline-1h:         8ms
+  user-product-timeline-1d: 1ms
+  user-timeline-1d:         2ms
+
+Queries with 0% cache:
+  user-product-timeline-15min: 5ms
+  user-timeline-15min:         24ms
+  user-product-timeline-1h: 3ms
+  user-timeline-1h:         7ms
+  user-product-timeline-1d: 1ms
+  user-timeline-1d:         1ms
+
+
+=== Calculated Parameters ===
+Trading days: 15.00
+Total events: 216,666
+Price update frequency: 0:15:00
+Number of users: 1000
+Number of products: 500
+End date: 2026-02-03
+
+
+=== TWR Database Benchmark ===
+Events: 216,666
+Users: 1,000
+Products: 500
+Query samples: 100
+Granularities: 15min, 1h, 1d
+
+Clearing existing data...
+  → Data cleared
+
+[1/6] Generating and inserting events...
+
+=== Event Generation Plan ===
+Total events: 216,666
+Price events: 194,999 (90%)
+  - Ticks: 390
+  - Products per tick: 500
+Cash flow events: 21,666 (10%)
+Price update interval: 0:15:00
+End date: 2026-02-03
+
+Generating 390 price ticks...
+
+Time range: 2026-01-14 to 2026-02-03
+Calendar days: 21
+Time span: 20 days, 2:00:00.100000
+
+Generating 21,666 cash flows...
+
+Inserting 195,000 price events...
+
+Inserting 21,666 cashflow events...
+  → Inserted 216,666 events in 3.67s
+
+[2/6] Refreshing continuous aggregates...
+  Refreshing 15min buckets...
+  Refreshing 1h buckets...
+  Refreshing 1d buckets...
+  → Refreshed in 3.50s
+
+[3/6] Querying with 0% cache (baseline, 5s per granularity)...
+  → 15min: user_product=48.8ms, user=238.9ms
+  → 1h: user_product=33.2ms, user=165.6ms
+  → 1d: user_product=5.2ms, user=21.5ms
+
+[4/6] Refreshing caches...
+  → Cumulative cashflow: 1.01s
+  → 15min: 1m 32.7s
+  → 1h: 31.01s
+  → 1d: 4.73s
+
+[5/6] Querying with 100% cache (5s per granularity)...
+  → 15min: user_product=34.8ms, user=198.2ms
+  → 1h: user_product=23.2ms, user=111.2ms
+  → 1d: user_product=3.8ms, user=14.1ms
+
+[6/6] Progressive cache deletion and querying...
+  → Deleting cache >= 75th percentile...
+  → Querying with 75% cache (5s per granularity)...
+     15min: user_product=44.1ms, user=241.0ms
+     1h: user_product=25.4ms, user=125.2ms
+     1d: user_product=3.7ms, user=14.1ms
+
+  → Deleting cache >= 50th percentile...
+  → Querying with 50% cache (5s per granularity)...
+     15min: user_product=41.1ms, user=224.6ms
+     1h: user_product=30.9ms, user=132.7ms
+     1d: user_product=4.6ms, user=17.4ms
+
+  → Deleting cache >= 25th percentile...
+  → Querying with 25% cache (5s per granularity)...
+     15min: user_product=41.1ms, user=229.9ms
+     1h: user_product=31.9ms, user=139.4ms
+     1d: user_product=4.5ms, user=17.9ms
+
+=== Query Performance Summary ===
+Continuous aggregate refresh: 3.50s
+
+Cache refresh times:
+  Cumulative cashflow: 1.01s
+  15min: 1m 32.7s
+  1h: 31.01s
+  1d: 4.73s
+
+Queries with 100% cache:
+  user-product-timeline-15min: 35ms
+  user-timeline-15min:         198ms
+  user-product-timeline-1h: 23ms
+  user-timeline-1h:         111ms
+  user-product-timeline-1d: 4ms
+  user-timeline-1d:         14ms
+
+Queries with 75% cache:
+  user-product-timeline-15min: 44ms
+  user-timeline-15min:         241ms
+  user-product-timeline-1h: 25ms
+  user-timeline-1h:         125ms
+  user-product-timeline-1d: 4ms
+  user-timeline-1d:         14ms
+
+Queries with 50% cache:
+  user-product-timeline-15min: 41ms
+  user-timeline-15min:         225ms
+  user-product-timeline-1h: 31ms
+  user-timeline-1h:         133ms
+  user-product-timeline-1d: 5ms
+  user-timeline-1d:         17ms
+
+Queries with 25% cache:
+  user-product-timeline-15min: 41ms
+  user-timeline-15min:         230ms
+  user-product-timeline-1h: 32ms
+  user-timeline-1h:         139ms
+  user-product-timeline-1d: 4ms
+  user-timeline-1d:         18ms
+
+Queries with 0% cache:
+  user-product-timeline-15min: 49ms
+  user-timeline-15min:         239ms
+  user-product-timeline-1h: 33ms
+  user-timeline-1h:         166ms
+  user-product-timeline-1d: 5ms
+  user-timeline-1d:         21ms
+
 
 === Calculated Parameters ===
 Trading days: 20.00
-Total events: 2,166,666
+Total events: 288,888
+Price update frequency: 0:15:00
+Number of users: 1000
+Number of products: 500
+End date: 2026-02-03
+
+
+=== TWR Database Benchmark ===
+Events: 288,888
+Users: 1,000
+Products: 500
+Query samples: 100
+Granularities: 15min, 1h, 1d
+
+Clearing existing data...
+  → Data cleared
+
+[1/6] Generating and inserting events...
+
+=== Event Generation Plan ===
+Total events: 288,888
+Price events: 259,999 (90%)
+  - Ticks: 520
+  - Products per tick: 500
+Cash flow events: 28,888 (10%)
+Price update interval: 0:15:00
+End date: 2026-02-03
+
+Generating 520 price ticks...
+
+Time range: 2026-01-07 to 2026-02-03
+Calendar days: 28
+Time span: 27 days, 0:30:00.100000
+
+Generating 28,888 cash flows...
+
+Inserting 260,000 price events...
+
+Inserting 28,888 cashflow events...
+  → Inserted 288,888 events in 4.41s
+
+[2/6] Refreshing continuous aggregates...
+  Refreshing 15min buckets...
+  Refreshing 1h buckets...
+  Refreshing 1d buckets...
+  → Refreshed in 2.21s
+
 [3/6] Querying with 0% cache (baseline, 5s per granularity)...
-  → 15min: user_product=1.5ms, user=328.4ms
-  → 1h: user_product=2.4ms, user=853.6ms
-  → 1d: user_product=0.7ms, user=110.9ms
+  → 15min: user_product=41.5ms, user=283.1ms
+  → 1h: user_product=40.6ms, user=183.0ms
+  → 1d: user_product=5.6ms, user=28.5ms
 
 [4/6] Refreshing caches...
-  → Cumulative cashflow: 4.00s
-  → 15min: 11.83s
-  → 1h: 3.94s
-  → 1d: 0.14s
+  → Cumulative cashflow: 1.55s
+  → 15min: 2m 12.9s
+  → 1h: 43.15s
+  → 1d: 8.25s
 
 [5/6] Querying with 100% cache (5s per granularity)...
-  → 15min: user_product=1.5ms, user=318.2ms
-  → 1h: user_product=2.1ms, user=790.2ms
-  → 1d: user_product=0.6ms, user=107.4ms
+  → 15min: user_product=55.0ms, user=247.3ms
+  → 1h: user_product=33.4ms, user=164.7ms
+  → 1d: user_product=4.7ms, user=19.8ms
 
 [6/6] Progressive cache deletion and querying...
   → Deleting cache >= 75th percentile...
   → Querying with 75% cache (5s per granularity)...
-     15min: user_product=1.7ms, user=309.1ms
-     1h: user_product=2.1ms, user=770.1ms
-     1d: user_product=0.7ms, user=110.1ms
+     15min: user_product=69.9ms, user=304.0ms
+     1h: user_product=32.0ms, user=150.4ms
+     1d: user_product=4.8ms, user=21.9ms
 
   → Deleting cache >= 50th percentile...
   → Querying with 50% cache (5s per granularity)...
-     15min: user_product=1.6ms, user=316.7ms
-     1h: user_product=2.1ms, user=754.8ms
-     1d: user_product=0.7ms, user=109.1ms
+     15min: user_product=59.8ms, user=279.3ms
+     1h: user_product=36.5ms, user=171.0ms
+     1d: user_product=5.6ms, user=23.2ms
 
   → Deleting cache >= 25th percentile...
   → Querying with 25% cache (5s per granularity)...
-     15min: user_product=1.6ms, user=337.1ms
-     1h: user_product=2.1ms, user=772.7ms
-     1d: user_product=0.7ms, user=108.2ms
+     15min: user_product=56.7ms, user=277.9ms
+     1h: user_product=44.1ms, user=189.6ms
+     1d: user_product=6.7ms, user=27.0ms
+
+=== Query Performance Summary ===
+Continuous aggregate refresh: 2.21s
+
+Cache refresh times:
+  Cumulative cashflow: 1.55s
+  15min: 2m 12.9s
+  1h: 43.15s
+  1d: 8.25s
+
+Queries with 100% cache:
+  user-product-timeline-15min: 55ms
+  user-timeline-15min:         247ms
+  user-product-timeline-1h: 33ms
+  user-timeline-1h:         165ms
+  user-product-timeline-1d: 5ms
+  user-timeline-1d:         20ms
+
+Queries with 75% cache:
+  user-product-timeline-15min: 70ms
+  user-timeline-15min:         304ms
+  user-product-timeline-1h: 32ms
+  user-timeline-1h:         150ms
+  user-product-timeline-1d: 5ms
+  user-timeline-1d:         22ms
+
+Queries with 50% cache:
+  user-product-timeline-15min: 60ms
+  user-timeline-15min:         279ms
+  user-product-timeline-1h: 37ms
+  user-timeline-1h:         171ms
+  user-product-timeline-1d: 6ms
+  user-timeline-1d:         23ms
+
+Queries with 25% cache:
+  user-product-timeline-15min: 57ms
+  user-timeline-15min:         278ms
+  user-product-timeline-1h: 44ms
+  user-timeline-1h:         190ms
+  user-product-timeline-1d: 7ms
+  user-timeline-1d:         27ms
+
+Queries with 0% cache:
+  user-product-timeline-15min: 41ms
+  user-timeline-15min:         283ms
+  user-product-timeline-1h: 41ms
+  user-timeline-1h:         183ms
+  user-product-timeline-1d: 6ms
+  user-timeline-1d:         29ms
+
 
 === Calculated Parameters ===
 Trading days: 30.00
-Total events: 3,250,000
+Total events: 433,333
+Price update frequency: 0:15:00
+Number of users: 1000
+Number of products: 500
+End date: 2026-02-03
+
+
+=== TWR Database Benchmark ===
+Events: 433,333
+Users: 1,000
+Products: 500
+Query samples: 100
+Granularities: 15min, 1h, 1d
+
+Clearing existing data...
+  → Data cleared
+
+[1/6] Generating and inserting events...
+
+=== Event Generation Plan ===
+Total events: 433,333
+Price events: 389,999 (90%)
+  - Ticks: 780
+  - Products per tick: 500
+Cash flow events: 43,333 (10%)
+Price update interval: 0:15:00
+End date: 2026-02-03
+
+Generating 780 price ticks...
+
+Time range: 2025-12-25 to 2026-02-03
+Calendar days: 41
+Time span: 40 days, 4:15:00.100000
+
+Generating 43,333 cash flows...
+
+Inserting 390,000 price events...
+
+Inserting 43,333 cashflow events...
+  → Inserted 433,333 events in 5.98s
+
+[2/6] Refreshing continuous aggregates...
+  Refreshing 15min buckets...
+  Refreshing 1h buckets...
+  Refreshing 1d buckets...
+  → Refreshed in 5.29s
+
 [3/6] Querying with 0% cache (baseline, 5s per granularity)...
-  → 15min: user_product=1.6ms, user=323.2ms
-  → 1h: user_product=2.4ms, user=1194.9ms
-  → 1d: user_product=0.9ms, user=239.5ms
+  → 15min: user_product=46.6ms, user=471.5ms
+  → 1h: user_product=58.5ms, user=310.9ms
+  → 1d: user_product=10.1ms, user=47.8ms
 
 [4/6] Refreshing caches...
-  → Cumulative cashflow: 7.62s
-  → 15min: 11.26s
-  → 1h: 3.74s
-  → 1d: 0.18s
+  → Cumulative cashflow: 2.79s
+  → 15min: 4m 32.4s
+  → 1h: 1m 20.1s
+  → 1d: 28.38s
 
 [5/6] Querying with 100% cache (5s per granularity)...
-  → 15min: user_product=1.5ms, user=128963.0ms
-  → 1h: user_product=2.2ms, user=1075.9ms
-  → 1d: user_product=0.6ms, user=232.8ms
+  → 15min: user_product=57.4ms, user=407.8ms
+  → 1h: user_product=39.1ms, user=206.6ms
+  → 1d: user_product=5.6ms, user=29.0ms
 
 [6/6] Progressive cache deletion and querying...
   → Deleting cache >= 75th percentile...
   → Querying with 75% cache (5s per granularity)...
-     15min: user_product=1.5ms, user=335.1ms
-     1h: user_product=2.2ms, user=1148.8ms
-     1d: user_product=147.1ms, user=245.3ms
+     15min: user_product=67.9ms, user=469.8ms
+     1h: user_product=46.2ms, user=231.5ms
+     1d: user_product=6.1ms, user=32.5ms
 
   → Deleting cache >= 50th percentile...
   → Querying with 50% cache (5s per granularity)...
-     15min: user_product=1.6ms, user=327.1ms
-     1h: user_product=2.4ms, user=1114.9ms
-     1d: user_product=0.7ms, user=237.5ms
+     15min: user_product=71.0ms, user=476.3ms
+     1h: user_product=51.9ms, user=267.6ms
+     1d: user_product=7.0ms, user=37.2ms
 
   → Deleting cache >= 25th percentile...
   → Querying with 25% cache (5s per granularity)...
-     15min: user_product=1.5ms, user=345.4ms
-     1h: user_product=2481.9ms, user=1217.9ms
-     1d: user_product=0.8ms, user=243.4ms
+     15min: user_product=69.1ms, user=470.8ms
+     1h: user_product=55.8ms, user=287.4ms
+     1d: user_product=8.6ms, user=44.7ms
+
+=== Query Performance Summary ===
+Continuous aggregate refresh: 5.29s
+
+Cache refresh times:
+  Cumulative cashflow: 2.79s
+  15min: 4m 32.4s
+  1h: 1m 20.1s
+  1d: 28.38s
+
+Queries with 100% cache:
+  user-product-timeline-15min: 57ms
+  user-timeline-15min:         408ms
+  user-product-timeline-1h: 39ms
+  user-timeline-1h:         207ms
+  user-product-timeline-1d: 6ms
+  user-timeline-1d:         29ms
+
+Queries with 75% cache:
+  user-product-timeline-15min: 68ms
+  user-timeline-15min:         470ms
+  user-product-timeline-1h: 46ms
+  user-timeline-1h:         232ms
+  user-product-timeline-1d: 6ms
+  user-timeline-1d:         33ms
+
+Queries with 50% cache:
+  user-product-timeline-15min: 71ms
+  user-timeline-15min:         476ms
+  user-product-timeline-1h: 52ms
+  user-timeline-1h:         268ms
+  user-product-timeline-1d: 7ms
+  user-timeline-1d:         37ms
+
+Queries with 25% cache:
+  user-product-timeline-15min: 69ms
+  user-timeline-15min:         471ms
+  user-product-timeline-1h: 56ms
+  user-timeline-1h:         287ms
+  user-product-timeline-1d: 9ms
+  user-timeline-1d:         45ms
+
+Queries with 0% cache:
+  user-product-timeline-15min: 47ms
+  user-timeline-15min:         472ms
+  user-product-timeline-1h: 59ms
+  user-timeline-1h:         311ms
+  user-product-timeline-1d: 10ms
+  user-timeline-1d:         48ms
+
 
 === Calculated Parameters ===
 Trading days: 40.00
-Total events: 4,333,333
+Total events: 577,777
+Price update frequency: 0:15:00
+Number of users: 1000
+Number of products: 500
+End date: 2026-02-03
+
+
+=== TWR Database Benchmark ===
+Events: 577,777
+Users: 1,000
+Products: 500
+Query samples: 100
+Granularities: 15min, 1h, 1d
+
+Clearing existing data...
+  → Data cleared
+
+[1/6] Generating and inserting events...
+
+=== Event Generation Plan ===
+Total events: 577,777
+Price events: 519,999 (90%)
+  - Ticks: 1,040
+  - Products per tick: 500
+Cash flow events: 57,777 (10%)
+Price update interval: 0:15:00
+End date: 2026-02-03
+
+Generating 1,040 price ticks...
+
+Time range: 2025-12-11 to 2026-02-03
+Calendar days: 55
+Time span: 54 days, 1:15:00.100000
+
+Generating 57,777 cash flows...
+
+Inserting 520,000 price events...
+
+Inserting 57,777 cashflow events...
+  → Inserted 577,777 events in 7.78s
+
+[2/6] Refreshing continuous aggregates...
+  Refreshing 15min buckets...
+  Refreshing 1h buckets...
+  Refreshing 1d buckets...
+  → Refreshed in 6.51s
+
 [3/6] Querying with 0% cache (baseline, 5s per granularity)...
-  → 15min: user_product=1.3ms, user=510.0ms
-  → 1h: user_product=2.3ms, user=1225.5ms
-  → 1d: user_product=0.9ms, user=453.1ms
+  → 15min: user_product=53.3ms, user=634.6ms
+  → 1h: user_product=60.3ms, user=337.1ms
+  → 1d: user_product=9.9ms, user=67.1ms
 
 [4/6] Refreshing caches...
-  → Cumulative cashflow: 12.76s
-  → 15min: 12.40s
-  → 1h: 4.27s
-  → 1d: 0.19s
+  → Cumulative cashflow: 4.77s
+  → 15min: 8m 1.0s
+  → 1h: 2m 21.0s
+  → 1d: 22.27s
 
 [5/6] Querying with 100% cache (5s per granularity)...
-  → 15min: user_product=1.2ms, user=346.0ms
-  → 1h: user_product=2.2ms, user=1184.1ms
-  → 1d: user_product=0.9ms, user=426.2ms
+  → 15min: user_product=63.9ms, user=456.1ms
+  → 1h: user_product=35.1ms, user=207.7ms
+  → 1d: user_product=5.1ms, user=34.0ms
 
 [6/6] Progressive cache deletion and querying...
   → Deleting cache >= 75th percentile...
   → Querying with 75% cache (5s per granularity)...
-     15min: user_product=1.3ms, user=356.8ms
-     1h: user_product=2.3ms, user=1267.3ms
-     1d: user_product=1.0ms, user=441.2ms
+     15min: user_product=72.0ms, user=497.9ms
+     1h: user_product=43.8ms, user=243.6ms
+     1d: user_product=6.0ms, user=40.0ms
 
   → Deleting cache >= 50th percentile...
   → Querying with 50% cache (5s per granularity)...
-     15min: user_product=1.3ms, user=360.8ms
-     1h: user_product=2.4ms, user=1149.6ms
-     1d: user_product=1.0ms, user=441.3ms
+     15min: user_product=69.8ms, user=513.5ms
+     1h: user_product=50.1ms, user=285.9ms
+     1d: user_product=7.7ms, user=47.0ms
 
   → Deleting cache >= 25th percentile...
   → Querying with 25% cache (5s per granularity)...
-     15min: user_product=1.2ms, user=363.1ms
-     1h: user_product=2.5ms, user=1150.2ms
-     1d: user_product=1.1ms, user=441.0ms
+     15min: user_product=69.0ms, user=509.5ms
+     1h: user_product=49.7ms, user=291.0ms
+     1d: user_product=8.7ms, user=55.1ms
+
+=== Query Performance Summary ===
+Continuous aggregate refresh: 6.51s
+
+Cache refresh times:
+  Cumulative cashflow: 4.77s
+  15min: 8m 1.0s
+  1h: 2m 21.0s
+  1d: 22.27s
+
+Queries with 100% cache:
+  user-product-timeline-15min: 64ms
+  user-timeline-15min:         456ms
+  user-product-timeline-1h: 35ms
+  user-timeline-1h:         208ms
+  user-product-timeline-1d: 5ms
+  user-timeline-1d:         34ms
+
+Queries with 75% cache:
+  user-product-timeline-15min: 72ms
+  user-timeline-15min:         498ms
+  user-product-timeline-1h: 44ms
+  user-timeline-1h:         244ms
+  user-product-timeline-1d: 6ms
+  user-timeline-1d:         40ms
+
+Queries with 50% cache:
+  user-product-timeline-15min: 70ms
+  user-timeline-15min:         513ms
+  user-product-timeline-1h: 50ms
+  user-timeline-1h:         286ms
+  user-product-timeline-1d: 8ms
+  user-timeline-1d:         47ms
+
+Queries with 25% cache:
+  user-product-timeline-15min: 69ms
+  user-timeline-15min:         509ms
+  user-product-timeline-1h: 50ms
+  user-timeline-1h:         291ms
+  user-product-timeline-1d: 9ms
+  user-timeline-1d:         55ms
+
+Queries with 0% cache:
+  user-product-timeline-15min: 53ms
+  user-timeline-15min:         635ms
+  user-product-timeline-1h: 60ms
+  user-timeline-1h:         337ms
+  user-product-timeline-1d: 10ms
+  user-timeline-1d:         67ms
+

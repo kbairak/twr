@@ -58,9 +58,9 @@ CREATE OR REPLACE FUNCTION cashflow_repair()
                 WHERE user_id = NEW.user_id AND product_id = NEW.product_id;
 
                 INSERT INTO user_product_timeline_cache_{{ g.suffix }} (
-                    user_id, product_id, "timestamp", cashflow_timestamp
+                    user_id, product_id, "timestamp", cashflow_timestamp, price_timestamp
                 )
-                SELECT user_id, product_id, "timestamp", cashflow_timestamp
+                SELECT user_id, product_id, "timestamp", cashflow_timestamp, price_timestamp
                 FROM user_product_timeline_{{ g.suffix }}(NEW.user_id, NEW.product_id)
                 WHERE
                     (

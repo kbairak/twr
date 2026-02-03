@@ -12,10 +12,13 @@
     -- Parameters:
     --   - p_user_id: Required - specific user to query
     --   - p_product_id: Filter by product (NULL = all products)
+    --   - p_after: Only return timestamps after this point (default = retention start if configured)
+    --   - p_before: Only return timestamps before or at this point (NULL = no upper bound)
     CREATE OR REPLACE FUNCTION user_product_timeline_business_{{ g.suffix }}(
         p_user_id UUID,
         p_product_id UUID,
-        p_now TIMESTAMPTZ DEFAULT NOW()
+        p_after TIMESTAMPTZ DEFAULT {% if g.cache_retention %}NOW() - '{{ g.cache_retention }}'::interval{% else %}NULL{% endif %},
+        p_before TIMESTAMPTZ DEFAULT NULL
     )
         RETURNS TABLE(
             user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, buy_units NUMERIC(20, 6),
@@ -47,14 +50,13 @@
                 (ccf.buy_units - ccf.sell_units) *
                     (pu.price - (ccf.buy_cost / NULLIF(ccf.buy_units, 0)))
                     AS unrealized_returns
-            FROM user_product_timeline_{{ g.suffix }}(p_user_id, p_product_id, {% if g.cache_retention %}p_now - '{{ g.cache_retention }}'::interval{% else %}NULL{% endif %}) upt
+            FROM user_product_timeline_{{ g.suffix }}(p_user_id, p_product_id, p_after, p_before) upt
                 INNER JOIN price_update_{{ g.suffix }} pu ON
-                    upt.product_id = pu.product_id AND upt."timestamp" = pu."timestamp"
+                    upt.product_id = pu.product_id AND upt.price_timestamp = pu."timestamp"
                 INNER JOIN cumulative_cashflow(p_user_id, p_product_id) ccf ON
                     upt.user_id = ccf.user_id AND
                     upt.product_id = ccf.product_id AND
-                    upt.cashflow_timestamp = ccf."timestamp"
-            WHERE upt.user_id = p_user_id AND (p_product_id IS NULL OR upt.product_id = p_product_id);
+                    upt.cashflow_timestamp = ccf."timestamp";
         END;
         $$;
 
