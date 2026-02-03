@@ -52,7 +52,7 @@
                     AS unrealized_returns
             FROM user_product_timeline_{{ g.suffix }}(p_user_id, p_product_id, p_after, p_before) upt
                 INNER JOIN price_update_{{ g.suffix }} pu ON
-                    upt.product_id = pu.product_id AND upt.price_timestamp = pu."timestamp"
+                    upt.product_id = pu.product_id AND upt.price_update_timestamp = pu."timestamp"
                 INNER JOIN cumulative_cashflow(p_user_id, p_product_id) ccf ON
                     upt.user_id = ccf.user_id AND
                     upt.product_id = ccf.product_id AND

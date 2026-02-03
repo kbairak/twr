@@ -31,7 +31,7 @@ CREATE INDEX IF NOT EXISTS idx_cumulative_cashflow_cache_product
 CREATE INDEX IF NOT EXISTS idx_cumulative_cashflow_cache_timestamp
     ON cumulative_cashflow_cache("timestamp" DESC);
 
--- seed_cf: Returns the most recent cached cumulative cashflow for each (user, product) pair
+-- _seed_cf: Returns the most recent cached cumulative cashflow for each (user, product) pair
 --
 -- Purpose: Serves as a starting point to avoid recalculating from the beginning of time
 -- Returns: Latest row from cumulative_cashflow_cache for matching user/product pairs
@@ -39,7 +39,7 @@ CREATE INDEX IF NOT EXISTS idx_cumulative_cashflow_cache_timestamp
 -- Parameters:
 --   - p_user_id: Filter by user (NULL = all users)
 --   - p_product_id: Filter by product (NULL = all products)
-CREATE OR REPLACE FUNCTION seed_cf(p_user_id UUID, p_product_id UUID)
+CREATE OR REPLACE FUNCTION _seed_cf(p_user_id UUID, p_product_id UUID)
     RETURNS TABLE (
         user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, buy_units NUMERIC(20, 6),
         sell_units NUMERIC(20, 6), buy_cost NUMERIC(20, 6), sell_proceeds NUMERIC(20, 6),
@@ -71,16 +71,16 @@ CREATE OR REPLACE FUNCTION seed_cf(p_user_id UUID, p_product_id UUID)
     END;
     $$;
 
--- fresh_cf: Returns new cashflow events that haven't been cached yet
+-- _fresh_cf: Returns new cashflow events that haven't been cached yet
 --
 -- Purpose: Gets cashflows newer than the latest cached entry (seed)
 -- Returns: Aggregated cashflows grouped by (user, product, timestamp)
 -- Performance: Scans cashflow table from seed timestamp onward
--- Note: Joins with seed_cf to determine the watermark for each (user, product)
+-- Note: Joins with _seed_cf to determine the watermark for each (user, product)
 -- Parameters:
 --   - p_user_id, p_product_id: Filter by user/product (NULL = all)
 --   - p_before: Only return rows before or at this timestamp (NULL = no upper bound)
-CREATE OR REPLACE FUNCTION fresh_cf(
+CREATE OR REPLACE FUNCTION _fresh_cf(
         p_user_id    UUID,
         p_product_id UUID,
         p_before     TIMESTAMPTZ DEFAULT NULL
@@ -105,7 +105,7 @@ CREATE OR REPLACE FUNCTION fresh_cf(
                     (SUM(cf.execution_price * cf.units_delta) / NULLIF(SUM(cf.units_delta), 0))
                     AS execution_money
             FROM cashflow cf
-                LEFT OUTER JOIN seed_cf(p_user_id, p_product_id) seed_cf
+                LEFT OUTER JOIN _seed_cf(p_user_id, p_product_id) seed_cf
                     ON cf.user_id = seed_cf.user_id AND cf.product_id = seed_cf.product_id
             WHERE
                 (seed_cf."timestamp" IS NULL OR cf."timestamp" > seed_cf."timestamp")
@@ -187,8 +187,8 @@ CREATE OR REPLACE FUNCTION cumulative_cashflow(
                     COALESCE(seed_cf.withdrawals, 0) +
                         SUM(CASE WHEN fresh_cf.units_delta < 0 THEN -fresh_cf.user_money ELSE 0 END)
                         OVER w AS withdrawals
-                FROM fresh_cf(p_user_id, p_product_id, p_before) fresh_cf
-                    LEFT OUTER JOIN seed_cf(p_user_id, p_product_id) seed_cf ON
+                FROM _fresh_cf(p_user_id, p_product_id, p_before) fresh_cf
+                    LEFT OUTER JOIN _seed_cf(p_user_id, p_product_id) seed_cf ON
                         fresh_cf.user_id = seed_cf.user_id AND
                         fresh_cf.product_id = seed_cf.product_id
                 WINDOW w AS (

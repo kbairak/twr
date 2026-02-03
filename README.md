@@ -1,10 +1,10 @@
-# Cumulative Cashflow Caching
+# Portfolio management system
 
 ## Design
 
 The intended use for this system includes 3 main processes:
 
-- You enter raw data on one end: price_updates and cashflow events (buys/sells)
+- You enter raw data on one end: price updates and cashflow events (buys/sells)
 - You setup periodic tasks to refresh caches in order to speed up queries
 - You query investment performance data on the other end: per investment (user-product) and per user
 
@@ -12,100 +12,261 @@ The intended use for this system includes 3 main processes:
 
 This system starts from simple data and builds layer on top of layer until it can provide meaningful aggregate information for an investment service.
 
-### Raw data: Cash-flow and Price Update
+### Raw data: Cashflows
 
-The price update table simply has:
-
-- `product_id`
-- `timestamp`
-- `price`
-
-and requires no further explanation.
-
-Cash-flow has:
+Fields:
 
 - `id` (for idempotency checks)
-
 - `user_id`
 - `product_id`
 - `timestamp`
-
 - `units_delta`
 - `execution_price`
 - `user_money`
 
 and the following values can be easily derived:
 
-- `execution_money` = `units_delta` × `execution_price`
-- `fees` = `user_money` - `execution_money`
-- `user_price` = user_money / units_delta
+- `execution_money = units_delta × execution_price`
+- `fees = user_money - execution_money`
+- `user_price = user_money / units_delta`
 
 Notes:
 
 1. Cash-flows represents deltas, not cumulative totals. It is data related to a single transaction. The fact that we save single transactions allows us to support out-of-order inserts while still being able to compute cumulative totals later, via mechanisms that will be explained later
-2. We need to explain what the 'execution_' and 'user_' prefixes mean: 'execution_money' is the amount that the provider _claims_ they converted into/from units at 'execution_price' units of currency per unit. 'user_money' is the amount that the user actually lost or gained. This allows us to calculate fees, both individually and cumulatively
-3. 'user_id'
+2. We need to explain what the `execution_` and `user_` prefixes mean: `execution_money` is the amount that the provider _claims_ they converted into/from units at `execution_price` units of currency per unit. `user_money` is the amount that the user actually lost or gained. This allows us to calculate fees, both individually and cumulatively
+3. The `user_id`, `product_id` and `timestamp` combination is **not** unique; the system allows for different cashflows to share these values and they will be properly aggregated later
 
-### Price update time buckets and granularities
+### Raw Data: Price updates, time buckets and granularities
 
 We use timescaledb continuous aggregates to create time buckets for price updates. This allows us to reduce the number of events we need to process when building timelines later. The various bucketing policies are configured in `migrations/granularities.json`, which allows for easy customization. The SQL code used for the timescaledb instructions and the rest of the aggregation logic is generated using Jinja2 templates which use `granularities.json` as context. Timescaledb is also used to compress the price update tables without sacrificing query performance.
 
-The challenge: we want cumulative running totals (units held, total invested, etc.) over time.
+The columns, both for the raw and the bucketed price updates are:
+
+- `product_id`
+- `timestamp`
+- `price`
+
+### Layering
+
+```
+        |---------------|
+        | user_timeline |
+        |---------------|
+                ^
+                |
+    |-----------------------|
+    | user_product_timeline |
+    |-----------------------|
+          ^              ^
+          |              |
+|---------------------|  |
+| cumulative_cashflow |  |
+|---------------------|  |
+          ^              |
+          |              |
+    |----------|  |--------------|
+    | cashflow |  | price_update |
+    |----------|  |--------------|
+```
+
+The rest of the data is built on top of the raw data via layering. Each layer has a cache table (or multiple in case of granularities), a SQL _view_ function and a refresh function. The refresh function is meant to be called periodically to help speed up queries. The view function is written in such a way so that it will return the same data regardless of whether the cache was recently refreshed or not. The cache and the view function are codependent:
+
+```sql
+CREATE TABLE cache_table (...);
+
+CREATE FUNCTION view() RETURNS TABLE (...) LANGUAGE plpgsql AS $$ BEGIN
+    RETURN QUERY
+    SELECT * FROM cache_table
+    UNION ALL
+    SELECT * FROM raw_data;  -- perform complex query logic
+END; $$;
+
+CREATE FUNCTION refresh() RETURNS void LANGUAGE plpgsql AS $$ BEGIN
+    INSERT INTO cache_table(...)
+    SELECT * from view()
+    WHERE ...;
+END; $$;
+```
+
+So we use the cache table to return part of the view's results and we use the view to generate the data we want to insert to the cache table during refresh.
+
+The actual logic is more complicated, but this gives the basic idea.
+
+### Cumulative cashflow
+
+This layer provides cumulative running totals (units held, total invested, etc.) for cashflows over time. The fields being stored are:
+
+Identity:
+
+- `user_id`
+- `product_id`
+- `timestamp`
+
+Monotonic totals (always increasing)
+
+- `buy_units`: Σ(units_delta) for buys only
+- `sell_units`: Σ(|units_delta|) for sells only
+- `buy_cost`: Σ(execution_money) for buys
+- `sell_proceeds`: Σ(|execution_money|) for sells
+- `deposits`: Σ(user_money) for buys (what left bank)
+- `withdrawals`: Σ(|user_money|) for sells (what entered bank)
+
+From these we can derive:
+
+- `units = buy_units - sell_units`
+- `net_investment = deposits  - withdrawals`
+- `fees = deposits  - buy_cost + withdrawals - sell_proceeds`
+- `avg_buy_cost = buy_cost / buy_units`
+- `cost_basis = units * avg_buy_cost`
+
+We do not save these to save space.
+
+This step aggregates cashflows that share the same `user_id`, `product_id` and `timestamp`.
 
 **Example:** Using units held as a simple illustration
 
-|          | t1 | t2 | t3  | t4 |
-|----------|----|----|-----|----|
-| cashflow | 3u | 4u | -3u | 1u |
+|                     | t1 | t2      | t3  | t4 |
+|---------------------|----|---------|-----|----|
+| cashflow            | 3u | 4u, -1u | -3u | 1u |
+| cumulative_cashflow | 3u | 6u      | 3u  | 4u |
 
-### Layer 1: Cumulative Cashflow
+With periodic cache refresh, this looks like this:
 
-#### View Pattern
+- t0
 
-A `cumulative_cashflow` view calculates running totals from the delta events:
+  |                           | t1 | t2      |
+  |---------------------------|----|---------|
+  | cashflow                  | 3u | 4u, -1u |
+  | cumulative_cashflow-view  | 3u | 6u      |
+  | cumulative_cashflow-cache |    |         |
 
-|                 | t1 | t2 | t3  | t4 |
-|-----------------|----|----|-----|----|
-| cashflow        | 3u | 4u | -3u | 1u |
-| cumulative-view | 3u | 7u | 4u  | 5u |
+- t1, first cache refresh
 
-#### Cache Pattern
+  |                           | t1 | t2      |
+  |---------------------------|----|---------|
+  | cashflow                  | 3u | 4u, -1u |
+  | cumulative_cashflow-view  | 3u | 6u      |
+  | cumulative_cashflow-cache | 3u | 6u      |
 
-The `cumulative_cashflow_cache` table has the same schema as the view. A PostgreSQL function periodically copies from the view to the cache. The cache speeds up queries by storing pre-computed results - the view delegates to the cache for timestamps before the watermark.
+- t2, more cashlows
 
-**Start:**
+  |                           | t1 | t2      | t3  | t4 |
+  |---------------------------|----|---------|-----|----|
+  | cashflow                  | 3u | 4u, -1u | -3u | 1u |
+  | cumulative_cashflow-view  | 3u | 6u      | 3u  | 4u |
+  | cumulative_cashflow-cache | 3u | 6u      |     |    |
 
-|                  | t1 | t2 |
-|------------------|----|----|
-| cashflow         | 3u | 4u |
-| cumulative-view  | 3u | 7u |
-| cumulative-cache |    |    |
+- t3, second cache refresh
 
-**Refresh cache:**
+  |                           | t1 | t2      | t3  | t4 |
+  |---------------------------|----|---------|-----|----|
+  | cashflow                  | 3u | 4u, -1u | -3u | 1u |
+  | cumulative_cashflow-view  | 3u | 6u      | 3u  | 4u |
+  | cumulative_cashflow-cache | 3u | 6u      | 3u  | 4u |
 
-|                  | t1 | t2 |
-|------------------|----|----|
-| cashflow         | 3u | 4u |
-| cumulative-view  | 3u | 7u |
-| cumulative-cache | 3u | 7u |
+### User-product timeline
 
-**Add more cashflows:**
+This layer is meant to answer the following question: what happens to an investment's (user-product combination) value when the product's price changes between cashflows?
 
-|                  | t1 | t2 | t3  | t4 |
-|------------------|----|----|-----|----|
-| cashflow         | 3u | 4u | -3u | 1u |
-| cumulative-view  | 3u | 7u | 4u  | 5u |
-| cumulative-cache | 3u | 7u |     |    |
+|          | t1 | t2          | t3          | t4          | t5          |
+|----------|----|-------------|-------------|-------------|-------------|
+| p1 (ppu) | 10 |             | 12          | 15          |             |
+| u1p1 (u) |    | 1           |             |             | 2           |
+| u1p1 (v) |    | 10 (1 x 10) | 12 (1 x 12) | 15 (1 x 15) | 30 (2 x 15) |
 
-**Refresh cache:**
+We say that a user-product-timeline entry exists:
 
-|                  | t1 | t2 | t3  | t4 |
-|------------------|----|----|-----|----|
-| cashflow         | 3u | 4u | -3u | 1u |
-| cumulative-view  | 3u | 7u | 4u  | 5u |
-| cumulative-cache | 3u | 7u | 4u  | 5u |
+- for every price update
+- for every user that has invested in the price update's product
+- sometime before the price update
 
-#### Out-of-Order Inserts
+We **only** create user-product-timelines on top of the bucketed price updates, not the raw ones, in order to control the storage requirements and performance of the system. To that end, we have one cache table/view function/refresh function triplet per granularity.
+
+For that user-product-timeline entry we retrieve the relevant price update and the last cumulative cashflow before that price update and we calculate the data we need, including market value. In fact, this layer has two sub-layers:
+
+- user-product-timeline
+
+  Identity:
+  - `user_id`
+  - `product_id`
+  - `timestamp`
+
+  Timestamps used to retrieve related data
+  - `price_update_timestamp`
+  - `cashflow_timestamp`
+
+- user-product-timeline-business
+
+  Identity:
+  - `user_id`
+  - `product_id`
+  - `timestamp`
+
+  Copied from cumulative cashflow:
+  - `buy_units`
+  - `sell_units`
+  - `buy_cost`
+  - `sell_proceeds`
+  - `deposits`
+  - `withdrawals`
+
+  Derived:
+  - `units = buy_units - sell_units`
+  - `net_investment = deposits - withdrawals`
+  - `fees = deposits - buy_cost + withdrawals - sell_proceeds`
+  - `market_value = units * price`
+  - `avg_buy_cost = buy_cost / buy_units`
+  - `cost_basis = units x avg_buy_cost`
+  - `unrealized_returns = market_value - cost_basis`
+
+Because performing the JOINS needed to retrieve the related cashflow and price update are performant, and in order to save space, only the first sub-layer is being cached. The second sub-layer is only served by a _view_ function. So, for every granularity, the following entities are being created:
+
+- user_product_timeline_cache_SUFFIX (cache table)
+- user_product_timeline_SUFFIX (view function)
+- refresh_user_product_timeline_SUFFIX (refresh_unction)
+- user_product_timeline_business_SUFFIX (view function with more data)
+
+We also take care of gaps in price updates. For example:
+
+|                       |          | t1 | t2 | t3          | t4          |
+|-----------------------|----------|----|----|-------------|-------------|
+| price updates         | p1 (ppu) | 10 |    | 12          | 14          |
+|                       | p2 (ppu) | 20 |    | 22          | (gap)       |
+| cumulative cashflows  | u1p1 (u) |    | 1  |             |             |
+|                       | u1p2 (u) |    | 2  |             |             |
+| user-product-timeline | u1p1 (v) |    |    | 12 (1 x 12) | 14 (1 x 14) |
+|                       | u2p1 (v) |    |    | 44 (2 x 22) | ???         |
+
+Given the rules we described for when a user-product-timeline entry should exist, there shouldn't be one for the `u2p1-t4` slot since the `p2-t4` slot is missing from price-updates. Having this gap makes the next layer (user-timeline) significantly harder to compute. For this reason, we _pretend_ there is a `p2-t4` price update with the same price as the previous one (`p2-t3`).
+
+|                       |          | t1 | t2 | t3          | t4            |
+|-----------------------|----------|----|----|-------------|---------------|
+| price updates         | p1 (ppu) | 10 |    | 12          | 14            |
+|                       | p2 (ppu) | 20 |    | 22          | (22, pretend) |
+| cumulative cashflows  | u1p1 (u) |    | 1  |             |               |
+|                       | u1p2 (u) |    | 2  |             |               |
+| user-product-timeline | u1p1 (v) |    |    | 12 (1 x 12) | 14 (1 x 14)   |
+|                       | u2p1 (v) |    |    | 44 (2 x 22) | 44 (2 x 22)   |
+
+### User-timeline
+
+This final layer aggregates data across all of the user's investments. Since it's a simple:
+
+```sql
+SELECT user_id, timestamp, SUM(deposits) AS DEPOSITS, ...
+FROM user_product_timeline_business(...)
+GROUP BY user_id, timestamp;
+```
+
+(and given that we took care of the gaps in the previous layer which would mess this aggregation up), we don't use a cache table for this.
+
+Similarly to before, we have one such view function per granularity:
+
+- user_timeline_business_15min
+- user_timeline_business_1h
+- user_timeline_business_1d
+
+### Out-of-Order Inserts
 
 This layering makes it manageable to support out-of-order cashflow inserts through automatic invalidation and repair.
 
@@ -134,194 +295,139 @@ Automatic repair covers all timestamps until the watermark. The watermark is imp
 
 > **Edge case:** If there's only one investment, an out-of-order insert could temporarily reduce the watermark (e.g., to t1 in the example above, so there would be nothing to repair). However, in realistic production scenarios with multiple investments, other investments maintain the overall watermark, allowing the repair mechanism to work correctly for the invalidated investment.
 
-### Layer 2: User-Product Timeline
+This example covered cumulative cashflows, but the same logic applies to user-product-timeline caches as well.
 
-The next layer adds market price data to track portfolio value over time. Consider a scenario with both cashflow events and price updates:
+### Cache retention
 
-|                     | t1    | t2 | t3    | t4    | t5    | t6 |
-|---------------------|-------|----|-------|-------|-------|----|
-| price updates       | 10$/u |    | 12$/u | 15$/u | 11$/u |    |
-| cumulative cashflow |       | 5u |       |       |       | 7u |
+In the granularity configuration, each granularity has a `retention_period` field that can be NULL. If not null the following will happen:
 
-At cashflow events, we can calculate market value by multiplying units held by the current market price:
+- The view SQL functions will only return data within the retention period (e.g., last 30 days)
+- The refresh SQL functions will delete data older than the retention period after inserting new data (keeping at least one per user-product to serve as seed values)
 
-|                     | t1    | t2      | t3    | t4    | t5    | t6      |
-|---------------------|-------|---------|-------|-------|-------|---------|
-| price updates       | 10$/u |         | 12$/u | 15$/u | 11$/u |         |
-| cumulative cashflow |       | 5u, 50$ |       |       |       | 7u, 77$ |
+Cache retention only applies on the user-product-timeline caches. The cumulative cashflow cache keeps all data indefinitely.
 
-However, portfolio value changes even between transactions. The `user_product_timeline` layer creates a complete time series by including price update events:
+This allows storage requirements and performance to remain manageable indefinitely.
 
-|                       | t1    | t2  | t3    | t4    | t5    | t6  |
-|-----------------------|-------|-----|-------|-------|-------|-----|
-| price updates         | 10$/u |     | 12$/u | 15$/u | 11$/u |     |
-| cumulative cashflow   |       | 5u  |       |       |       | 7u  |
-| user_product_timeline |       | 50$ | 60$   | 75$   | 55$   | 77$ |
+### "Latest" views
 
-The `user_product_timeline` uses the same view+cache pattern as `cumulative_cashflow`. Out-of-order cashflows automatically invalidate and repair this cache layer as well.
+Finally we have the `user_product_timeline_latest` and `user_timeline_latest` views. These do not depend on granularity. The first one gets the latest price update and cumulative cashflow for each user-product and calculates the business data, the second ones calls the first internally and groups by user.
 
-### Layer 3: Portfolio Timeline
+## SQL Code Guide
 
-The final layer aggregates across all products to provide a complete portfolio view for each user. Consider a user with two investments:
+As mentioned before, we use Jinja2 to generate the SQL for this system. All the code is in the `migrations/` folder. `migrations/granularities.json` holds the granularity configuration and currently holds:
 
-**Individual investments' timeline:**
-
-|       | t1   | t2   | t3   | t4   |
-|-------|------|------|------|------|
-| AAPL  | 50$  | 60$  | 55$  | 60$  |
-| GOOGL | 100$ | 120$ | 110$ | 115$ |
-
-The `user_timeline` aggregates these into a single portfolio view by summing across all products at each timestamp:
-
-|         | t1   | t2   | t3   | t4   |
-|---------|------|------|------|------|
-| AAPL    | 50$  | 60$  | 55$  | 60$  |
-| GOOGL   | 100$ | 120$ | 110$ | 115$ |
-| overall | 150$ | 180$ | 165$ | 175$ |
-
-At each timestamp, the portfolio value is calculated by taking the latest state of each product and summing them. The `user_timeline` uses the same view+cache pattern and is automatically invalidated and repaired when underlying data changes.
-
-### Time Buckets
-
-In real-world systems, price updates happen more frequently than cashflows. Because each price update results in one new timeline event **for every user that has invested in the product**, the system would quickly become unmaintainable in terms of query performance and storage.
-
-To address this, we use TimescaleDB to create time buckets for price updates. The `user_product_timeline` and `user_timeline` layers build on top of these bucketed prices instead of raw updates. Multiple granularities are configured in `migrations/granularities.json`:
-
-- **15min**: Real-time monitoring (7 day cache retention, `include_realtime=true`)
-- **1h**: Recent analysis (30 day cache retention)
-- **1d**: Long-term trends (indefinite retention)
-
-This means that we end up with `user_product_timeline_15m`, `user_product_timeline_1h`, `user_product_timeline_1d`, `user_timeline_15m`, `user_timeline_1h` and `user_timeline_1d` views (and cache tables). We can change the configuration before applying the migrations if we want different granularities.
-
-**Cache retention** allows older data to be pruned automatically, keeping storage manageable.
-
-**Real-time flag:** When `include_realtime=true` (only for 15min), the view uses a two-watermark system. Beyond the standard cache watermark, there's a view watermark that separates bucketed data from raw unbucketed price updates. This allows queries that end with `ORDER BY timestamp DESC LIMIT 1` to retrieve the absolute current portfolio value without waiting for the next time bucket.
-
-### Metrics
-
-The timeline views provide fields for calculating investment performance metrics.
-
-**Available fields in `user_product_timeline` (per-product level):**
-
-- Position: `units_held`, `market_value`
-- Investment: `net_investment`, `deposits`, `withdrawals`, `fees`
-- Cost tracking: `buy_cost`, `buy_units`, `sell_proceeds`, `sell_units`
-
-**Available fields in `user_timeline` (portfolio level):**
-
-- Same fields, aggregated across all products
-- `cost_basis` - sum of cost basis across all current holdings
-- `sell_basis` - sum of cost basis for all sold units
-
-**Calculable metrics:**
-
-1. **Average cost basis** (per-product): `buy_cost / buy_units`
-2. **Unrealized returns** (per-product): `market_value - (average_cost_basis × units_held)`
-3. **Unrealized returns** (portfolio): `market_value - cost_basis`
-4. **Realized returns** (portfolio): `sell_proceeds - sell_basis`
-5. **Total returns** (portfolio): `unrealized_returns + realized_returns`
-
-These can be queried over time to show metric evolution.
-
-**Case study: Returns calculation**
-
-For a specific product:
-
-```sql
-SELECT
-  timestamp,
-  market_value - (buy_cost / NULLIF(buy_units, 0) * units_held) AS unrealized_returns
-FROM user_product_timeline_1d
-WHERE user_id = %s
-  AND product_id = %s
-ORDER BY timestamp;
+```json
+[{"suffix": "15min",
+  "interval": "15 minutes",
+  "cache_retention": "7 days"},
+ {"suffix": "1h",
+  "interval": "1 hour",
+  "cache_retention": "30 days"},
+ {"suffix": "1d",
+  "interval": "1 day",
+  "cache_retention": null}]
 ```
 
-For entire portfolio:
+(`interval` and `cache_retention` are strings that can be converted to SQL intervals with `''{{ g.interval }}''::interval`)
 
-```sql
-SELECT
-  timestamp,
-  market_value - cost_basis AS unrealized_returns,
-  sell_proceeds - sell_basis AS realized_returns,
-  (market_value - cost_basis) + (sell_proceeds - sell_basis) AS total_returns
-FROM user_timeline_1d
-WHERE user_id = %s
-ORDER BY timestamp;
-```
-
-## Quickstart
+When running the migrate command:
 
 ```sh
-# Python dependencies
-uv sync --all-groups
-
-# Start database
-docker compose up -d
-
-# Run migrations
-uv run src/twr/migrate.py  # or reset.py, if you make changes to the migrations
-
-# Add sample data (optional)
-uv run src/twr/generate.py --num-events 100000 --days 10 --num-users 1000 --num-products 300
-
-# Enter Postgres interactive shell
-PGPASSWORD=twr_password psql --host 127.0.0.1 twr twr_user
+uv run src/twr/migrate.py  # or
+uv run src/twr/reset.py    # clears the database first
 ```
 
-Inside the Postgres shell you can do a few things:
+Every file in the `migrations/` folder that ends in `.sql` or `.sql.j2` will be compiled (if needed) and executed in alphabetical order. The Jinja templates have access to the granularity configuration so they can generate code per granularity as needed.
+
+Generating separate entities per granularity is as simple as:
 
 ```sql
--- Insert raw data
-INSERT INTO "user" (name) VALUES ('Alice'), ('Bob');
-INSERT INTO product (name) VALUES ('AAPL'), ('GOOGL');
-INSERT INTO price_update (product_id, "timestamp", price) VALUES
-  (?, '2024-01-01 10:00:00', 150.00),
-  (?, '2024-01-01 11:00:00', 152.00),
-  (?, '2024-01-01 10:30:00', 2800.00),
-  (?, '2024-01-01 11:30:00', 2825.00);
-INSERT INTO cashflow (user_id, product_id, "timestamp", units_delta, execution_price, fees) VALUES
-  (?, ?, '2024-01-01 10:15:00', 10, 150.00, 0.00),
-  (?, ?, '2024-01-01 11:15:00', -5, 152.00, 1.00),
-  (?, ?, '2024-01-01 10:45:00', 2, 2800.00, 0.15),
-  (?, ?, '2024-01-01 11:45:00', -1, 2825.00, 0.00);
--- (execution_money and user_money derived by trigger)
+{% for g in GRANULARITIES %}
+    CREATE TABLE user_product_timeline_cache_{{ g.suffix }} (...)
 
--- Force refresh timescaledb buckets (or wait for scheduled refresh)
-CALL refresh_continuous_aggregate('price_update_15min', NULL, NULL);
-CALL refresh_continuous_aggregate('price_update_1h', NULL, NULL);
-CALL refresh_continuous_aggregate('price_update_1d', NULL, NULL);
-
--- Query cumulative_cashflow (before caching)
-SELECT * FROM cumulative_cashflow;
-SELECT * FROM cumulative_cashflow WHERE user_id = ? AND product_id = ?;
-
--- Refresh cumulative_cashflow cache, then query again
-SELECT refresh_cumulative_cashflow();
-
--- Query user_product_timeline (before caching)
-SELECT * from user_product_timeline_1d;
-SELECT * from user_product_timeline_1d WHERE user_id = ? AND product_id = ?;
-
--- Refresh user_product_timeline cache, then query again
-SELECT refresh_user_product_timeline_1d();
--- (Repeat for `_1h` and `_15min`)
-
--- Query user_timeline (before caching)
-SELECT * from user_timeline_1d;
-SELECT * from user_timeline_1d WHERE user_id = ? AND product_id = ?;
-
--- Refresh user_timeline cache, then query again
-SELECT refresh_user_timeline_1d();
--- (Repeat for `_1h` and `_15min`)
+    -- ...
+{% endfor %}
 ```
 
-Also
+### Why SQL functions?
 
-```sh
-uv run pytest  # Run tests
-uv run src/twr/benchmarks.py -h  # Run benchmarks
+The initial implementation used SQL views, heavy with CTEs, for queries. This worked in the sense that the returned data was accurate. However, since we build layers on top of layers and each layer is supposed to work with or without cache, the resulting query plan was huge and Postgres had a hard time optimizing. When we added a `WHERE` clause on the outer query, Postgres would not always pass this to the subqueries so they would end up processing the entire database. Many approaches were attempted to get around this, including adding `NOT MATERIALIZED` to the CTEs, writing the CTEs as Jinja macros and inlining them etc; some of them showed improvements, but were not satisfying.
+
+With SQL functions we can pass our filters as arguments that will be passed down to the entire stack, making sure they will be taken advantage of when necessary.
+
+The downsides is that it is now harder to inspect the queries with `EXPLAIN` - each function's SQL code must be inspected separately - and that it is not possible to use any ORM with these functions as far as I know. This should be ok though since the schema is expected to remain relatively stable.
+
+### Anatomy of a SQL view function
+
+(Some parts have been intentionally left out)
+
+```sql
+CREATE OR REPLACE FUNCTION cumulative_cashflow(
+        p_user_id    UUID,
+        p_product_id UUID,
+        p_after      TIMESTAMPTZ,
+        p_before     TIMESTAMPTZ
+    )
+    RETURNS TABLE (
+        user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, buy_units NUMERIC(20, 6), ...
+    )
+    LANGUAGE plpgsql STABLE AS $$
+    BEGIN
+        {% macro query(filter_user, filter_product, filter_after, filter_before) %}
+            RETURN QUERY
+            SELECT ...
+            FROM cumulative_cashflow_cache ccfc
+            WHERE
+                TRUE
+                {% if filter_user %}    AND ccfc.user_id     =  p_user_id   {% endif %}
+                {% if filter_product %} AND ccfc.product_id  =  p_product_id{% endif %}
+                {% if filter_after %}   AND ccfc."timestamp" >  p_after     {% endif %}
+                {% if filter_before %}  AND ccfc."timestamp" <= p_before    {% endif %}
+
+            UNION ALL
+
+            SELECT * FROM (
+                SELECT ...
+                FROM _fresh_cf(p_user_id, p_product_id, p_before) fresh_cf ...
+            ) AS computed_fresh
+            {% if filter_after %}WHERE computed_fresh."timestamp" > p_after{% endif %}
+        {% endmacro %}
+
+        {% for fu, fp, fa, fb in itertools.product([True, False], repeat=4) %}
+            {% if loop.first %}IF{% else %}ELSIF{% endif %}
+                p_user_id    IS {% if fu %}NOT{% endif %} NULL AND
+                p_product_id IS {% if fp %}NOT{% endif %} NULL AND
+                p_after      IS {% if fa %}NOT{% endif %} NULL AND
+                p_before     IS {% if fb %}NOT{% endif %} NULL
+            THEN
+                {{ query(filter_user=fu, filter_product=fp, filter_after=fa, filter_before=fb) }};
+        {% endfor %}
+        END IF;
+    END;
+    $$;
 ```
+
+In various places we could do `WHERE (p_user_id IS NULL OR user_id = p_user_id) AND ...` which would mean that if `p_user_id` is not provided, it will not be taken into account, otherwise the query will use it as a filter. Again, the query planner proved to be too smart for its own good, trying to accommodate both conditions at the same time and falling back to retrieving the whole table even when a filter was provided. To get around this, we use a Jinja macro to generate variations on the query, depending on which parameters are available. So, instead of the previous condition, we do:
+
+```sql
+WHERE TRUE {% if filter_user %}AND user_id = p_user_id{% endif %} ...
+```
+
+After the macro is defined, we use `itertools.product` to iterate over all combinations of provided and not provided parameters and use the macro to generate a separate query for each. If we inspect the rendered code that is actually submitted to Postgres, ie if we do `SELECT prosrc FROM pg_proc WHERE proname = 'cumulative_cashflow';`, we will get something like:
+
+```sql
+IF p_user_id IS NOT NULL AND p_product_id IS NOT NULL THEN
+    -- Query that uses p_user_id and p_product_id as filters
+ELSIF p_user_id IS NOT NULL AND p_product_id IS NULL THEN
+    -- Query that uses only p_user_id as filter
+ELSIF p_user_id IS NULL AND p_product_id IS NOT NULL THEN
+    -- Query that uses only p_product_id as filter
+ELSIF p_user_id IS NULL AND p_product_id IS NULL THEN
+    -- Query that doesn't have filters
+END IF;
+```
+
+Also notice that in the above example, we don't use a `WHERE` clause to filter the `_fresh_cf` subquery. The reason is that we provided our filters as arguments to the `_fresh_cf` function.
 
 ## Evaluation
 
