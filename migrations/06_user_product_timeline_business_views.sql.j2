@@ -15,17 +15,22 @@
     --   - p_after: Only return timestamps after this point (default = retention start if configured)
     --   - p_before: Only return timestamps before or at this point (NULL = no upper bound)
     CREATE OR REPLACE FUNCTION user_product_timeline_business_{{ g.suffix }}(
-        p_user_id UUID,
-        p_product_id UUID,
-        p_after TIMESTAMPTZ DEFAULT {% if g.cache_retention %}NOW() - '{{ g.cache_retention }}'::interval{% else %}NULL{% endif %},
-        p_before TIMESTAMPTZ DEFAULT NULL
-    )
+            p_user_id    UUID,
+            p_product_id UUID,
+            p_after      TIMESTAMPTZ DEFAULT
+                {% if g.cache_retention %}
+                    NOW() - '{{ g.cache_retention }}'::interval
+                {% else %}
+                    NULL
+                {% endif %},
+            p_before     TIMESTAMPTZ DEFAULT NULL
+        )
         RETURNS TABLE(
             user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, buy_units NUMERIC(20, 6),
             sell_units NUMERIC(20, 6), buy_cost NUMERIC(20, 6), sell_proceeds NUMERIC(20, 6),
             deposits NUMERIC(20, 6), withdrawals NUMERIC(20, 6), units NUMERIC(20, 6),
-            net_investment NUMERIC(20, 6), fees NUMERIC(20, 6), market_value NUMERIC(20, 6),
-            avg_buy_cost NUMERIC(20, 6), cost_basis NUMERIC(20, 6),
+            net_investment NUMERIC(20, 6), fees NUMERIC(20, 6), price NUMERIC(20, 6),
+            market_value NUMERIC(20, 6), avg_buy_cost NUMERIC(20, 6), cost_basis NUMERIC(20, 6),
             unrealized_returns NUMERIC(20, 6)
         )
         LANGUAGE plpgsql STABLE AS $$
@@ -39,6 +44,7 @@
                 ccf.deposits - ccf.withdrawals AS net_investment,
                 ccf.deposits - ccf.buy_cost + ccf.withdrawals - ccf.sell_proceeds AS fees,
                 -- units * pu.price AS market_value
+                pu.price,
                 (ccf.buy_units - ccf.sell_units) * pu.price AS market_value,
                 ccf.buy_cost / NULLIF(ccf.buy_units, 0) AS avg_buy_cost,
                 -- units * avg_buy_cost AS cost_basis
@@ -56,7 +62,8 @@
                 INNER JOIN cumulative_cashflow(p_user_id, p_product_id) ccf ON
                     upt.user_id = ccf.user_id AND
                     upt.product_id = ccf.product_id AND
-                    upt.cashflow_timestamp = ccf."timestamp";
+                    upt.cashflow_timestamp = ccf."timestamp"
+            ORDER BY upt.user_id, upt.product_id, upt."timestamp";
         END;
         $$;
 
@@ -76,8 +83,8 @@ CREATE OR REPLACE FUNCTION user_product_timeline_latest(p_user_id UUID, p_produc
         user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, buy_units NUMERIC(20, 6),
         sell_units NUMERIC(20, 6), buy_cost NUMERIC(20, 6), sell_proceeds NUMERIC(20, 6),
         deposits NUMERIC(20, 6), withdrawals NUMERIC(20, 6), units NUMERIC(20, 6),
-        net_investment NUMERIC(20, 6), fees NUMERIC(20, 6), market_value NUMERIC(20, 6),
-        avg_buy_cost NUMERIC(20, 6), cost_basis NUMERIC(20, 6),
+        net_investment NUMERIC(20, 6), fees NUMERIC(20, 6), price NUMERIC(20, 6),
+        market_value NUMERIC(20, 6), avg_buy_cost NUMERIC(20, 6), cost_basis NUMERIC(20, 6),
         unrealized_returns NUMERIC(20, 6)
     )
     LANGUAGE plpgsql STABLE AS $$
@@ -91,6 +98,7 @@ CREATE OR REPLACE FUNCTION user_product_timeline_latest(p_user_id UUID, p_produc
             ccf.buy_units - ccf.sell_units AS units,
             ccf.deposits - ccf.withdrawals AS net_investment,
             ccf.deposits - ccf.buy_cost + ccf.withdrawals - ccf.sell_proceeds AS fees,
+            pu.price,
             (ccf.buy_units - ccf.sell_units) * pu.price AS market_value,
             ccf.buy_cost / NULLIF(ccf.buy_units, 0) AS avg_buy_cost,
             (ccf.buy_units - ccf.sell_units) *

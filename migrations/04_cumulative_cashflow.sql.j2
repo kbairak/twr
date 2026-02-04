@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS cumulative_cashflow_cache (
     --   - units          = buy_units - sell_units
     --   - net_investment = deposits  - withdrawals
     --   - fees           = deposits  - buy_cost + withdrawals - sell_proceeds
+    --   - avg_buy_cost   = buy_cost  / buy_units
+    --   - cost_basis     = units     * avg_buy_cost
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_cumulative_cashflow_cache_user_product_ts
@@ -39,7 +41,7 @@ CREATE INDEX IF NOT EXISTS idx_cumulative_cashflow_cache_timestamp
 -- Parameters:
 --   - p_user_id: Filter by user (NULL = all users)
 --   - p_product_id: Filter by product (NULL = all products)
-CREATE OR REPLACE FUNCTION _seed_cf(p_user_id UUID, p_product_id UUID)
+CREATE OR REPLACE FUNCTION _seed_cf(p_user_id UUID DEFAULT NULL, p_product_id UUID DEFAULT NULL)
     RETURNS TABLE (
         user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, buy_units NUMERIC(20, 6),
         sell_units NUMERIC(20, 6), buy_cost NUMERIC(20, 6), sell_proceeds NUMERIC(20, 6),
@@ -81,8 +83,8 @@ CREATE OR REPLACE FUNCTION _seed_cf(p_user_id UUID, p_product_id UUID)
 --   - p_user_id, p_product_id: Filter by user/product (NULL = all)
 --   - p_before: Only return rows before or at this timestamp (NULL = no upper bound)
 CREATE OR REPLACE FUNCTION _fresh_cf(
-        p_user_id    UUID,
-        p_product_id UUID,
+        p_user_id    UUID        DEFAULT NULL,
+        p_product_id UUID        DEFAULT NULL,
         p_before     TIMESTAMPTZ DEFAULT NULL
     )
     RETURNS TABLE (
@@ -114,6 +116,7 @@ CREATE OR REPLACE FUNCTION _fresh_cf(
                 {% if filter_before %} AND cf."timestamp" <= p_before   {% endif %}
             GROUP BY cf.user_id, cf.product_id, cf."timestamp"
         {% endmacro %}
+
         {% for fu, fp, fb in itertools.product([True, False], repeat=3) %}
             {% if loop.first %}IF{% else %}ELSIF{% endif %}
                 p_user_id    IS {% if fu %}NOT{% endif %} NULL AND
@@ -139,8 +142,8 @@ CREATE OR REPLACE FUNCTION _fresh_cf(
 --   - p_before: Only return rows before or at this timestamp (NULL = no upper bound)
 
 CREATE OR REPLACE FUNCTION cumulative_cashflow(
-        p_user_id    UUID,
-        p_product_id UUID,
+        p_user_id    UUID        DEFAULT NULL,
+        p_product_id UUID        DEFAULT NULL,
         p_after      TIMESTAMPTZ DEFAULT NULL,
         p_before     TIMESTAMPTZ DEFAULT NULL
     )
@@ -198,6 +201,7 @@ CREATE OR REPLACE FUNCTION cumulative_cashflow(
             ) AS computed_fresh
             {% if filter_after %}WHERE computed_fresh."timestamp" > p_after{% endif %}
         {% endmacro %}
+
         {% for fu, fp, fa, fb in itertools.product([True, False], repeat=4) %}
             {% if loop.first %}IF{% else %}ELSIF{% endif %}
                 p_user_id    IS {% if fu %}NOT{% endif %} NULL AND
@@ -221,8 +225,8 @@ CREATE OR REPLACE FUNCTION refresh_cumulative_cashflow()
     RETURNS void
     LANGUAGE plpgsql VOLATILE AS $$
     DECLARE
-        v_watermark TIMESTAMPTZ;
-        v_max_timestamp TIMESTAMPTZ;
+        v_watermark     TIMESTAMPTZ;  -- Last cached cashflow timestamp
+        v_max_timestamp TIMESTAMPTZ;  -- Most recent cashflow timestamp, update cache up to this point
     BEGIN
         -- Get the maximum timestamp from source data
         SELECT MAX("timestamp") INTO v_max_timestamp
