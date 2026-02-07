@@ -53,7 +53,11 @@
                     FROM (
                         SELECT DISTINCT pu_p.product_id
                         FROM price_update_{{ g.suffix }} pu_p
-                        {% if filter_product %}WHERE pu_p.product_id = p_product_id{% endif %}
+                        WHERE
+                            TRUE
+                            {% if filter_product %}AND pu_p.product_id  =  p_product_id{% endif %}
+                            {% if filter_after %}  AND pu_p."timestamp" >  p_after     {% endif %}
+                            {% if filter_before %} AND pu_p."timestamp" <= p_before    {% endif %}
                     ) p
                         CROSS JOIN (
                             SELECT DISTINCT pu_t."timestamp"
@@ -63,7 +67,15 @@
                                 {% if filter_after  %}AND pu_t."timestamp" >  p_after {% endif %}
                                 {% if filter_before %}AND pu_t."timestamp" <= p_before{% endif %}
                         ) t
-                        LEFT OUTER JOIN price_update_{{ g.suffix }} pu ON
+                        LEFT OUTER JOIN (
+                            SELECT pu.product_id, pu."timestamp", pu.price
+                            FROM price_update_{{ g.suffix }} pu
+                            WHERE
+                                TRUE
+                                {% if filter_product %}AND pu.product_id  =  p_product_id{% endif %}
+                                {% if filter_after %}  AND pu."timestamp" >  p_after     {% endif %}
+                                {% if filter_before %} AND pu."timestamp" <= p_before    {% endif %}
+                        ) pu ON
                             p.product_id = pu.product_id AND t.timestamp = pu.timestamp
                 )
                 SELECT
@@ -120,7 +132,7 @@
     --
     -- Purpose: Gets price updates newer than the latest cached entry (seed)
     -- Returns: Timestamps from price_update_{{ g.suffix }} that need to be added to timeline
-    -- Performance: Index scan from seed timestamp onward
+    -- Performance: Passes seed watermark to _dense_price_update_ to avoid computing full history
     -- Parameters:
     --   - p_product_id: Filter by product (NULL = all products)
     --   - p_after: Only return timestamps after this point (NULL = use seed)
@@ -132,29 +144,23 @@
         )
         RETURNS TABLE(product_id UUID, "timestamp" TIMESTAMPTZ, price_update_timestamp TIMESTAMPTZ)
         LANGUAGE plpgsql STABLE AS $$
+        DECLARE
+            v_watermark TIMESTAMPTZ;
         BEGIN
-            {% macro query(filter_product, filter_after, filter_before) %}
-                RETURN QUERY
-                SELECT pu.product_id, pu."timestamp", pu.price_update_timestamp
-                FROM _dense_price_update_{{ g.suffix }}(p_product_id, p_after, p_before) pu
-                    LEFT OUTER JOIN _seed_pt_{{ g.suffix }}(p_product_id) seed_pt
-                        ON pu.product_id = seed_pt.product_id
-                WHERE
-                    (seed_pt."timestamp" IS NULL OR pu."timestamp" > seed_pt."timestamp")
-                    {% if filter_product %}AND pu.product_id  =  p_product_id{% endif %}
-                    {% if filter_after %}  AND pu."timestamp" >  p_after     {% endif %}
-                    {% if filter_before %} AND pu."timestamp" <= p_before    {% endif %}
-            {% endmacro %}
+            -- Get the cache watermark (latest cached timestamp)
+            -- Use the maximum of p_after and the seed watermark
+            SELECT GREATEST(
+                COALESCE(p_after, '-infinity'::timestamptz),
+                COALESCE(MAX(seed_pt."timestamp"), '-infinity'::timestamptz)
+            ) INTO v_watermark
+            FROM _seed_pt_{{ g.suffix }}(p_product_id) seed_pt;
 
-            {% for fp, fa, fb in itertools.product([False, True], repeat=3) %}
-                {% if loop.first %}IF{% else %}ELSIF{% endif %}
-                    p_product_id IS {% if fp %}NOT{% endif %} NULL AND
-                    p_after      IS {% if fa %}NOT{% endif %} NULL AND
-                    p_before     IS {% if fb %}NOT{% endif %} NULL
-                THEN
-                    {{ query(filter_product=fp, filter_after=fa, filter_before=fb) }};
-            {% endfor %}
-            END IF;
+            -- Pass watermark as lower bound to _dense_price_update_
+            -- This avoids computing the cross-product for already-cached data
+            -- All filtering (product_id, after, before) is handled by _dense_price_update_
+            RETURN QUERY
+            SELECT pu.product_id, pu."timestamp", pu.price_update_timestamp
+            FROM _dense_price_update_{{ g.suffix }}(p_product_id, v_watermark, p_before) pu;
         END;
         $$;
 
