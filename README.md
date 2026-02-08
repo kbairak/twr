@@ -49,24 +49,25 @@ The columns, both for the raw and the bucketed price updates are:
 ### Layering
 
 ```
-        |---------------|
-        | user_timeline |
-        |---------------|
-                ^
-                |
-    |-----------------------|
-    | user_product_timeline |
-    |-----------------------|
-          ^              ^
-          |              |
-|---------------------|  |
-| cumulative_cashflow |  |
-|---------------------|  |
-          ^              |
-          |              |
-    |----------|  |--------------|
-    | cashflow |  | price_update |
-    |----------|  |--------------|
+               |---------------|
+               | user_timeline |
+               |---------------|
+                       ^
+                       |
+           |-----------------------|
+           | user_product_timeline |
+           |-----------------------|
+                ^             ^
+                |             |
+|---------------------|  |-----------------------|
+| cumulative_cashflow |  | price_update_SUFFIX   |
+|                     |  | (timescaledb buckets) |
+|---------------------|  |-----------------------|
+          ^                         ^
+          |                         |
+     |----------|           |--------------|
+     | cashflow |           | price_update |
+     |----------|           |--------------|
 ```
 
 The rest of the data is built on top of the raw data via layering. Each layer has a cache table (or multiple in case of granularities), a SQL _view_ function and a refresh function. The refresh function is meant to be called periodically to help speed up queries. The view function is written in such a way so that it will return the same data regardless of whether the cache was recently refreshed or not. The cache and the view function are codependent:
