@@ -11,7 +11,6 @@ from jinja2 import Environment, FileSystemLoader
 
 def _run_migration(connection, migration_file: Path, granularities: dict) -> None:
     """Run a single migration file."""
-    print(f"Running migration: {migration_file.name}")
 
     # Read migration content
     content = migration_file.read_text()
@@ -20,7 +19,7 @@ def _run_migration(connection, migration_file: Path, granularities: dict) -> Non
     if migration_file.suffix == ".j2":
         # Create environment with loader to support imports
         env = Environment(loader=FileSystemLoader(migration_file.parent))
-        env.globals['itertools'] = itertools
+        env.globals["itertools"] = itertools
         template = env.get_template(migration_file.name)
         content = template.render(GRANULARITIES=granularities)
 
@@ -29,7 +28,6 @@ def _run_migration(connection, migration_file: Path, granularities: dict) -> Non
         try:
             cur.execute(content)
             connection.commit()
-            print(f"  ✓ {migration_file.name} completed")
         except Exception as e:
             connection.rollback()
             print(f"  ✗ {migration_file.name} failed: {e}")
@@ -49,14 +47,8 @@ def run_all_migrations(connection):
         [f for f in migrations_dir.iterdir() if f.suffix == ".sql" or f.name.endswith(".sql.j2")]
     )
 
-    print(f"Found {len(migration_files)} migration files")
-    print("=" * 60)
-
     for migration_file in migration_files:
         _run_migration(connection, migration_file, granularities)
-
-    print("=" * 60)
-    print("All migrations completed successfully!")
 
 
 def main():

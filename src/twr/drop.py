@@ -6,11 +6,8 @@ import psycopg2
 def drop_and_recreate_schema(connection):
     """Drop and recreate the public schema."""
     with connection.cursor() as cursor:
-        print("Dropping schema...")
         cursor.execute("DROP SCHEMA public CASCADE")
-        print("Creating schema...")
         cursor.execute("CREATE SCHEMA public")
-        print("✓ Database schema reset complete")
 
 
 def main():
