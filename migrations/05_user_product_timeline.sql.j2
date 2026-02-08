@@ -147,13 +147,15 @@
         DECLARE
             v_watermark TIMESTAMPTZ;
         BEGIN
-            -- Get the cache watermark (latest cached timestamp)
-            -- Use the maximum of p_after and the seed watermark
-            SELECT GREATEST(
-                COALESCE(p_after, '-infinity'::timestamptz),
-                COALESCE(MAX(seed_pt."timestamp"), '-infinity'::timestamptz)
-            ) INTO v_watermark
-            FROM _seed_pt_{{ g.suffix }}(p_product_id) seed_pt;
+            -- Get the cache watermark (global max timestamp across all products)
+            -- Since cache refresh processes all products together for each time window,
+            -- the global watermark is valid for all products
+            IF p_after IS NOT NULL THEN
+                v_watermark := p_after;
+            ELSE
+                SELECT COALESCE(MAX(uptc."timestamp"), '-infinity'::timestamptz) INTO v_watermark
+                FROM user_product_timeline_cache_{{ g.suffix }} uptc;
+            END IF;
 
             -- Pass watermark as lower bound to _dense_price_update_
             -- This avoids computing the cross-product for already-cached data
@@ -190,8 +192,30 @@
             {% macro query(filter_user, filter_product, filter_after, filter_before) %}
                 RETURN QUERY
                 WITH ccf AS MATERIALIZED (
-                    SELECT ccf.user_id, ccf.product_id, ccf."timestamp"
-                    FROM cumulative_cashflow(p_user_id, p_product_id, NULL, p_before) ccf
+                    {% if filter_after %}
+                        -- When p_after is provided, we need:
+                        -- 1. Latest cashflow before p_after for each (user, product) - for LATERAL join lookback
+                        -- 2. New cashflows in the range (p_after, p_before]
+                        (
+                            SELECT DISTINCT ON (ccfc.user_id, ccfc.product_id)
+                                ccfc.user_id, ccfc.product_id, ccfc."timestamp"
+                            FROM cumulative_cashflow_cache ccfc
+                            WHERE
+                                ccfc."timestamp" <= p_after
+                                {% if filter_user %}    AND ccfc.user_id    = p_user_id   {% endif %}
+                                {% if filter_product %} AND ccfc.product_id = p_product_id{% endif %}
+                            ORDER BY ccfc.user_id, ccfc.product_id, ccfc."timestamp" DESC
+                        )
+                        UNION ALL
+                        (
+                            SELECT ccf.user_id, ccf.product_id, ccf."timestamp"
+                            FROM cumulative_cashflow(p_user_id, p_product_id, p_after, p_before) ccf
+                        )
+                    {% else %}
+                        -- Without p_after, get all cashflows up to p_before
+                        SELECT ccf.user_id, ccf.product_id, ccf."timestamp"
+                        FROM cumulative_cashflow(p_user_id, p_product_id, NULL, p_before) ccf
+                    {% endif %}
                 )
                 SELECT
                     uptc.user_id, uptc.product_id, uptc."timestamp",
@@ -303,9 +327,6 @@
 
                 -- Advance watermark by the range we just tried (not by what was inserted)
                 v_watermark := LEAST(v_watermark + INTERVAL '1 day', v_max_timestamp);
-
-                -- Update statistics after each chunk to help query planner (autovacuum handles bloat)
-                ANALYZE user_product_timeline_cache_{{ g.suffix }};
             END LOOP;
 
             {% if g.cache_retention %}
