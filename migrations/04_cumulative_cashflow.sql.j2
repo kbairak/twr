@@ -88,24 +88,26 @@ CREATE OR REPLACE FUNCTION _fresh_cf(
         p_before     TIMESTAMPTZ DEFAULT NULL
     )
     RETURNS TABLE (
-        user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, units_delta NUMERIC(20, 6),
-        execution_price NUMERIC(20, 6), user_money NUMERIC(20, 6), execution_money NUMERIC(20, 6)
+        user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ,
+        buy_units NUMERIC(20, 6), sell_units NUMERIC(20, 6),
+        buy_cost NUMERIC(20, 6), sell_proceeds NUMERIC(20, 6),
+        deposits NUMERIC(20, 6), withdrawals NUMERIC(20, 6)
     )
     LANGUAGE plpgsql STABLE AS $$
     BEGIN
         {% macro query(filter_user, filter_product, filter_before) %}
             RETURN QUERY
             SELECT
-                cf.user_id, cf.product_id, cf."timestamp",
-                SUM(cf.units_delta) AS units_delta,
-                (
-                    SUM(cf.execution_price * cf.units_delta) / NULLIF(SUM(cf.units_delta), 0)
-                ) AS execution_price,
-                SUM(cf.user_money) AS user_money,
-                -- units_delta * execution_price AS execution_money
-                SUM(cf.units_delta) *
-                    (SUM(cf.execution_price * cf.units_delta) / NULLIF(SUM(cf.units_delta), 0))
-                    AS execution_money
+                cf.user_id,
+                cf.product_id,
+                cf."timestamp",
+                -- Aggregate buy and sell components separately
+                SUM(CASE WHEN cf.units_delta > 0 THEN cf.units_delta ELSE 0 END) AS buy_units,
+                SUM(CASE WHEN cf.units_delta < 0 THEN -cf.units_delta ELSE 0 END) AS sell_units,
+                SUM(CASE WHEN cf.units_delta > 0 THEN cf.units_delta * cf.execution_price ELSE 0 END) AS buy_cost,
+                SUM(CASE WHEN cf.units_delta < 0 THEN -cf.units_delta * cf.execution_price ELSE 0 END) AS sell_proceeds,
+                SUM(CASE WHEN cf.units_delta > 0 THEN cf.user_money ELSE 0 END) AS deposits,
+                SUM(CASE WHEN cf.units_delta < 0 THEN -cf.user_money ELSE 0 END) AS withdrawals
             FROM cashflow cf
                 LEFT OUTER JOIN _seed_cf(p_user_id, p_product_id) seed_cf
                     ON cf.user_id = seed_cf.user_id AND cf.product_id = seed_cf.product_id
@@ -172,24 +174,12 @@ CREATE OR REPLACE FUNCTION cumulative_cashflow(
             SELECT * FROM (
                 SELECT
                     fresh_cf.user_id, fresh_cf.product_id, fresh_cf."timestamp",
-                    COALESCE(seed_cf.buy_units, 0) +
-                        SUM(CASE WHEN fresh_cf.units_delta > 0 THEN fresh_cf.units_delta ELSE 0 END)
-                        OVER w AS buy_units,
-                    COALESCE(seed_cf.sell_units, 0) +
-                        SUM(CASE WHEN fresh_cf.units_delta < 0 THEN -fresh_cf.units_delta ELSE 0 END)
-                        OVER w AS sell_units,
-                    COALESCE(seed_cf.buy_cost, 0) +
-                        SUM(CASE WHEN fresh_cf.units_delta > 0 THEN fresh_cf.execution_money ELSE 0 END)
-                        OVER w AS buy_cost,
-                    COALESCE(seed_cf.sell_proceeds, 0) +
-                        SUM(CASE WHEN fresh_cf.units_delta < 0 THEN -fresh_cf.execution_money ELSE 0 END)
-                        OVER w AS sell_proceeds,
-                    COALESCE(seed_cf.deposits, 0) +
-                        SUM(CASE WHEN fresh_cf.units_delta > 0 THEN fresh_cf.user_money ELSE 0 END)
-                        OVER w AS deposits,
-                    COALESCE(seed_cf.withdrawals, 0) +
-                        SUM(CASE WHEN fresh_cf.units_delta < 0 THEN -fresh_cf.user_money ELSE 0 END)
-                        OVER w AS withdrawals
+                    COALESCE(seed_cf.buy_units, 0) + SUM(fresh_cf.buy_units) OVER w AS buy_units,
+                    COALESCE(seed_cf.sell_units, 0) + SUM(fresh_cf.sell_units) OVER w AS sell_units,
+                    COALESCE(seed_cf.buy_cost, 0) + SUM(fresh_cf.buy_cost) OVER w AS buy_cost,
+                    COALESCE(seed_cf.sell_proceeds, 0) + SUM(fresh_cf.sell_proceeds) OVER w AS sell_proceeds,
+                    COALESCE(seed_cf.deposits, 0) + SUM(fresh_cf.deposits) OVER w AS deposits,
+                    COALESCE(seed_cf.withdrawals, 0) + SUM(fresh_cf.withdrawals) OVER w AS withdrawals
                 FROM _fresh_cf(p_user_id, p_product_id, p_before) fresh_cf
                     LEFT OUTER JOIN _seed_cf(p_user_id, p_product_id) seed_cf ON
                         fresh_cf.user_id = seed_cf.user_id AND

@@ -7,7 +7,7 @@
         "timestamp"        TIMESTAMPTZ NOT NULL,
 
         -- Reference timestamps for point-in-time lookups
-        cashflow_timestamp TIMESTAMPTZ NOT NULL,  -- Latest cashflow for this user-product at this time
+        cashflow_timestamp TIMESTAMPTZ NOT NULL,         -- Latest cashflow for this user-product at this time
         price_update_timestamp    TIMESTAMPTZ NOT NULL   -- Latest price update for this product at this time
     );
 
