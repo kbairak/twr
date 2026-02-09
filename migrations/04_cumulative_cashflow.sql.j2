@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS cumulative_cashflow_cache (
     --   - net_investment = deposits  - withdrawals
     --   - fees           = deposits  - buy_cost + withdrawals - sell_proceeds
     --   - avg_buy_cost   = buy_cost  / buy_units
-    --   - cost_basis     = units     * avg_buy_cost
+    --   - cost_basis     = units     × avg_buy_cost
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_cumulative_cashflow_cache_user_product_ts
@@ -57,8 +57,8 @@ CREATE OR REPLACE FUNCTION _seed_cf(p_user_id UUID DEFAULT NULL, p_product_id UU
             FROM cumulative_cashflow_cache ccfc
             WHERE
                 TRUE
-                {% if filter_user %}   AND ccfc.user_id    = p_user_id   {% endif %}
-                {% if filter_product %}AND ccfc.product_id = p_product_id{% endif %}
+                {% if filter_user %}    AND ccfc.user_id    = p_user_id   {% endif %}
+                {% if filter_product %} AND ccfc.product_id = p_product_id{% endif %}
             ORDER BY ccfc.user_id, ccfc.product_id, ccfc."timestamp" DESC
         {% endmacro %}
 
@@ -89,9 +89,11 @@ CREATE OR REPLACE FUNCTION _fresh_cf(
     )
     RETURNS TABLE (
         user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ,
-        buy_units NUMERIC(20, 6), sell_units NUMERIC(20, 6),
-        buy_cost NUMERIC(20, 6), sell_proceeds NUMERIC(20, 6),
-        deposits NUMERIC(20, 6), withdrawals NUMERIC(20, 6)
+        seed_buy_units NUMERIC(20, 6), seed_sell_units NUMERIC(20, 6),
+        seed_buy_cost NUMERIC(20, 6), seed_sell_proceeds NUMERIC(20, 6),
+        seed_deposits NUMERIC(20, 6), seed_withdrawals NUMERIC(20, 6),
+        buy_units NUMERIC(20, 6), sell_units NUMERIC(20, 6), buy_cost NUMERIC(20, 6),
+        sell_proceeds NUMERIC(20, 6), deposits NUMERIC(20, 6), withdrawals NUMERIC(20, 6)
     )
     LANGUAGE plpgsql STABLE AS $$
     BEGIN
@@ -101,6 +103,15 @@ CREATE OR REPLACE FUNCTION _fresh_cf(
                 cf.user_id,
                 cf.product_id,
                 cf."timestamp",
+
+                -- seed_cf fields
+                COALESCE(seed_cf.buy_units, 0) AS seed_buy_units,
+                COALESCE(seed_cf.sell_units, 0) AS seed_sell_units,
+                COALESCE(seed_cf.buy_cost, 0) AS seed_buy_cost,
+                COALESCE(seed_cf.sell_proceeds, 0) AS seed_sell_proceeds,
+                COALESCE(seed_cf.deposits, 0) AS seed_deposits,
+                COALESCE(seed_cf.withdrawals, 0) AS seed_withdrawals,
+
                 -- Aggregate buy and sell components separately
                 SUM(CASE WHEN cf.units_delta > 0 THEN cf.units_delta ELSE 0 END) AS buy_units,
                 SUM(CASE WHEN cf.units_delta < 0 THEN -cf.units_delta ELSE 0 END) AS sell_units,
@@ -113,17 +124,20 @@ CREATE OR REPLACE FUNCTION _fresh_cf(
                     ON cf.user_id = seed_cf.user_id AND cf.product_id = seed_cf.product_id
             WHERE
                 (seed_cf."timestamp" IS NULL OR cf."timestamp" > seed_cf."timestamp")
-                {% if filter_user %}   AND cf.user_id     = p_user_id   {% endif %}
-                {% if filter_product %}AND cf.product_id  = p_product_id{% endif %}
-                {% if filter_before %} AND cf."timestamp" <= p_before   {% endif %}
-            GROUP BY cf.user_id, cf.product_id, cf."timestamp"
+                {% if filter_user %}    AND cf.user_id     = p_user_id   {% endif %}
+                {% if filter_product %} AND cf.product_id  = p_product_id{% endif %}
+                {% if filter_before %}  AND cf."timestamp" <= p_before   {% endif %}
+            GROUP BY
+                cf.user_id, cf.product_id, cf."timestamp",
+                seed_cf.buy_units, seed_cf.sell_units, seed_cf.buy_cost, seed_cf.sell_proceeds,
+                seed_cf.deposits, seed_cf.withdrawals
         {% endmacro %}
 
         {% for fu, fp, fb in itertools.product([True, False], repeat=3) %}
             {% if loop.first %}IF{% else %}ELSIF{% endif %}
-                p_user_id    IS {% if fu %}NOT{% endif %} NULL AND
-                p_product_id IS {% if fp %}NOT{% endif %} NULL AND
-                p_before     IS {% if fb %}NOT{% endif %} NULL
+                p_user_id    IS {% if fu %} NOT {% endif %} NULL AND
+                p_product_id IS {% if fp %} NOT {% endif %} NULL AND
+                p_before     IS {% if fb %} NOT {% endif %} NULL
             THEN
                 {{ query(filter_user=fu, filter_product=fp, filter_before=fb) }};
         {% endfor %}
@@ -171,19 +185,17 @@ CREATE OR REPLACE FUNCTION cumulative_cashflow(
 
             UNION ALL
 
-            SELECT * FROM (
+            SELECT *
+            FROM (
                 SELECT
                     fresh_cf.user_id, fresh_cf.product_id, fresh_cf."timestamp",
-                    COALESCE(seed_cf.buy_units, 0) + SUM(fresh_cf.buy_units) OVER w AS buy_units,
-                    COALESCE(seed_cf.sell_units, 0) + SUM(fresh_cf.sell_units) OVER w AS sell_units,
-                    COALESCE(seed_cf.buy_cost, 0) + SUM(fresh_cf.buy_cost) OVER w AS buy_cost,
-                    COALESCE(seed_cf.sell_proceeds, 0) + SUM(fresh_cf.sell_proceeds) OVER w AS sell_proceeds,
-                    COALESCE(seed_cf.deposits, 0) + SUM(fresh_cf.deposits) OVER w AS deposits,
-                    COALESCE(seed_cf.withdrawals, 0) + SUM(fresh_cf.withdrawals) OVER w AS withdrawals
+                    fresh_cf.seed_buy_units + SUM(fresh_cf.buy_units) OVER w AS buy_units,
+                    fresh_cf.seed_sell_units + SUM(fresh_cf.sell_units) OVER w AS sell_units,
+                    fresh_cf.seed_buy_cost + SUM(fresh_cf.buy_cost) OVER w AS buy_cost,
+                    fresh_cf.seed_sell_proceeds + SUM(fresh_cf.sell_proceeds) OVER w AS sell_proceeds,
+                    fresh_cf.seed_deposits + SUM(fresh_cf.deposits) OVER w AS deposits,
+                    fresh_cf.seed_withdrawals + SUM(fresh_cf.withdrawals) OVER w AS withdrawals
                 FROM _fresh_cf(p_user_id, p_product_id, p_before) fresh_cf
-                    LEFT OUTER JOIN _seed_cf(p_user_id, p_product_id) seed_cf ON
-                        fresh_cf.user_id = seed_cf.user_id AND
-                        fresh_cf.product_id = seed_cf.product_id
                 WINDOW w AS (
                     PARTITION BY fresh_cf.user_id, fresh_cf.product_id
                     ORDER BY fresh_cf."timestamp"
@@ -194,10 +206,10 @@ CREATE OR REPLACE FUNCTION cumulative_cashflow(
 
         {% for fu, fp, fa, fb in itertools.product([True, False], repeat=4) %}
             {% if loop.first %}IF{% else %}ELSIF{% endif %}
-                p_user_id    IS {% if fu %}NOT{% endif %} NULL AND
-                p_product_id IS {% if fp %}NOT{% endif %} NULL AND
-                p_after      IS {% if fa %}NOT{% endif %} NULL AND
-                p_before     IS {% if fb %}NOT{% endif %} NULL
+                p_user_id    IS {% if fu %} NOT {% endif %} NULL AND
+                p_product_id IS {% if fp %} NOT {% endif %} NULL AND
+                p_after      IS {% if fa %} NOT {% endif %} NULL AND
+                p_before     IS {% if fb %} NOT {% endif %} NULL
             THEN
                 {{ query(filter_user=fu, filter_product=fp, filter_after=fa, filter_before=fb) }};
         {% endfor %}

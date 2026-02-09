@@ -7,8 +7,8 @@
         "timestamp"        TIMESTAMPTZ NOT NULL,
 
         -- Reference timestamps for point-in-time lookups
-        cashflow_timestamp TIMESTAMPTZ NOT NULL,         -- Latest cashflow for this user-product at this time
-        price_update_timestamp    TIMESTAMPTZ NOT NULL   -- Latest price update for this product at this time
+        cashflow_timestamp     TIMESTAMPTZ NOT NULL,  -- Latest cashflow for this user-product at this time
+        price_update_timestamp TIMESTAMPTZ NOT NULL   -- Latest price update for this product at this time
     );
 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_user_product_timeline_cache_{{ g.suffix }}_user_product_ts
@@ -24,7 +24,7 @@
     --
     -- Purpose: Creates a "densified" price table where every product has a price at every timestamp
     --          by forward-filling gaps (carrying the last known price forward)
-    -- Returns: (product_id, timestamp, price) for all combinations
+    -- Returns: (product_id, timestamp, last_pu_timestamp) for all combinations
     -- Performance: Uses window functions for efficient gap-filling
     -- Parameters:
     --   - p_product_id: Filter by product (NULL = all products)
@@ -75,8 +75,7 @@
                                 {% if filter_product %}AND pu.product_id  =  p_product_id{% endif %}
                                 {% if filter_after %}  AND pu."timestamp" >  p_after     {% endif %}
                                 {% if filter_before %} AND pu."timestamp" <= p_before    {% endif %}
-                        ) pu ON
-                            p.product_id = pu.product_id AND t.timestamp = pu.timestamp
+                        ) pu ON p.product_id = pu.product_id AND t.timestamp = pu.timestamp
                 )
                 SELECT
                     all_prices.product_id,

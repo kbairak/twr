@@ -121,6 +121,10 @@ def _chunkify[T](iterable: Iterable[T], chunk_size: int) -> Generator[Generator[
         yield (item for _, item in enumerated_chunk)
 
 
+def _jitter() -> datetime.timedelta:
+    return datetime.timedelta(milliseconds=1_000 * random.random() - 500)
+
+
 def generate(days: int, price_update_frequency: str, product_count: int, user_count: int):
     trading_duration = days * (
         datetime.datetime.combine(datetime.date.today(), MARKET_CLOSE)
@@ -128,19 +132,20 @@ def generate(days: int, price_update_frequency: str, product_count: int, user_co
     )
     interval = _parse_time_interval(price_update_frequency)
     tick_count = round(trading_duration / interval)
-
     ticks = sorted(list(_get_ticks(interval, tick_count)))
+
     products = {(p := Product()).id: p for _ in range(product_count)}
 
-    for tick in ticks:
-        for product in products.values():
-            try:
-                last_price = product.price_updates[-1].price
-            except IndexError:
-                last_price = 10 + 100 * random.random()
+    for product in products.values():
+        last_price = 10 + 100 * random.random()
+        for tick in ticks:
+            # Lets drop some price updates randomly to simulate gaps
+            if product.price_updates and random.random() < 0.03:
+                continue
             while (next_price := last_price + random.random() - 0.5) <= 0:
                 pass
-            product.price_updates.append(PriceUpdate(timestamp=tick, price=next_price))
+            product.price_updates.append(PriceUpdate(timestamp=tick + _jitter(), price=next_price))
+            last_price = next_price
 
     users = {(u := User()).id: u for _ in range(user_count)}
 
@@ -161,7 +166,7 @@ def generate(days: int, price_update_frequency: str, product_count: int, user_co
             assert price is not None
             cashflow = Cashflow(
                 product_id=product.id,
-                timestamp=timestamp,
+                timestamp=timestamp + _jitter(),
                 units_delta=(units_delta := random.random() - 0.5),
                 execution_price=price,
                 user_money=units_delta * price + random.random(),
@@ -217,17 +222,20 @@ def generate(days: int, price_update_frequency: str, product_count: int, user_co
         )
         conn.commit()
 
+    conn.autocommit = True
+    cur = conn.cursor()
+    cur.execute("VACUUM ANALYZE price_update")
+    cur.execute("VACUUM ANALYZE cashflow")
+
     migrations_dir = pathlib.Path(__file__).parent.parent.parent / "migrations"
     granularities_file = migrations_dir / "granularities.json"
 
     with open(granularities_file) as f:
         GRANULARITIES = json.load(f)
 
-    conn = get_conn()
-    conn.autocommit = True
-    cur = conn.cursor()
     for g in GRANULARITIES:
         cur.execute(f"CALL refresh_continuous_aggregate('price_update_{g['suffix']}', NULL, NULL)")
+        cur.execute(f"VACUUM ANALYZE price_update_{g['suffix']}")
 
     return users, products, ticks
 
@@ -241,9 +249,7 @@ parser.add_argument("--products", type=int, default=500)
 
 def main():
     args = parser.parse_args()
-    users, products, ticks = generate(
-        args.days, args.price_update_frequency, args.products, args.users
-    )
+    _, _, ticks = generate(args.days, args.price_update_frequency, args.products, args.users)
     print(
         f"Trading duration: {args.days}d\n"
         f"Start           : {ticks[0].isoformat()}\n"
