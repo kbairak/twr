@@ -28,7 +28,7 @@ def _query_granularity(
             cur.fetchall()
             query_timings.append(time.time() - small_tic)
         avg = 1_000 * sum(query_timings) / len(query_timings)
-        print(f"  user_product_timeline_business_{suffix:5}: {avg:.2f}ms")
+        print(f"    - user_product_timeline_business_{suffix:5}: {avg:.2f}ms")
 
         query_timings: list[float] = []
         big_tic = time.time()
@@ -39,7 +39,7 @@ def _query_granularity(
             cur.fetchall()
             query_timings.append(time.time() - small_tic)
         avg = 1_000 * sum(query_timings) / len(query_timings)
-        print(f"  user_timeline_business_{suffix:5}        : {avg:.2f}ms")
+        print(f"    - user_timeline_business_{suffix:5}        : {avg:.2f}ms")
 
 
 def _clear_cache(cutoff: datetime.datetime) -> None:
@@ -49,14 +49,17 @@ def _clear_cache(cutoff: datetime.datetime) -> None:
             f"user_product_timeline_cache_{g['suffix']}" for g in GRANULARITIES
         ]:
             cur.execute(f"DELETE FROM {table} WHERE timestamp > %s", (cutoff,))
+            cur.execute(f"VACUUM ANALYZE {table}")
 
 
 def main() -> None:
     args = parser.parse_args()
-    print(
+    msg = (
         f"benchmark --days={args.days} --price-update-frequency={args.price_update_frequency} "
         f"--products={args.products} --users={args.users}"
     )
+    print(msg)
+    print("=" * len(msg))
 
     with connection() as conn:
         drop_and_recreate_schema(conn)
@@ -68,31 +71,33 @@ def main() -> None:
         args.days, args.price_update_frequency, args.products, args.users
     )
     user_ids, product_ids = list(users.keys()), list(products.keys())
-    print(f"Event generation took {time.time() - tic:.2f}s")
+    print(f"\n⚙️ Event generation took {time.time() - tic:.2f}s")
 
-    print("Querying with 0% cache")
+    print("\n🔍 Querying with 0% cache")
 
     for g in GRANULARITIES:
         _query_granularity(user_ids, product_ids, g["suffix"])
 
-    print("Refreshing cache")
+    print("\n🔄 Refreshing cache")
     with connection() as conn:
         cur = conn.cursor()
 
         tic = time.time()
         cur.execute("SELECT refresh_cumulative_cashflow()")
-        print(f"  refresh_cumulative_cashflow        : {time.time() - tic:.2f}s")
+        print(f"    - refresh_cumulative_cashflow         : {time.time() - tic:.2f}s")
 
         cur.execute("VACUUM ANALYZE cumulative_cashflow_cache")
 
         for g in GRANULARITIES:
             tic = time.time()
             cur.execute(f"SELECT refresh_user_product_timeline_{g['suffix']}()")
-            print(f"  refresh_user_product_timeline_{g['suffix']:5}: {time.time() - tic:.2f}s")
+            print(
+                f"    - refresh_user_product_timeline_{g['suffix']:5} : {time.time() - tic:.2f}s"
+            )
 
             cur.execute(f"VACUUM ANALYZE user_product_timeline_cache_{g['suffix']}")
 
-    print("Querying with 100% cache")
+    print("\n🔍 Querying with 100% cache")
     for g in GRANULARITIES:
         _query_granularity(user_ids, product_ids, g["suffix"])
 
@@ -111,7 +116,7 @@ def main() -> None:
         _clear_cache(timestamp)
         for n, g in cutoffs[timestamp]:
             print(
-                f"Querying {g['suffix']:5} with {n * 100}% cache (cutoff: {timestamp.isoformat()})"
+                f"\n🔍 Querying {g['suffix']:5} with {n * 100}% cache (cutoff: {timestamp.isoformat()})"
             )
             _query_granularity(user_ids, product_ids, g["suffix"])
 

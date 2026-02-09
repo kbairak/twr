@@ -1,16 +1,16 @@
-# Portfolio management system
+# Portfolio Management System
 
 ## Design
 
-The intended use for this system includes 3 main processes:
+This system is designed around 3 main processes:
 
 - You enter raw data on one end: price updates and cashflow events (buys/sells)
-- You setup periodic tasks to refresh caches in order to speed up queries
+- You set up periodic tasks to refresh caches in order to speed up queries
 - You query investment performance data on the other end: per investment (user-product) and per user
 
 ## Data model
 
-This system starts from simple data and builds layer on top of layer until it can provide meaningful aggregate information for an investment service.
+This system starts from simple data and builds layers on top of layers until it can provide meaningful aggregate information for an investment service.
 
 ### Raw data: Cashflows
 
@@ -32,7 +32,7 @@ and the following values can be easily derived:
 
 Notes:
 
-1. Cash-flows represents deltas, not cumulative totals. It is data related to a single transaction. The fact that we save single transactions allows us to support out-of-order inserts while still being able to compute cumulative totals later, via mechanisms that will be explained later
+1. Cashflows represent deltas, not cumulative totals. They are data related to a single transaction. The fact that we save single transactions allows us to support out-of-order inserts while still being able to compute cumulative totals later, via mechanisms that will be explained later
 2. We need to explain what the `execution_` and `user_` prefixes mean: `execution_money` is the amount that the provider _claims_ they converted into/from units at `execution_price` units of currency per unit. `user_money` is the amount that the user actually lost or gained. This allows us to calculate fees, both individually and cumulatively
 3. The `user_id`, `product_id` and `timestamp` combination is **not** unique; the system allows for different cashflows to share these values and they will be properly aggregated later
 
@@ -133,7 +133,7 @@ This step aggregates cashflows that share the same `user_id`, `product_id` and `
 
 With periodic cache refresh, this looks like this:
 
-- t0
+- Starting condition
 
   |                           | t1 | t2      |
   |---------------------------|----|---------|
@@ -141,7 +141,7 @@ With periodic cache refresh, this looks like this:
   | cumulative_cashflow-view  | 3u | 6u      |
   | cumulative_cashflow-cache |    |         |
 
-- t1, first cache refresh
+- First cache refresh
 
   |                           | t1 | t2      |
   |---------------------------|----|---------|
@@ -149,7 +149,7 @@ With periodic cache refresh, this looks like this:
   | cumulative_cashflow-view  | 3u | 6u      |
   | cumulative_cashflow-cache | 3u | 6u      |
 
-- t2, more cashlows
+- More cashflows
 
   |                           | t1 | t2      | t3  | t4 |
   |---------------------------|----|---------|-----|----|
@@ -157,7 +157,7 @@ With periodic cache refresh, this looks like this:
   | cumulative_cashflow-view  | 3u | 6u      | 3u  | 4u |
   | cumulative_cashflow-cache | 3u | 6u      |     |    |
 
-- t3, second cache refresh
+- Second cache refresh
 
   |                           | t1 | t2      | t3  | t4 |
   |---------------------------|----|---------|-----|----|
@@ -173,7 +173,7 @@ This layer is meant to answer the following question: what happens to an investm
 |----------|----|-------------|-------------|-------------|-------------|
 | p1 (ppu) | 10 |             | 12          | 15          |             |
 | u1p1 (u) |    | 1           |             |             | 2           |
-| u1p1 (v) |    | 10 (1 x 10) | 12 (1 x 12) | 15 (1 x 15) | 30 (2 x 15) |
+| u1p1 (v) |    | 10 (1 × 10) | 12 (1 × 12) | 15 (1 × 15) | 30 (2 × 15) |
 
 We say that a user-product-timeline entry exists:
 
@@ -215,16 +215,16 @@ For that user-product-timeline entry we retrieve the relevant price update and t
   - `units = buy_units - sell_units`
   - `net_investment = deposits - withdrawals`
   - `fees = deposits - buy_cost + withdrawals - sell_proceeds`
-  - `market_value = units * price`
+  - `market_value = units × price`
   - `avg_buy_cost = buy_cost / buy_units`
-  - `cost_basis = units x avg_buy_cost`
+  - `cost_basis = units × avg_buy_cost`
   - `unrealized_returns = market_value - cost_basis`
 
 Because performing the JOINS needed to retrieve the related cashflow and price update are performant, and in order to save space, only the first sub-layer is being cached. The second sub-layer is only served by a _view_ function. So, for every granularity, the following entities are being created:
 
 - user_product_timeline_cache_SUFFIX (cache table)
 - user_product_timeline_SUFFIX (view function)
-- refresh_user_product_timeline_SUFFIX (refresh_unction)
+- refresh_user_product_timeline_SUFFIX (refresh function)
 - user_product_timeline_business_SUFFIX (view function with more data)
 
 We also take care of gaps in price updates. For example:
@@ -235,8 +235,8 @@ We also take care of gaps in price updates. For example:
 |                       | p2 (ppu) | 20 |    | 22          | (gap)       |
 | cumulative cashflows  | u1p1 (u) |    | 1  |             |             |
 |                       | u1p2 (u) |    | 2  |             |             |
-| user-product-timeline | u1p1 (v) |    |    | 12 (1 x 12) | 14 (1 x 14) |
-|                       | u2p1 (v) |    |    | 44 (2 x 22) | ???         |
+| user-product-timeline | u1p1 (v) |    |    | 12 (1 × 12) | 14 (1 × 14) |
+|                       | u1p2 (v) |    |    | 44 (2 × 22) | ???         |
 
 Given the rules we described for when a user-product-timeline entry should exist, there shouldn't be one for the `u2p1-t4` slot since the `p2-t4` slot is missing from price-updates. Having this gap makes the next layer (user-timeline) significantly harder to compute. For this reason, we _pretend_ there is a `p2-t4` price update with the same price as the previous one (`p2-t3`).
 
@@ -246,8 +246,8 @@ Given the rules we described for when a user-product-timeline entry should exist
 |                       | p2 (ppu) | 20 |    | 22          | (22, pretend) |
 | cumulative cashflows  | u1p1 (u) |    | 1  |             |               |
 |                       | u1p2 (u) |    | 2  |             |               |
-| user-product-timeline | u1p1 (v) |    |    | 12 (1 x 12) | 14 (1 x 14)   |
-|                       | u2p1 (v) |    |    | 44 (2 x 22) | 44 (2 x 22)   |
+| user-product-timeline | u1p1 (v) |    |    | 12 (1 × 12) | 14 (1 × 14)   |
+|                       | u1p2 (v) |    |    | 44 (2 × 22) | 44 (2 × 22)   |
 
 ### User-timeline
 
@@ -305,13 +305,13 @@ In the granularity configuration, each granularity has a `retention_period` fiel
 - The view SQL functions will only return data within the retention period (e.g., last 30 days)
 - The refresh SQL functions will delete data older than the retention period after inserting new data (keeping at least one per user-product to serve as seed values)
 
-Cache retention only applies on the user-product-timeline caches. The cumulative cashflow cache keeps all data indefinitely.
+Cache retention only applies to the user-product-timeline caches. The cumulative cashflow cache keeps all data indefinitely.
 
 This allows storage requirements and performance to remain manageable indefinitely.
 
 ### "Latest" views
 
-Finally we have the `user_product_timeline_latest` and `user_timeline_latest` views. These do not depend on granularity. The first one gets the latest price update and cumulative cashflow for each user-product and calculates the business data, the second ones calls the first internally and groups by user.
+Finally we have the `user_product_timeline_latest` and `user_timeline_latest` views. These do not depend on granularity. The first one gets the latest price update and cumulative cashflow for each user-product and calculates the business data, the second one calls the first internally and groups by user.
 
 ## SQL Code Guide
 
@@ -329,7 +329,7 @@ As mentioned before, we use Jinja2 to generate the SQL for this system. All the 
   "cache_retention": null}]
 ```
 
-(`interval` and `cache_retention` are strings that can be converted to SQL intervals with `''{{ g.interval }}''::interval`)
+(`interval` and `cache_retention` are strings that can be converted to SQL intervals with `'{{ g.interval }}'::interval`)
 
 When running the migrate command:
 
@@ -434,28 +434,26 @@ Also notice that in the above example, we don't use a `WHERE` clause to filter t
 
 ### Event Generator
 
-The event generator creates realistic synthetic data for testing and benchmarking using a **2-of-3 parameter model**.
+The event generator creates realistic synthetic data for testing and benchmarking.
 
-**Flexible parameter model:**
+**Parameters:**
 
-Provide **any 2 of these 3 parameters**, and the third is calculated automatically:
-
-1. `--days`: Number of trading days to simulate
-2. `--num-events`: Total number of events to generate
-3. `--price-update-frequency`: How often prices update (e.g., "2min", "5min", "1h")
+- `--days`: Number of trading days to simulate (default: 10)
+- `--price-update-frequency`: How often prices update, e.g., "2min", "5min", "1h" (default: "14min")
+- `--users`: Number of users to generate (default: 1000)
+- `--products`: Number of products to generate (default: 500)
 
 **How it works:**
 
 - **Realistic market timing**: Generates events during trading hours (9:30 AM - 4:00 PM)
 - **Weekend handling**: Automatically skips Saturdays and Sundays
 - **Price updates**: Synchronized across all products at specified frequency
-  - Small jitter (milliseconds) to avoid exact timestamp collisions
-  - Random walk: -2% to +2.5% per update (slightly bullish)
-- **Cash flows**: Randomly distributed across time range
-  - 80% during market hours, 20% after-hours
-  - 90% price events, 10% cash flow events (9:1 ratio)
-  - 80% buys, 20% sells
+  - Random walk: prices change by -0.5 to +0.5 per update
+- **Cashflows**: Randomly distributed across the time range
+  - Approximately 1 cashflow per 9 price updates (per product)
+  - ~50% buys, ~50% sells (random units_delta between -0.5 and +0.5)
   - Users tend to invest in products they already own (90% probability)
+  - Prevents negative holdings (retries if a sell would result in negative units)
 
 ### Benchmarks
 
@@ -464,50 +462,115 @@ The benchmark script measures query performance at different cache levels (0%, 2
 **Running the benchmark:**
 
 ```bash
-# Generate 10 days of data
-PYTHONPATH=src uv run python -m twr.benchmark --days 10 --price-update-frequency 2min --num-users 1000 --num-products 100
+# Generate 10 days of data with 2min price updates
+uv run python src/twr/benchmark.py --days 10 --price-update-frequency 2min --users 1000 --products 100
 
-# Generate specific number of events
-PYTHONPATH=src uv run python -m twr.benchmark --days 5 --num-events 100000 --num-users 500 --num-products 50
+# Generate 5 days of data with fewer users/products
+uv run python src/twr/benchmark.py --days 5 --users 500 --products 50
 
-# Generate 50k events with 5min price updates
-PYTHONPATH=src uv run python -m twr.benchmark --num-events 50000 --price-update-frequency 5min
+# Use 5min price updates with default user/product counts
+uv run python src/twr/benchmark.py --days 10 --price-update-frequency 5min
 ```
 
 **What the benchmark measures:**
 
 For each run, the benchmark:
 
-1. Clears existing data
+1. Drops and recreates the database schema, then runs all migrations
 2. Generates and inserts events
 3. Refreshes TimescaleDB continuous aggregates
 4. **Queries with 0% cache** (baseline - before any caching)
 5. Refreshes all caches with VACUUM ANALYZE (cumulative_cashflow + user_product_timeline for all granularities)
 6. **Queries with 100% cache**
-7. Progressively deletes cache and queries:
-   - Delete >= 75th percentile timestamp → **query with 75% cache** (oldest 75% retained)
-   - Delete >= 50th percentile timestamp → **query with 50% cache** (oldest 50% retained)
-   - Delete >= 25th percentile timestamp → **query with 25% cache** (oldest 25% retained)
+7. Tests at different cache levels by deleting data beyond specific time cutoffs:
+   - Delete data after 75% time point → **query with 75% cache** (oldest 75% retained)
+   - Delete data after 50% time point → **query with 50% cache** (oldest 50% retained)
+   - Delete data after 25% time point → **query with 25% cache** (oldest 25% retained)
 
 **How cache reduction works:**
 
-- Percentiles are calculated from the full cache using timestamp distribution
-- Deletion is progressive: each step deletes from the remaining cache
-- VACUUM ANALYZE runs after each deletion to update statistics
+- Cutoff timestamps are calculated based on the time range of the generated data
+- For granularities with cache retention, the time range is limited to the retention window
+- At each cache level (25%, 50%, 75%), data beyond the cutoff timestamp is deleted
+- VACUUM ANALYZE runs after each deletion to update statistics for the query planner
 - This simulates realistic scenarios where older data is cached and newer data is computed on-the-fly
 
 **Example output:**
 
-The benchmark outputs query times for each granularity (15min, 1h, 1d) at each cache level, along with cache refresh times. This helps understand the performance tradeoffs between cache size and query speed.
+```
+benchmark --days=1 --price-update-frequency=14min --products=500 --users=1000
+=============================================================================
 
-_Note: Actual results will vary based on hardware, data size, and PostgreSQL configuration._
+⚙️ Event generation took 0.56s
+
+🔍 Querying with 0% cache
+    - user_product_timeline_business_15min: 1.35ms
+    - user_timeline_business_15min        : 19.02ms
+    - user_product_timeline_business_1h   : 0.73ms
+    - user_timeline_business_1h           : 6.77ms
+    - user_product_timeline_business_1d   : 0.48ms
+    - user_timeline_business_1d           : 2.43ms
+
+🔄 Refreshing cache
+    - refresh_cumulative_cashflow         : 0.03s
+    - refresh_user_product_timeline_15min : 0.46s
+    - refresh_user_product_timeline_1h    : 0.14s
+    - refresh_user_product_timeline_1d    : 0.04s
+
+🔍 Querying with 100% cache
+    - user_product_timeline_business_15min: 1.31ms
+    - user_timeline_business_15min        : 19.06ms
+    - user_product_timeline_business_1h   : 0.72ms
+    - user_timeline_business_1h           : 6.74ms
+    - user_product_timeline_business_1d   : 0.37ms
+    - user_timeline_business_1d           : 0.64ms
+
+🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-08T20:37:35.454403)
+    - user_product_timeline_business_15min: 1.28ms
+    - user_timeline_business_15min        : 19.05ms
+
+🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-08T20:37:35.454403)
+    - user_product_timeline_business_1h   : 0.72ms
+    - user_timeline_business_1h           : 6.77ms
+
+🔍 Querying 1d    with 75.0% cache (cutoff: 2026-02-08T20:37:35.454403)
+    - user_product_timeline_business_1d   : 0.47ms
+    - user_timeline_business_1d           : 1.64ms
+
+🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-08T02:41:43.636268)
+    - user_product_timeline_business_15min: 1.29ms
+    - user_timeline_business_15min        : 19.04ms
+
+🔍 Querying 1h    with 50.0% cache (cutoff: 2026-02-08T02:41:43.636268)
+    - user_product_timeline_business_1h   : 0.71ms
+    - user_timeline_business_1h           : 6.74ms
+
+🔍 Querying 1d    with 50.0% cache (cutoff: 2026-02-08T02:41:43.636268)
+    - user_product_timeline_business_1d   : 0.48ms
+    - user_timeline_business_1d           : 1.58ms
+
+🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-07T08:45:51.818134)
+    - user_product_timeline_business_15min: 1.29ms
+    - user_timeline_business_15min        : 19.36ms
+
+🔍 Querying 1h    with 25.0% cache (cutoff: 2026-02-07T08:45:51.818134)
+    - user_product_timeline_business_1h   : 0.72ms
+    - user_timeline_business_1h           : 6.69ms
+
+🔍 Querying 1d    with 25.0% cache (cutoff: 2026-02-07T08:45:51.818134)
+    - user_product_timeline_business_1d   : 0.47ms
+    - user_timeline_business_1d           : 1.58ms
+```
+
+> Note: Actual results will vary based on hardware, data size, and PostgreSQL configuration.
 
 ## TODOs
 
 - [x] Refresh cache in chunks
+- [x] Rewrite generator
+- [x] Rewrite benchmark (fewer logs)
+- [ ] Use watermark instead of seed to split cache vs raw query
 - [ ] Potential gap because of how watermarks work
 - [ ] Compress more tables
-- [ ] Rewrite generator
-- [ ] Rewrite benchmark (fewer logs)
 - [ ] Rewrite tests
 - [ ] rename `user_product` to `investment` everywhere
