@@ -40,52 +40,99 @@
         BEGIN
             {% macro query(filter_product, filter_after, filter_before) %}
                 RETURN QUERY
-                WITH all_prices AS (
-                    SELECT
-                        p.product_id,
-                        t.timestamp,
-                        pu.timestamp as source_timestamp,  -- May be NULL if no price update at this product-timestamp pair
-                        COUNT(pu.price) OVER (
-                            PARTITION BY p.product_id
-                            ORDER BY t.timestamp
-                            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-                        ) as price_group
-                    FROM (
-                        SELECT DISTINCT pu_p.product_id
-                        FROM price_update_{{ g.suffix }} pu_p
-                        WHERE
-                            TRUE
-                            {% if filter_product %}AND pu_p.product_id  =  p_product_id{% endif %}
-                            {% if filter_after %}  AND pu_p."timestamp" >  p_after     {% endif %}
-                            {% if filter_before %} AND pu_p."timestamp" <= p_before    {% endif %}
-                    ) p
-                        CROSS JOIN (
-                            SELECT DISTINCT pu_t."timestamp"
-                            FROM price_update_{{ g.suffix }} pu_t
-                            WHERE
-                                TRUE
-                                {% if filter_after  %}AND pu_t."timestamp" >  p_after {% endif %}
-                                {% if filter_before %}AND pu_t."timestamp" <= p_before{% endif %}
-                        ) t
-                        LEFT OUTER JOIN (
-                            SELECT pu.product_id, pu."timestamp", pu.price
+                WITH
+                -- Get seed timestamps: last price update at or before p_after for each product
+                    seed_prices AS (
+                        {% if filter_after %}
+                            SELECT DISTINCT ON (pu.product_id) pu.product_id, pu."timestamp"
                             FROM price_update_{{ g.suffix }} pu
                             WHERE
+                                pu."timestamp" <= p_after
+                                {% if filter_product %}AND pu.product_id = p_product_id{% endif %}
+                            ORDER BY pu.product_id, pu."timestamp" DESC
+                        {% else %}
+                            SELECT NULL::UUID, NULL::TIMESTAMPTZ WHERE FALSE
+                        {% endif %}
+                    ),
+                    -- All price updates that should be considered (in-window + seed)
+                    -- We need the price field for COUNT(pu.price) in price_group calculation
+                    all_price_timestamps AS (
+                        -- In-window price updates
+                        SELECT pu.product_id, pu."timestamp", pu.price
+                        FROM price_update_{{ g.suffix }} pu
+                        WHERE
+                            TRUE
+                            {% if filter_product %}AND pu.product_id  =  p_product_id{% endif %}
+                            {% if filter_after %}  AND pu."timestamp" >  p_after     {% endif %}
+                            {% if filter_before %} AND pu."timestamp" <= p_before    {% endif %}
+
+                        UNION ALL
+
+                        -- Seed price updates (for forward-filling)
+                        SELECT pu.product_id, pu."timestamp", pu.price
+                        FROM price_update_{{ g.suffix }} pu
+                            INNER JOIN seed_prices sp ON pu.product_id = sp.product_id AND pu."timestamp" = sp."timestamp"
+                        {% if filter_product %}WHERE pu.product_id = p_product_id{% endif %}
+                    ),
+                    all_prices AS (
+                        SELECT
+                            p.product_id,
+                            t.timestamp,
+                            pu.timestamp as source_timestamp,  -- May be NULL if no price update at this product-timestamp pair
+                            COUNT(pu.price) OVER (
+                                PARTITION BY p.product_id
+                                ORDER BY t.timestamp
+                                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                            ) as price_group
+                        FROM (
+                            SELECT DISTINCT pu_p.product_id
+                            FROM price_update_{{ g.suffix }} pu_p
+                            WHERE
                                 TRUE
-                                {% if filter_product %}AND pu.product_id  =  p_product_id{% endif %}
-                                {% if filter_after %}  AND pu."timestamp" >  p_after     {% endif %}
-                                {% if filter_before %} AND pu."timestamp" <= p_before    {% endif %}
-                        ) pu ON p.product_id = pu.product_id AND t.timestamp = pu.timestamp
-                )
+                                {% if filter_product %}AND pu_p.product_id  =  p_product_id{% endif %}
+                                {% if filter_after %}  AND pu_p."timestamp" >  p_after     {% endif %}
+                                {% if filter_before %} AND pu_p."timestamp" <= p_before    {% endif %}
+                        ) p
+                            CROSS JOIN (
+                                -- Include seed timestamp in the grid so it's available for price_group calculation
+                                SELECT sp."timestamp"
+                                FROM seed_prices sp
+
+                                UNION
+
+                                SELECT DISTINCT pu_t."timestamp"
+                                FROM price_update_{{ g.suffix }} pu_t
+                                WHERE
+                                    TRUE
+                                    {% if filter_after  %}AND pu_t."timestamp" >  p_after {% endif %}
+                                    {% if filter_before %}AND pu_t."timestamp" <= p_before{% endif %}
+                            ) t
+                            LEFT OUTER JOIN all_price_timestamps pu ON p.product_id = pu.product_id AND t.timestamp = pu.timestamp
+                    )
                 SELECT
-                    all_prices.product_id,
-                    all_prices.timestamp,
-                    FIRST_VALUE(all_prices.source_timestamp) OVER (
-                        PARTITION BY all_prices.product_id, all_prices.price_group
-                        ORDER BY all_prices.timestamp
-                        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-                    ) as price_update_timestamp
-                FROM all_prices
+                    final.product_id,
+                    final.timestamp,
+                    final.price_update_timestamp
+                FROM (
+                    SELECT
+                        all_prices.product_id,
+                        all_prices.timestamp,
+                        COALESCE(
+                            FIRST_VALUE(all_prices.source_timestamp) OVER (
+                                PARTITION BY all_prices.product_id, all_prices.price_group
+                                ORDER BY all_prices.timestamp
+                                ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                            ),
+                            -- If no price in current group, look backwards for last non-NULL source_timestamp (from seed)
+                            MAX(all_prices.source_timestamp) FILTER (WHERE all_prices.source_timestamp IS NOT NULL) OVER (
+                                PARTITION BY all_prices.product_id
+                                ORDER BY all_prices.timestamp
+                                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                            )
+                        ) as price_update_timestamp
+                    FROM all_prices
+                ) final
+                {% if filter_after %}WHERE final.timestamp > p_after{% endif %}  -- Exclude the seed row itself from output
             {% endmacro %}
 
             {% for fp, fa, fb in itertools.product([False, True], repeat=3) %}
