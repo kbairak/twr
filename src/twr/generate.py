@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Generator, Iterable
 import uuid
 
-from twr.utils import get_conn
+from twr.utils import connection
 
 MARKET_OPEN = datetime.time(9, 30)
 MARKET_CLOSE = datetime.time(16, 0)
@@ -45,7 +45,7 @@ def is_market_open(ts: datetime.datetime) -> bool:
     return is_workday and is_market_hours
 
 
-def _get_next_tick(now: datetime.datetime, interval: datetime.timedelta) -> datetime.datetime:
+def _get_previous_tick(now: datetime.datetime, interval: datetime.timedelta) -> datetime.datetime:
     candidate = now - interval
     while not is_market_open(candidate):
         candidate = datetime.datetime.combine(
@@ -54,10 +54,12 @@ def _get_next_tick(now: datetime.datetime, interval: datetime.timedelta) -> date
     return candidate
 
 
-def _get_ticks(interval: datetime.timedelta, tick_count: int) -> Generator[datetime.datetime]:
-    yield (last := _get_next_tick(datetime.datetime.now() + interval, interval))
-    for _ in range(tick_count - 1):
-        yield (last := _get_next_tick(last, interval))
+def _get_ticks(
+    interval: datetime.timedelta, duration: datetime.timedelta
+) -> Generator[datetime.datetime]:
+    last = now = datetime.datetime.now() + interval
+    while now - last < duration:
+        yield (last := _get_previous_tick(last, interval))
 
 
 @dataclass
@@ -96,7 +98,6 @@ class Cashflow:
 @dataclass
 class Investment:
     units: float = 0.0
-    invested_amount: float = 0.0
 
 
 @dataclass
@@ -110,7 +111,6 @@ class User:
         for cashflow in self.cashflows:
             result.setdefault(cashflow.product_id, Investment())
             result[cashflow.product_id].units += cashflow.units_delta
-            result[cashflow.product_id].invested_amount += cashflow.user_money
         return result
 
 
@@ -125,18 +125,20 @@ def _jitter() -> datetime.timedelta:
     return datetime.timedelta(milliseconds=1_000 * random.random() - 500)
 
 
-def generate(days: int, price_update_frequency: str, product_count: int, user_count: int):
-    trading_duration = days * (
-        datetime.datetime.combine(datetime.date.today(), MARKET_CLOSE)
-        - datetime.datetime.combine(datetime.date.today(), MARKET_OPEN)
+def generate(
+    days: int, price_update_frequency: str, product_count: int, user_count: int
+) -> tuple[list[uuid.UUID], list[uuid.UUID], list[datetime.datetime]]:
+    interval, duration = (
+        _parse_time_interval(price_update_frequency),
+        datetime.timedelta(days=days * 7 / 5),  # Convert calendar to trading days
     )
-    interval = _parse_time_interval(price_update_frequency)
-    tick_count = round(trading_duration / interval)
-    ticks = sorted(list(_get_ticks(interval, tick_count)))
+    ticks = sorted(list(_get_ticks(interval, duration)))
 
-    products = {(p := Product()).id: p for _ in range(product_count)}
-
-    for product in products.values():
+    products_list: list[Product] = []
+    products_dict: dict[uuid.UUID, Product] = {}
+    for _ in range(product_count):
+        products_list.append((product := Product()))
+        products_dict[product.id] = product
         last_price = 10 + 100 * random.random()
         for tick in ticks:
             # Lets drop some price updates randomly to simulate gaps
@@ -147,97 +149,107 @@ def generate(days: int, price_update_frequency: str, product_count: int, user_co
             product.price_updates.append(PriceUpdate(timestamp=tick + _jitter(), price=next_price))
             last_price = next_price
 
-    users = {(u := User()).id: u for _ in range(user_count)}
+    users_list: list[User] = []
+    users_dict: dict[uuid.UUID, User] = {}
+    for _ in range(user_count):
+        users_list.append((u := User()))
+        users_dict[u.id] = u
 
     # Distribute cashflows between ticks
-    timestamp = ticks[0] + datetime.timedelta(seconds=1)
+    start = ticks[0] + datetime.timedelta(seconds=1)
     end = ticks[-1] - datetime.timedelta(seconds=1)
-    step = (end - timestamp) / round(tick_count * product_count / 9)
-    while timestamp < end:
-        user = random.choice(list(users.values()))
+    cashflow_count = round(len(ticks) * product_count / 9)
+    cashflow_ticks = sorted(start + random.random() * (end - start) for _ in range(cashflow_count))
+    for timestamp in cashflow_ticks:
+        user = random.choice(users_list)
         investments = user.investments
         if len(investments) > 0 and random.random() < 0.9:
-            product = products[random.choice(list(investments.keys()))]
+            product = products_dict[random.choice(list(investments.keys()))]
         else:
-            product = random.choice(list(products.values()))
+            product = random.choice(products_list)
         units = investments.get(product.id, Investment()).units
-        while True:
-            price = product.price_at(timestamp)
-            assert price is not None
-            cashflow = Cashflow(
+        while units + (units_delta := random.random() - 0.5) < 0:
+            pass
+        market_price = product.price_at(timestamp)
+        assert market_price is not None
+        user.cashflows.append(
+            Cashflow(
                 product_id=product.id,
-                timestamp=timestamp + _jitter(),
-                units_delta=(units_delta := random.random() - 0.5),
-                execution_price=price,
-                user_money=units_delta * price + random.random(),
+                timestamp=timestamp,
+                units_delta=units_delta,
+                # Add a 10% discrepancy between market and execution price
+                execution_price=(
+                    execution_price := market_price * (1 + 0.1 * (random.random() - 0.5))
+                ),
+                # Add an up to 1$ fee
+                user_money=units_delta * execution_price + random.random(),
             )
-            if units + cashflow.units_delta >= 0:
-                break
-        user.cashflows.append(cashflow)
-        timestamp += step
-
-    conn = get_conn()
-    cur = conn.cursor()
-
-    for chunk in _chunkify(
-        (
-            (product, price_update)
-            for product in products.values()
-            for price_update in product.price_updates
-        ),
-        1_000_000,
-    ):
-        buffer = io.StringIO()
-        for product, price_update in chunk:
-            buffer.write(f"{product.id}\t{price_update.timestamp}\t{price_update.price}\n")
-        buffer.seek(0)
-        cur.copy_from(
-            buffer, "price_update", columns=("product_id", "timestamp", "price"), sep="\t"
         )
-        conn.commit()
 
-    for chunk in _chunkify(
-        ((user, cashflow) for user in users.values() for cashflow in user.cashflows),
-        1_000_000,
-    ):
-        buffer = io.StringIO()
-        for user, cashflow in chunk:
-            buffer.write(
-                f"{user.id}\t{cashflow.product_id}\t{cashflow.timestamp}\t{cashflow.units_delta}\t"
-                f"{cashflow.execution_price}\t{cashflow.user_money}\n"
-            )
-        buffer.seek(0)
-        cur.copy_from(
-            buffer,
-            "cashflow",
-            columns=(
-                "user_id",
-                "product_id",
-                "timestamp",
-                "units_delta",
-                "execution_price",
-                "user_money",
+    with connection() as conn:
+        cur = conn.cursor()
+
+        for chunk in _chunkify(
+            (
+                (product, price_update)
+                for product in products_list
+                for price_update in product.price_updates
             ),
-            sep="\t",
-        )
-        conn.commit()
+            1_000_000,
+        ):
+            buffer = io.StringIO()
+            for product, price_update in chunk:
+                buffer.write(f"{product.id}\t{price_update.timestamp}\t{price_update.price}\n")
+            buffer.seek(0)
+            cur.copy_from(
+                buffer, "price_update", columns=("product_id", "timestamp", "price"), sep="\t"
+            )
+            conn.commit()
 
-    conn.autocommit = True
-    cur = conn.cursor()
-    cur.execute("VACUUM ANALYZE price_update")
-    cur.execute("VACUUM ANALYZE cashflow")
+        for chunk in _chunkify(
+            ((user, cashflow) for user in users_list for cashflow in user.cashflows),
+            1_000_000,
+        ):
+            buffer = io.StringIO()
+            for user, cashflow in chunk:
+                buffer.write(
+                    f"{user.id}\t{cashflow.product_id}\t{cashflow.timestamp}\t"
+                    f"{cashflow.units_delta}\t{cashflow.execution_price}\t{cashflow.user_money}\n"
+                )
+            buffer.seek(0)
+            cur.copy_from(
+                buffer,
+                "cashflow",
+                columns=(
+                    "user_id",
+                    "product_id",
+                    "timestamp",
+                    "units_delta",
+                    "execution_price",
+                    "user_money",
+                ),
+                sep="\t",
+            )
+            conn.commit()
 
-    migrations_dir = pathlib.Path(__file__).parent.parent.parent / "migrations"
-    granularities_file = migrations_dir / "granularities.json"
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute("VACUUM ANALYZE price_update")
+        cur.execute("VACUUM ANALYZE cashflow")
 
-    with open(granularities_file) as f:
-        GRANULARITIES = json.load(f)
+        migrations_dir = pathlib.Path(__file__).parent.parent.parent / "migrations"
+        granularities_file = migrations_dir / "granularities.json"
 
-    for g in GRANULARITIES:
-        cur.execute(f"CALL refresh_continuous_aggregate('price_update_{g['suffix']}', NULL, NULL)")
-        cur.execute(f"VACUUM ANALYZE price_update_{g['suffix']}")
+        with open(granularities_file) as f:
+            GRANULARITIES = json.load(f)
 
-    return users, products, ticks
+        for g in GRANULARITIES:
+            cur.execute(
+                f"CALL refresh_continuous_aggregate('price_update_{g['suffix']}', NULL, NULL)"
+            )
+            cur.execute(f"VACUUM ANALYZE price_update_{g['suffix']}")
+
+    return list(users_dict.keys()), list(products_dict.keys()), ticks
 
 
 parser = argparse.ArgumentParser()

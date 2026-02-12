@@ -566,11 +566,33 @@ benchmark --days=1 --price-update-frequency=14min --products=500 --users=1000
 
 ## TODOs
 
-- [x] Refresh cache in chunks
-- [x] Rewrite generator
-- [x] Rewrite benchmark (fewer logs)
-- [ ] Use watermark instead of seed to split cache vs raw query
-- [ ] Potential gap because of how watermarks work
+- [ ] Understand and review user-product functions
 - [ ] Compress more tables
 - [ ] Rewrite tests
+- [ ] What if no price update for 8 days?
 - [ ] rename `user_product` to `investment` everywhere
+- [ ] Remove unused indexes
+
+  ```
+  Heavily Used Indexes (Hot):
+  - idx_cumulative_cashflow_cache_user_product_ts: 18.2M scans, 46MB - 🔥 Most critical index
+  - idx_user_product_timeline_cache_15min_user_product_ts: 681K scans, 615MB - Heavy use
+  - idx_cumulative_cashflow_cache_timestamp: 622K scans, 19MB
+  - idx_cumulative_cashflow_cache_product: 621K scans, 41MB - ⚠️ 0 tuples fetched!
+
+  Unused Indexes (0 scans = wasting space):
+
+  Your custom indexes:
+  - idx_price_update_time (on all price_update chunks) - 0 scans, ~350MB total wasted
+  - idx_user_product_timeline_cache_15min_product_ts - 0 scans, 96MB wasted
+  - idx_user_product_timeline_cache_1h_product_ts - 0 scans, 101MB wasted
+  - idx_user_product_timeline_cache_1d_product_ts - 0 scans, 8KB
+
+  Suspicious Findings:
+
+  1. idx_cumulative_cashflow_cache_product - 621K scans but 0 tuples_fetched
+  - This suggests it's being scanned but not actually returning data
+  - Might be used for existence checks only, or could be redundant
+  1. idx_cashflow_timestamp - 153 scans, read 11.8M tuples but 0 fetched
+  - Similar issue - scanned but not useful
+  ```
