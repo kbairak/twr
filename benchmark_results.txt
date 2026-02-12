@@ -1,862 +1,568 @@
 
 
-=== Calculated Parameters ===
-Trading days: 1.00
-Total events: 15,476
-Price update frequency: 0:14:00
-Number of users: 1000
-Number of products: 500
-End date: 2026-02-07
-
-
-=== TWR Database Benchmark ===
-Events: 15,476
-Users: 1,000
-Products: 500
-Query samples: 100
-Granularities: 15min, 1h, 1d
-
-Clearing existing data...
-  → Data cleared
-
-[1/6] Generating and inserting events...
-
-=== Event Generation Plan ===
-Total events: 15,476
-Price events: 13,928 (90%)
-  - Ticks: 28
-  - Products per tick: 500
-Cash flow events: 1,547 (10%)
-Price update interval: 0:14:00
-End date: 2026-02-07
-
-Generating 28 price ticks...
-
-Time range: 2026-02-06 to 2026-02-06
-Calendar days: 1
-Time span: 6:18:00.100000
-
-Generating 1,547 cash flows...
-
-Inserting 14,000 price events...
-
-Inserting 1,547 cashflow events...
-  → Inserted 15,476 events in 0.36s
-
-[2/6] Refreshing continuous aggregates...
-  Refreshing 15min buckets...
-  Refreshing 1h buckets...
-  Refreshing 1d buckets...
-  → Refreshed in 0.32s
-
-[3/6] Querying with 0% cache (baseline, 5s per granularity)...
-  → 15min: user_product=3.7ms, user=25.4ms
-  → 1h: user_product=1.0ms, user=6.6ms
-  → 1d: user_product=0.6ms, user=1.8ms
-
-[4/6] Refreshing caches...
-  → Cumulative cashflow: 0.03s
-  → 15min: 0.64s
-  → 1h: 0.19s
-  → 1d: 0.03s
-
-[5/6] Querying with 100% cache (5s per granularity)...
-  → 15min: user_product=3.5ms, user=4.3ms
-  → 1h: user_product=0.5ms, user=1.3ms
-  → 1d: user_product=0.4ms, user=0.6ms
-
-[6/6] Progressive cache deletion and querying...
-  → Deleting cache >= 75th percentile...
-  → Querying with 75% cache (5s per granularity)...
-     15min: user_product=1.4ms, user=5.0ms
-     1h: user_product=0.8ms, user=2.7ms
-     1d: user_product=0.6ms, user=1.3ms
-
-  → Deleting cache >= 50th percentile...
-  → Querying with 50% cache (5s per granularity)...
-     15min: user_product=1.6ms, user=9.6ms
-     1h: user_product=0.9ms, user=3.8ms
-     1d: user_product=0.6ms, user=1.3ms
-
-  → Deleting cache >= 25th percentile...
-  → Querying with 25% cache (5s per granularity)...
-     15min: user_product=1.8ms, user=14.8ms
-     1h: user_product=0.9ms, user=5.0ms
-     1d: user_product=0.6ms, user=1.3ms
-
-=== Query Performance Summary ===
-Continuous aggregate refresh: 0.32s
-
-Cache refresh times:
-  Cumulative cashflow: 0.03s
-  15min: 0.64s
-  1h: 0.19s
-  1d: 0.03s
-
-Queries with 100% cache:
-  user-product-timeline-15min: 4ms
-  user-timeline-15min:         4ms
-  user-product-timeline-1h: 1ms
-  user-timeline-1h:         1ms
-  user-product-timeline-1d: 0ms
-  user-timeline-1d:         1ms
-
-Queries with 75% cache:
-  user-product-timeline-15min: 1ms
-  user-timeline-15min:         5ms
-  user-product-timeline-1h: 1ms
-  user-timeline-1h:         3ms
-  user-product-timeline-1d: 1ms
-  user-timeline-1d:         1ms
-
-Queries with 50% cache:
-  user-product-timeline-15min: 2ms
-  user-timeline-15min:         10ms
-  user-product-timeline-1h: 1ms
-  user-timeline-1h:         4ms
-  user-product-timeline-1d: 1ms
-  user-timeline-1d:         1ms
-
-Queries with 25% cache:
-  user-product-timeline-15min: 2ms
-  user-timeline-15min:         15ms
-  user-product-timeline-1h: 1ms
-  user-timeline-1h:         5ms
-  user-product-timeline-1d: 1ms
-  user-timeline-1d:         1ms
-
-Queries with 0% cache:
-  user-product-timeline-15min: 4ms
-  user-timeline-15min:         25ms
-  user-product-timeline-1h: 1ms
-  user-timeline-1h:         7ms
-  user-product-timeline-1d: 1ms
-  user-timeline-1d:         2ms
-
-
-=== Calculated Parameters ===
-Trading days: 15.00
-Total events: 232,142
-Price update frequency: 0:14:00
-Number of users: 1000
-Number of products: 500
-End date: 2026-02-07
-
-
-=== TWR Database Benchmark ===
-Events: 232,142
-Users: 1,000
-Products: 500
-Query samples: 100
-Granularities: 15min, 1h, 1d
-
-Clearing existing data...
-  → Data cleared
-
-[1/6] Generating and inserting events...
-
-=== Event Generation Plan ===
-Total events: 232,142
-Price events: 208,927 (90%)
-  - Ticks: 418
-  - Products per tick: 500
-Cash flow events: 23,214 (10%)
-Price update interval: 0:14:00
-End date: 2026-02-07
-
-Generating 418 price ticks...
-
-Time range: 2026-01-19 to 2026-02-06
-Calendar days: 19
-Time span: 18 days, 5:22:00.100000
-
-Generating 23,214 cash flows...
-
-Inserting 209,000 price events...
-
-Inserting 23,214 cashflow events...
-  → Inserted 232,142 events in 2.74s
-
-[2/6] Refreshing continuous aggregates...
-  Refreshing 15min buckets...
-  Refreshing 1h buckets...
-  Refreshing 1d buckets...
-  → Refreshed in 1.63s
-
-[3/6] Querying with 0% cache (baseline, 5s per granularity)...
-  → 15min: user_product=11.7ms, user=157.8ms
-  → 1h: user_product=6.0ms, user=128.3ms
-  → 1d: user_product=1.4ms, user=20.6ms
-
-[4/6] Refreshing caches...
-  → Cumulative cashflow: 0.80s
-  → 15min: 1m 8.5s
-  → 1h: 21.21s
-  → 1d: 3.29s
-
-[5/6] Querying with 100% cache (5s per granularity)...
-  → 15min: user_product=7.0ms, user=9.5ms
-  → 1h: user_product=3.0ms, user=4.8ms
-  → 1d: user_product=0.7ms, user=2.0ms
-
-[6/6] Progressive cache deletion and querying...
-  → Deleting cache >= 75th percentile...
-  → Querying with 75% cache (5s per granularity)...
-     15min: user_product=9.1ms, user=146.6ms
-     1h: user_product=4.1ms, user=48.2ms
-     1d: user_product=1.1ms, user=7.2ms
-
-  → Deleting cache >= 50th percentile...
-  → Querying with 50% cache (5s per granularity)...
-     15min: user_product=8.6ms, user=142.0ms
-     1h: user_product=4.4ms, user=64.1ms
-     1d: user_product=1.2ms, user=10.9ms
-
-  → Deleting cache >= 25th percentile...
-  → Querying with 25% cache (5s per granularity)...
-     15min: user_product=10.9ms, user=141.2ms
-     1h: user_product=5.1ms, user=90.8ms
-     1d: user_product=1.3ms, user=14.7ms
-
-=== Query Performance Summary ===
-Continuous aggregate refresh: 1.63s
-
-Cache refresh times:
-  Cumulative cashflow: 0.80s
-  15min: 1m 8.5s
-  1h: 21.21s
-  1d: 3.29s
-
-Queries with 100% cache:
-  user-product-timeline-15min: 7ms
-  user-timeline-15min:         9ms
-  user-product-timeline-1h: 3ms
-  user-timeline-1h:         5ms
-  user-product-timeline-1d: 1ms
-  user-timeline-1d:         2ms
-
-Queries with 75% cache:
-  user-product-timeline-15min: 9ms
-  user-timeline-15min:         147ms
-  user-product-timeline-1h: 4ms
-  user-timeline-1h:         48ms
-  user-product-timeline-1d: 1ms
-  user-timeline-1d:         7ms
-
-Queries with 50% cache:
-  user-product-timeline-15min: 9ms
-  user-timeline-15min:         142ms
-  user-product-timeline-1h: 4ms
-  user-timeline-1h:         64ms
-  user-product-timeline-1d: 1ms
-  user-timeline-1d:         11ms
-
-Queries with 25% cache:
-  user-product-timeline-15min: 11ms
-  user-timeline-15min:         141ms
-  user-product-timeline-1h: 5ms
-  user-timeline-1h:         91ms
-  user-product-timeline-1d: 1ms
-  user-timeline-1d:         15ms
-
-Queries with 0% cache:
-  user-product-timeline-15min: 12ms
-  user-timeline-15min:         158ms
-  user-product-timeline-1h: 6ms
-  user-timeline-1h:         128ms
-  user-product-timeline-1d: 1ms
-  user-timeline-1d:         21ms
-
-
-=== Calculated Parameters ===
-Trading days: 20.00
-Total events: 309,523
-Price update frequency: 0:14:00
-Number of users: 1000
-Number of products: 500
-End date: 2026-02-07
-
-
-=== TWR Database Benchmark ===
-Events: 309,523
-Users: 1,000
-Products: 500
-Query samples: 100
-Granularities: 15min, 1h, 1d
-
-Clearing existing data...
-  → Data cleared
-
-[1/6] Generating and inserting events...
-
-=== Event Generation Plan ===
-Total events: 309,523
-Price events: 278,570 (90%)
-  - Ticks: 558
-  - Products per tick: 500
-Cash flow events: 30,952 (10%)
-Price update interval: 0:14:00
-End date: 2026-02-07
-
-Generating 558 price ticks...
-
-Time range: 2026-01-12 to 2026-02-06
-Calendar days: 26
-Time span: 25 days, 5:08:00.100000
-
-Generating 30,952 cash flows...
-
-Inserting 279,000 price events...
-
-Inserting 30,952 cashflow events...
-  → Inserted 309,523 events in 3.71s
-
-[2/6] Refreshing continuous aggregates...
-  Refreshing 15min buckets...
-  Refreshing 1h buckets...
-  Refreshing 1d buckets...
-  → Refreshed in 2.37s
-
-[3/6] Querying with 0% cache (baseline, 5s per granularity)...
-  → 15min: user_product=10.2ms, user=164.5ms
-  → 1h: user_product=8.1ms, user=185.6ms
-  → 1d: user_product=1.6ms, user=26.4ms
-
-[4/6] Refreshing caches...
-  → Cumulative cashflow: 1.29s
-  → 15min: 2m 1.9s
-  → 1h: 36.40s
-  → 1d: 6.35s
-
-[5/6] Querying with 100% cache (5s per granularity)...
-  → 15min: user_product=8.2ms, user=7.5ms
-  → 1h: user_product=140.4ms, user=5.4ms
-  → 1d: user_product=0.6ms, user=1.6ms
-
-[6/6] Progressive cache deletion and querying...
-  → Deleting cache >= 75th percentile...
-  → Querying with 75% cache (5s per granularity)...
-     15min: user_product=8.8ms, user=158.1ms
-     1h: user_product=5.0ms, user=53.4ms
-     1d: user_product=1.3ms, user=8.9ms
-
-  → Deleting cache >= 50th percentile...
-  → Querying with 50% cache (5s per granularity)...
-     15min: user_product=22513.8ms, user=172.0ms
-     1h: user_product=5.9ms, user=100.0ms
-     1d: user_product=1.4ms, user=15.0ms
-
-  → Deleting cache >= 25th percentile...
-  → Querying with 25% cache (5s per granularity)...
-     15min: user_product=9.6ms, user=158.2ms
-     1h: user_product=6.8ms, user=144.1ms
-     1d: user_product=2382.7ms, user=21.3ms
-
-=== Query Performance Summary ===
-Continuous aggregate refresh: 2.37s
-
-Cache refresh times:
-  Cumulative cashflow: 1.29s
-  15min: 2m 1.9s
-  1h: 36.40s
-  1d: 6.35s
-
-Queries with 100% cache:
-  user-product-timeline-15min: 8ms
-  user-timeline-15min:         8ms
-  user-product-timeline-1h: 140ms
-  user-timeline-1h:         5ms
-  user-product-timeline-1d: 1ms
-  user-timeline-1d:         2ms
-
-Queries with 75% cache:
-  user-product-timeline-15min: 9ms
-  user-timeline-15min:         158ms
-  user-product-timeline-1h: 5ms
-  user-timeline-1h:         53ms
-  user-product-timeline-1d: 1ms
-  user-timeline-1d:         9ms
-
-Queries with 50% cache:
-  user-product-timeline-15min: 22514ms
-  user-timeline-15min:         172ms
-  user-product-timeline-1h: 6ms
-  user-timeline-1h:         100ms
-  user-product-timeline-1d: 1ms
-  user-timeline-1d:         15ms
-
-Queries with 25% cache:
-  user-product-timeline-15min: 10ms
-  user-timeline-15min:         158ms
-  user-product-timeline-1h: 7ms
-  user-timeline-1h:         144ms
-  user-product-timeline-1d: 2383ms
-  user-timeline-1d:         21ms
-
-Queries with 0% cache:
-  user-product-timeline-15min: 10ms
-  user-timeline-15min:         165ms
-  user-product-timeline-1h: 8ms
-  user-timeline-1h:         186ms
-  user-product-timeline-1d: 2ms
-  user-timeline-1d:         26ms
-
-
-=== Calculated Parameters ===
-Trading days: 30.00
-Total events: 464,285
-Price update frequency: 0:14:00
-Number of users: 1000
-Number of products: 500
-End date: 2026-02-07
-
-
-=== TWR Database Benchmark ===
-Events: 464,285
-Users: 1,000
-Products: 500
-Query samples: 100
-Granularities: 15min, 1h, 1d
-
-Clearing existing data...
-  → Data cleared
-
-[1/6] Generating and inserting events...
-
-=== Event Generation Plan ===
-Total events: 464,285
-Price events: 417,856 (90%)
-  - Ticks: 836
-  - Products per tick: 500
-Cash flow events: 46,428 (10%)
-Price update interval: 0:14:00
-End date: 2026-02-07
-
-Generating 836 price ticks...
-
-Time range: 2025-12-29 to 2026-02-06
-Calendar days: 40
-Time span: 39 days, 4:12:00.100000
-
-Generating 46,428 cash flows...
-
-Inserting 418,000 price events...
-
-Inserting 46,428 cashflow events...
-  → Inserted 464,285 events in 5.30s
-
-[2/6] Refreshing continuous aggregates...
-  Refreshing 15min buckets...
-  Refreshing 1h buckets...
-  Refreshing 1d buckets...
-  → Refreshed in 4.25s
-
-[3/6] Querying with 0% cache (baseline, 5s per granularity)...
-  → 15min: user_product=12.4ms, user=200.4ms
-  → 1h: user_product=10.9ms, user=251.7ms
-  → 1d: user_product=2.2ms, user=46.6ms
-
-[4/6] Refreshing caches...
-  → Cumulative cashflow: 2.44s
-  → 15min: 23m 49.0s
-  → 1h: 1m 29.6s
-  → 1d: 13.53s
-
-[5/6] Querying with 100% cache (5s per granularity)...
-  → 15min: user_product=20.7ms, user=21.9ms
-  → 1h: user_product=2.8ms, user=7.5ms
-  → 1d: user_product=0.8ms, user=2.4ms
-
-[6/6] Progressive cache deletion and querying...
-  → Deleting cache >= 75th percentile...
-  → Querying with 75% cache (5s per granularity)...
-     15min: user_product=19.6ms, user=201.9ms
-     1h: user_product=7.6ms, user=106.6ms
-     1d: user_product=1.7ms, user=16.4ms
-
-  → Deleting cache >= 50th percentile...
-  → Querying with 50% cache (5s per granularity)...
-     15min: user_product=20.4ms, user=199.2ms
-     1h: user_product=8.9ms, user=172.2ms
-     1d: user_product=1.9ms, user=26.6ms
-
-  → Deleting cache >= 25th percentile...
-  → Querying with 25% cache (5s per granularity)...
-     15min: user_product=17.5ms, user=194.5ms
-     1h: user_product=10.3ms, user=244.9ms
-     1d: user_product=2.0ms, user=36.2ms
-
-=== Query Performance Summary ===
-Continuous aggregate refresh: 4.25s
-
-Cache refresh times:
-  Cumulative cashflow: 2.44s
-  15min: 23m 49.0s
-  1h: 1m 29.6s
-  1d: 13.53s
-
-Queries with 100% cache:
-  user-product-timeline-15min: 21ms
-  user-timeline-15min:         22ms
-  user-product-timeline-1h: 3ms
-  user-timeline-1h:         7ms
-  user-product-timeline-1d: 1ms
-  user-timeline-1d:         2ms
-
-Queries with 75% cache:
-  user-product-timeline-15min: 20ms
-  user-timeline-15min:         202ms
-  user-product-timeline-1h: 8ms
-  user-timeline-1h:         107ms
-  user-product-timeline-1d: 2ms
-  user-timeline-1d:         16ms
-
-Queries with 50% cache:
-  user-product-timeline-15min: 20ms
-  user-timeline-15min:         199ms
-  user-product-timeline-1h: 9ms
-  user-timeline-1h:         172ms
-  user-product-timeline-1d: 2ms
-  user-timeline-1d:         27ms
-
-Queries with 25% cache:
-  user-product-timeline-15min: 18ms
-  user-timeline-15min:         194ms
-  user-product-timeline-1h: 10ms
-  user-timeline-1h:         245ms
-  user-product-timeline-1d: 2ms
-  user-timeline-1d:         36ms
-
-Queries with 0% cache:
-  user-product-timeline-15min: 12ms
-  user-timeline-15min:         200ms
-  user-product-timeline-1h: 11ms
-  user-timeline-1h:         252ms
-  user-product-timeline-1d: 2ms
-  user-timeline-1d:         47ms
-
-
-=== Calculated Parameters ===
-Trading days: 40.00
-Total events: 619,047
-Price update frequency: 0:14:00
-Number of users: 1000
-Number of products: 500
-End date: 2026-02-07
-
-
-=== TWR Database Benchmark ===
-Events: 619,047
-Users: 1,000
-Products: 500
-Query samples: 100
-Granularities: 15min, 1h, 1d
-
-Clearing existing data...
-  → Data cleared
-
-[1/6] Generating and inserting events...
-
-=== Event Generation Plan ===
-Total events: 619,047
-Price events: 557,142 (90%)
-  - Ticks: 1,115
-  - Products per tick: 500
-Cash flow events: 61,904 (10%)
-Price update interval: 0:14:00
-End date: 2026-02-07
-
-Generating 1,115 price ticks...
-
-Time range: 2025-12-15 to 2026-02-06
-Calendar days: 54
-Time span: 53 days, 3:30:00.100000
-
-Generating 61,904 cash flows...
-
-Inserting 557,500 price events...
-
-Inserting 61,904 cashflow events...
-  → Inserted 619,047 events in 7.40s
-
-[2/6] Refreshing continuous aggregates...
-  Refreshing 15min buckets...
-  Refreshing 1h buckets...
-  Refreshing 1d buckets...
-  → Refreshed in 5.59s
-
-[3/6] Querying with 0% cache (baseline, 5s per granularity)...
-  → 15min: user_product=13.5ms, user=231.0ms
-  → 1h: user_product=12.5ms, user=296.5ms
-  → 1d: user_product=2.7ms, user=71.6ms
-
-[4/6] Refreshing caches...
-  → Cumulative cashflow: 3.70s
-  → 15min: 8m 28.7s
-  → 1h: 2m 23.3s
-  → 1d: 22.68s
-
-[5/6] Querying with 100% cache (5s per granularity)...
-  → 15min: user_product=20.7ms, user=23.3ms
-  → 1h: user_product=2.9ms, user=7.8ms
-  → 1d: user_product=1.1ms, user=3.0ms
-
-[6/6] Progressive cache deletion and querying...
-  → Deleting cache >= 75th percentile...
-  → Querying with 75% cache (5s per granularity)...
-     15min: user_product=21.4ms, user=239.3ms
-     1h: user_product=9.4ms, user=141.3ms
-     1d: user_product=2.0ms, user=22.0ms
-
-  → Deleting cache >= 50th percentile...
-  → Querying with 50% cache (5s per granularity)...
-     15min: user_product=20.9ms, user=230.8ms
-     1h: user_product=11.9ms, user=268.1ms
-     1d: user_product=2.2ms, user=40.1ms
-
-  → Deleting cache >= 25th percentile...
-  → Querying with 25% cache (5s per granularity)...
-     15min: user_product=20.0ms, user=232.4ms
-     1h: user_product=12.4ms, user=291.9ms
-     1d: user_product=2.5ms, user=56.0ms
-
-=== Query Performance Summary ===
-Continuous aggregate refresh: 5.59s
-
-Cache refresh times:
-  Cumulative cashflow: 3.70s
-  15min: 8m 28.7s
-  1h: 2m 23.3s
-  1d: 22.68s
-
-Queries with 100% cache:
-  user-product-timeline-15min: 21ms
-  user-timeline-15min:         23ms
-  user-product-timeline-1h: 3ms
-  user-timeline-1h:         8ms
-  user-product-timeline-1d: 1ms
-  user-timeline-1d:         3ms
-
-Queries with 75% cache:
-  user-product-timeline-15min: 21ms
-  user-timeline-15min:         239ms
-  user-product-timeline-1h: 9ms
-  user-timeline-1h:         141ms
-  user-product-timeline-1d: 2ms
-  user-timeline-1d:         22ms
-
-Queries with 50% cache:
-  user-product-timeline-15min: 21ms
-  user-timeline-15min:         231ms
-  user-product-timeline-1h: 12ms
-  user-timeline-1h:         268ms
-  user-product-timeline-1d: 2ms
-  user-timeline-1d:         40ms
-
-Queries with 25% cache:
-  user-product-timeline-15min: 20ms
-  user-timeline-15min:         232ms
-  user-product-timeline-1h: 12ms
-  user-timeline-1h:         292ms
-  user-product-timeline-1d: 2ms
-  user-timeline-1d:         56ms
-
-Queries with 0% cache:
-  user-product-timeline-15min: 14ms
-  user-timeline-15min:         231ms
-  user-product-timeline-1h: 13ms
-  user-timeline-1h:         296ms
-  user-product-timeline-1d: 3ms
-  user-timeline-1d:         72ms
-
-
-=== Calculated Parameters ===
-Trading days: 60.00
-Total events: 928,571
-Price update frequency: 0:14:00
-Number of users: 1000
-Number of products: 500
-End date: 2026-02-07
-
-
-=== TWR Database Benchmark ===
-Events: 928,571
-Users: 1,000
-Products: 500
-Query samples: 100
-Granularities: 15min, 1h, 1d
-
-Clearing existing data...
-  → Data cleared
-
-[1/6] Generating and inserting events...
-
-=== Event Generation Plan ===
-Total events: 928,571
-Price events: 835,713 (90%)
-  - Ticks: 1,672
-  - Products per tick: 500
-Cash flow events: 92,857 (10%)
-Price update interval: 0:14:00
-End date: 2026-02-07
-
-Generating 1,672 price ticks...
-
-Time range: 2025-11-17 to 2026-02-06
-Calendar days: 82
-Time span: 81 days, 1:52:00.100000
-
-Generating 92,857 cash flows...
-
-Inserting 836,000 price events...
-
-Inserting 92,857 cashflow events...
-  → Inserted 928,571 events in 11.32s
-
-[2/6] Refreshing continuous aggregates...
-  Refreshing 15min buckets...
-  Refreshing 1h buckets...
-  Refreshing 1d buckets...
-  → Refreshed in 9.04s
-
-[3/6] Querying with 0% cache (baseline, 5s per granularity)...
-  → 15min: user_product=17.9ms, user=309.2ms
-  → 1h: user_product=10.0ms, user=346.0ms
-  → 1d: user_product=3.9ms, user=142.5ms
-
-[4/6] Refreshing caches...
-  → Cumulative cashflow: 7.10s
-  → 15min: 272m 15.7s
-  → 1h: 12m 0.0s
-  → 1d: 50.57s
-
-[5/6] Querying with 100% cache (5s per granularity)...
-  → 15min: user_product=33.2ms, user=36.2ms
-  → 1h: user_product=17.1ms, user=11.1ms
-  → 1d: user_product=1.2ms, user=4.4ms
-
-[6/6] Progressive cache deletion and querying...
-  → Deleting cache >= 75th percentile...
-  → Querying with 75% cache (5s per granularity)...
-     15min: user_product=28.1ms, user=386.1ms
-     1h: user_product=16.9ms, user=264.5ms
-     1d: user_product=2.7ms, user=42.0ms
-
-  → Deleting cache >= 50th percentile...
-  → Querying with 50% cache (5s per granularity)...
-     15min: user_product=29.2ms, user=287.8ms
-     1h: user_product=16.5ms, user=348.5ms
-     1d: user_product=3.2ms, user=74.1ms
-
-  → Deleting cache >= 25th percentile...
-  → Querying with 25% cache (5s per granularity)...
-     15min: user_product=31.1ms, user=346.0ms
-     1h: user_product=18.1ms, user=346.8ms
-     1d: user_product=3.4ms, user=109.1ms
-
-=== Query Performance Summary ===
-Continuous aggregate refresh: 9.04s
-
-Cache refresh times:
-  Cumulative cashflow: 7.10s
-  15min: 272m 15.7s
-  1h: 12m 0.0s
-  1d: 50.57s
-
-Queries with 100% cache:
-  user-product-timeline-15min: 33ms
-  user-timeline-15min:         36ms
-  user-product-timeline-1h: 17ms
-  user-timeline-1h:         11ms
-  user-product-timeline-1d: 1ms
-  user-timeline-1d:         4ms
-
-Queries with 75% cache:
-  user-product-timeline-15min: 28ms
-  user-timeline-15min:         386ms
-  user-product-timeline-1h: 17ms
-  user-timeline-1h:         264ms
-  user-product-timeline-1d: 3ms
-  user-timeline-1d:         42ms
-
-Queries with 50% cache:
-  user-product-timeline-15min: 29ms
-  user-timeline-15min:         288ms
-  user-product-timeline-1h: 17ms
-  user-timeline-1h:         349ms
-  user-product-timeline-1d: 3ms
-  user-timeline-1d:         74ms
-
-Queries with 25% cache:
-  user-product-timeline-15min: 31ms
-  user-timeline-15min:         346ms
-  user-product-timeline-1h: 18ms
-  user-timeline-1h:         347ms
-  user-product-timeline-1d: 3ms
-  user-timeline-1d:         109ms
-
-Queries with 0% cache:
-  user-product-timeline-15min: 18ms
-  user-timeline-15min:         309ms
-  user-product-timeline-1h: 10ms
-  user-timeline-1h:         346ms
-  user-product-timeline-1d: 4ms
-  user-timeline-1d:         143ms
-
-
-=== Calculated Parameters ===
-Trading days: 100.00
-Total events: 1,547,619
-Price update frequency: 0:14:00
-Number of users: 1000
-Number of products: 500
-End date: 2026-02-07
-
-
-=== TWR Database Benchmark ===
-Events: 1,547,619
-Users: 1,000
-Products: 500
-Query samples: 100
-Granularities: 15min, 1h, 1d
-
-Clearing existing data...
-  → Data cleared
-
-[1/6] Generating and inserting events...
-
-=== Event Generation Plan ===
-Total events: 1,547,619
-Price events: 1,392,857 (90%)
-  - Ticks: 2,786
-  - Products per tick: 500
-Cash flow events: 154,761 (10%)
-Price update interval: 0:14:00
-End date: 2026-02-07
-
-Generating 2,786 price ticks...
-
-Time range: 2025-09-23 to 2026-02-06
-Calendar days: 137
-Time span: 136 days, 5:08:00.100000
-
-Generating 154,761 cash flows...
-
-Inserting 1,393,000 price events...
-
-Inserting 154,761 cashflow events...
-  → Inserted 1,547,619 events in 24.04s
-
-[2/6] Refreshing continuous aggregates...
-  Refreshing 15min buckets...
-  Refreshing 1h buckets...
-  Refreshing 1d buckets...
-  → Refreshed in 23.72s
-
-[3/6] Querying with 0% cache (baseline, 5s per granularity)...
-  → 15min: user_product=27.9ms, user=843.4ms
-  → 1h: user_product=22.7ms, user=592.5ms
-  → 1d: user_product=8.1ms, user=360.2ms
-
-[4/6] Refreshing caches...
-  → Cumulative cashflow: 15.94s
+benchmark --days=1 --price-update-frequency=14min --products=500 --users=1000
+=============================================================================
+
+⚙️ Event generation: 0.18s
+
+🔍 Querying with 0% cache
+    - user_product_timeline_business_15min:   1.11ms
+    - user_timeline_business_15min        :   9.71ms
+    - user_product_timeline_business_1h   :   0.72ms
+    - user_timeline_business_1h           :   3.83ms
+    - user_product_timeline_business_1d   :   0.65ms
+    - user_timeline_business_1d           :   1.42ms
+
+🔄 Refreshing cache
+    - refresh_cumulative_cashflow         :   0.01s
+    - refresh_user_product_timeline_15min :   0.11s
+    - refresh_user_product_timeline_1h    :   0.04s
+    - refresh_user_product_timeline_1d    :   0.01s
+
+🔍 Querying with 100% cache
+    - user_product_timeline_business_15min:   0.93ms
+    - user_timeline_business_15min        :   9.11ms
+    - user_product_timeline_business_1h   :   0.68ms
+    - user_timeline_business_1h           :   3.76ms
+    - user_product_timeline_business_1d   :   0.49ms
+    - user_timeline_business_1d           :   0.48ms
+
+🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-09T15:25:00)
+    - user_product_timeline_business_15min:   0.92ms
+    - user_timeline_business_15min        :   9.16ms
+
+🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-09T15:25:00)
+    - user_product_timeline_business_1h   :   0.67ms
+    - user_timeline_business_1h           :   3.73ms
+
+🔍 Querying 1d    with 75.0% cache (cutoff: 2026-02-09T15:25:00)
+    - user_product_timeline_business_1d   :   0.58ms
+    - user_timeline_business_1d           :   1.37ms
+
+🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-09T14:50:00)
+    - user_product_timeline_business_15min:   0.90ms
+    - user_timeline_business_15min        :   9.12ms
+
+🔍 Querying 1h    with 50.0% cache (cutoff: 2026-02-09T14:50:00)
+    - user_product_timeline_business_1h   :   0.69ms
+    - user_timeline_business_1h           :   3.70ms
+
+🔍 Querying 1d    with 50.0% cache (cutoff: 2026-02-09T14:50:00)
+    - user_product_timeline_business_1d   :   0.57ms
+    - user_timeline_business_1d           :   1.36ms
+
+🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-09T14:15:00)
+    - user_product_timeline_business_15min:   0.92ms
+    - user_timeline_business_15min        :   9.19ms
+
+🔍 Querying 1h    with 25.0% cache (cutoff: 2026-02-09T14:15:00)
+    - user_product_timeline_business_1h   :   0.72ms
+    - user_timeline_business_1h           :   4.01ms
+
+🔍 Querying 1d    with 25.0% cache (cutoff: 2026-02-09T14:15:00)
+    - user_product_timeline_business_1d   :   0.41ms
+    - user_timeline_business_1d           :   1.25ms
+
+benchmark --days=2 --price-update-frequency=14min --products=500 --users=1000
+=============================================================================
+
+⚙️ Event generation: 0.30s
+
+🔍 Querying with 0% cache
+    - user_product_timeline_business_15min:   1.52ms
+    - user_timeline_business_15min        :  24.18ms
+    - user_product_timeline_business_1h   :   0.87ms
+    - user_timeline_business_1h           :   8.73ms
+    - user_product_timeline_business_1d   :   0.72ms
+    - user_timeline_business_1d           :   2.23ms
+
+🔄 Refreshing cache
+    - refresh_cumulative_cashflow         :   0.02s
+    - refresh_user_product_timeline_15min :   0.55s
+    - refresh_user_product_timeline_1h    :   0.18s
+    - refresh_user_product_timeline_1d    :   0.04s
+
+🔍 Querying with 100% cache
+    - user_product_timeline_business_15min:   1.55ms
+    - user_timeline_business_15min        :  23.89ms
+    - user_product_timeline_business_1h   :   0.88ms
+    - user_timeline_business_1h           :   8.67ms
+    - user_product_timeline_business_1d   :   0.52ms
+    - user_timeline_business_1d           :   0.54ms
+
+🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-08T22:00:00)
+    - user_product_timeline_business_15min:   1.46ms
+    - user_timeline_business_15min        :  23.80ms
+
+🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-08T22:00:00)
+    - user_product_timeline_business_1h   :   0.85ms
+    - user_timeline_business_1h           :   8.67ms
+
+🔍 Querying 1d    with 75.0% cache (cutoff: 2026-02-08T22:00:00)
+    - user_product_timeline_business_1d   :   0.61ms
+    - user_timeline_business_1d           :   2.20ms
+
+🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-08T04:00:00)
+    - user_product_timeline_business_15min:   1.49ms
+    - user_timeline_business_15min        :  24.07ms
+
+🔍 Querying 1h    with 50.0% cache (cutoff: 2026-02-08T04:00:00)
+    - user_product_timeline_business_1h   :   0.94ms
+    - user_timeline_business_1h           :   8.98ms
+
+🔍 Querying 1d    with 50.0% cache (cutoff: 2026-02-08T04:00:00)
+    - user_product_timeline_business_1d   :   0.64ms
+    - user_timeline_business_1d           :   2.20ms
+
+🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-07T10:00:00)
+    - user_product_timeline_business_15min:   1.53ms
+    - user_timeline_business_15min        :  23.82ms
+
+🔍 Querying 1h    with 25.0% cache (cutoff: 2026-02-07T10:00:00)
+    - user_product_timeline_business_1h   :   0.94ms
+    - user_timeline_business_1h           :   8.60ms
+
+🔍 Querying 1d    with 25.0% cache (cutoff: 2026-02-07T10:00:00)
+    - user_product_timeline_business_1d   :   0.69ms
+    - user_timeline_business_1d           :   2.20ms
+
+benchmark --days=5 --price-update-frequency=14min --products=500 --users=1000
+=============================================================================
+
+⚙️ Event generation: 1.07s
+
+🔍 Querying with 0% cache
+    - user_product_timeline_business_15min:   4.45ms
+    - user_timeline_business_15min        :  110.51ms
+    - user_product_timeline_business_1h   :   1.89ms
+    - user_timeline_business_1h           :  31.54ms
+    - user_product_timeline_business_1d   :   0.72ms
+    - user_timeline_business_1d           :   5.43ms
+
+🔄 Refreshing cache
+    - refresh_cumulative_cashflow         :   0.10s
+    - refresh_user_product_timeline_15min :   3.06s
+    - refresh_user_product_timeline_1h    :   0.93s
+    - refresh_user_product_timeline_1d    :   0.16s
+
+🔍 Querying with 100% cache
+    - user_product_timeline_business_15min:   4.98ms
+    - user_timeline_business_15min        :  109.89ms
+    - user_product_timeline_business_1h   :   1.73ms
+    - user_timeline_business_1h           :  34.40ms
+    - user_product_timeline_business_1d   :   0.71ms
+    - user_timeline_business_1d           :   1.02ms
+
+🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-08T04:00:00)
+    - user_product_timeline_business_15min:   4.76ms
+    - user_timeline_business_15min        :  114.36ms
+
+🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-08T04:00:00)
+    - user_product_timeline_business_1h   :   2.04ms
+    - user_timeline_business_1h           :  31.77ms
+
+🔍 Querying 1d    with 75.0% cache (cutoff: 2026-02-08T04:00:00)
+    - user_product_timeline_business_1d   :   0.66ms
+    - user_timeline_business_1d           :   3.20ms
+
+🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-06T16:00:00)
+    - user_product_timeline_business_15min:   4.40ms
+    - user_timeline_business_15min        :  107.26ms
+
+🔍 Querying 1h    with 50.0% cache (cutoff: 2026-02-06T16:00:00)
+    - user_product_timeline_business_1h   :   1.69ms
+    - user_timeline_business_1h           :  31.37ms
+
+🔍 Querying 1d    with 50.0% cache (cutoff: 2026-02-06T16:00:00)
+    - user_product_timeline_business_1d   :   0.76ms
+    - user_timeline_business_1d           :   3.92ms
+
+🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-05T04:00:00)
+    - user_product_timeline_business_15min:   4.24ms
+    - user_timeline_business_15min        :  103.91ms
+
+🔍 Querying 1h    with 25.0% cache (cutoff: 2026-02-05T04:00:00)
+    - user_product_timeline_business_1h   :   1.69ms
+    - user_timeline_business_1h           :  31.26ms
+
+🔍 Querying 1d    with 25.0% cache (cutoff: 2026-02-05T04:00:00)
+    - user_product_timeline_business_1d   :   0.72ms
+    - user_timeline_business_1d           :   4.71ms
+
+benchmark --days=10 --price-update-frequency=14min --products=500 --users=1000
+==============================================================================
+
+⚙️ Event generation: 2.04s
+
+🔍 Querying with 0% cache
+    - user_product_timeline_business_15min:   6.45ms
+    - user_timeline_business_15min        :  110.06ms
+    - user_product_timeline_business_1h   :   3.05ms
+    - user_timeline_business_1h           :  76.42ms
+    - user_product_timeline_business_1d   :   1.10ms
+    - user_timeline_business_1d           :  10.81ms
+
+🔄 Refreshing cache
+    - refresh_cumulative_cashflow         :   0.31s
+    - refresh_user_product_timeline_15min :   6.16s
+    - refresh_user_product_timeline_1h    :   2.88s
+    - refresh_user_product_timeline_1d    :   0.47s
+
+🔍 Querying with 100% cache
+    - user_product_timeline_business_15min:   6.40ms
+    - user_timeline_business_15min        :  116.12ms
+    - user_product_timeline_business_1h   :   3.17ms
+    - user_timeline_business_1h           :  77.00ms
+    - user_product_timeline_business_1d   :   0.75ms
+    - user_timeline_business_1d           :   1.38ms
+
+🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-07T22:00:00)
+    - user_product_timeline_business_15min:   6.06ms
+    - user_timeline_business_15min        :  111.17ms
+
+🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-06T10:00:00)
+    - user_product_timeline_business_1h   :   3.21ms
+    - user_timeline_business_1h           :  78.94ms
+
+🔍 Querying 1d    with 75.0% cache (cutoff: 2026-02-06T10:00:00)
+    - user_product_timeline_business_1d   :   0.91ms
+    - user_timeline_business_1d           :   4.79ms
+
+🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-06T04:00:00)
+    - user_product_timeline_business_15min:   5.71ms
+    - user_timeline_business_15min        :  111.67ms
+
+🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-04T10:00:00)
+    - user_product_timeline_business_15min:   5.69ms
+    - user_timeline_business_15min        :  109.94ms
+
+🔍 Querying 1h    with 50.0% cache (cutoff: 2026-02-03T04:00:00)
+    - user_product_timeline_business_1h   :   2.87ms
+    - user_timeline_business_1h           :  76.88ms
+
+🔍 Querying 1d    with 50.0% cache (cutoff: 2026-02-03T04:00:00)
+    - user_product_timeline_business_1d   :   0.93ms
+    - user_timeline_business_1d           :   7.42ms
+
+🔍 Querying 1h    with 25.0% cache (cutoff: 2026-01-30T22:00:00)
+    - user_product_timeline_business_1h   :   2.93ms
+    - user_timeline_business_1h           :  76.57ms
+
+🔍 Querying 1d    with 25.0% cache (cutoff: 2026-01-30T22:00:00)
+    - user_product_timeline_business_1d   :   0.89ms
+    - user_timeline_business_1d           :   9.36ms
+
+benchmark --days=20 --price-update-frequency=14min --products=500 --users=1000
+==============================================================================
+
+⚙️ Event generation: 5.23s
+
+🔍 Querying with 0% cache
+    - user_product_timeline_business_15min:   9.35ms
+    - user_timeline_business_15min        :  120.22ms
+    - user_product_timeline_business_1h   :   6.72ms
+    - user_timeline_business_1h           :  195.55ms
+    - user_product_timeline_business_1d   :   1.49ms
+    - user_timeline_business_1d           :  24.73ms
+
+🔄 Refreshing cache
+    - refresh_cumulative_cashflow         :   1.12s
+    - refresh_user_product_timeline_15min :  12.01s
+    - refresh_user_product_timeline_1h    :   9.68s
+    - refresh_user_product_timeline_1d    :   1.62s
+
+🔍 Querying with 100% cache
+    - user_product_timeline_business_15min:   8.22ms
+    - user_timeline_business_15min        :  123.05ms
+    - user_product_timeline_business_1h   :   6.12ms
+    - user_timeline_business_1h           :  196.98ms
+    - user_product_timeline_business_1d   :   1.07ms
+    - user_timeline_business_1d           :   1.41ms
+
+🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-07T22:00:00)
+    - user_product_timeline_business_15min:   8.02ms
+    - user_timeline_business_15min        :  118.39ms
+
+🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-06T04:00:00)
+    - user_product_timeline_business_15min:   8.34ms
+    - user_timeline_business_15min        :  120.73ms
+
+🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-04T10:00:00)
+    - user_product_timeline_business_15min:   7.52ms
+    - user_timeline_business_15min        :  123.20ms
+
+🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-02T22:00:00)
+    - user_product_timeline_business_1h   :   6.57ms
+    - user_timeline_business_1h           :  189.47ms
+
+🔍 Querying 1d    with 75.0% cache (cutoff: 2026-02-02T22:00:00)
+    - user_product_timeline_business_1d   :   1.16ms
+    - user_timeline_business_1d           :  10.52ms
+
+🔍 Querying 1h    with 50.0% cache (cutoff: 2026-01-27T04:00:00)
+    - user_product_timeline_business_1h   :   6.26ms
+    - user_timeline_business_1h           :  192.11ms
+
+🔍 Querying 1d    with 50.0% cache (cutoff: 2026-01-27T04:00:00)
+    - user_product_timeline_business_1d   :   1.17ms
+    - user_timeline_business_1d           :  15.12ms
+
+🔍 Querying 1h    with 25.0% cache (cutoff: 2026-01-20T10:00:00)
+    - user_product_timeline_business_1h   :   6.14ms
+    - user_timeline_business_1h           :  189.55ms
+
+🔍 Querying 1d    with 25.0% cache (cutoff: 2026-01-20T10:00:00)
+    - user_product_timeline_business_1d   :   1.35ms
+    - user_timeline_business_1d           :  20.47ms
+
+benchmark --days=50 --price-update-frequency=14min --products=500 --users=1000
+==============================================================================
+
+⚙️ Event generation: 15.63s
+
+🔍 Querying with 0% cache
+    - user_product_timeline_business_15min:  13.85ms
+    - user_timeline_business_15min        :  162.69ms
+    - user_product_timeline_business_1h   :  10.27ms
+    - user_timeline_business_1h           :  227.48ms
+    - user_product_timeline_business_1d   :   2.54ms
+    - user_timeline_business_1d           :  89.69ms
+
+🔄 Refreshing cache
+    - refresh_cumulative_cashflow         :   5.04s
+    - refresh_user_product_timeline_15min :  25.39s
+    - refresh_user_product_timeline_1h    :  27.95s
+    - refresh_user_product_timeline_1d    :   7.48s
+
+🔍 Querying with 100% cache
+    - user_product_timeline_business_15min:  12.90ms
+    - user_timeline_business_15min        :  143.60ms
+    - user_product_timeline_business_1h   :  10.03ms
+    - user_timeline_business_1h           :  247.80ms
+    - user_product_timeline_business_1d   :   1.04ms
+    - user_timeline_business_1d           :   3.30ms
+
+🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-07T22:00:00)
+    - user_product_timeline_business_15min:  12.97ms
+    - user_timeline_business_15min        :  147.68ms
+
+🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-06T04:00:00)
+    - user_product_timeline_business_15min:  11.03ms
+    - user_timeline_business_15min        :  144.78ms
+
+🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-04T10:00:00)
+    - user_product_timeline_business_15min:  12.81ms
+    - user_timeline_business_15min        :  143.42ms
+
+🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-02T04:00:00)
+    - user_product_timeline_business_1h   :  10.39ms
+    - user_timeline_business_1h           :  240.21ms
+
+🔍 Querying 1h    with 50.0% cache (cutoff: 2026-01-25T16:00:00)
+    - user_product_timeline_business_1h   :  10.10ms
+    - user_timeline_business_1h           :  228.62ms
+
+🔍 Querying 1d    with 75.0% cache (cutoff: 2026-01-23T10:00:00)
+    - user_product_timeline_business_1d   :   1.67ms
+    - user_timeline_business_1d           :  26.83ms
+
+🔍 Querying 1h    with 25.0% cache (cutoff: 2026-01-18T04:00:00)
+    - user_product_timeline_business_1h   :   9.79ms
+    - user_timeline_business_1h           :  243.01ms
+
+🔍 Querying 1d    with 50.0% cache (cutoff: 2026-01-06T04:00:00)
+    - user_product_timeline_business_1d   :   2.03ms
+    - user_timeline_business_1d           :  48.74ms
+
+🔍 Querying 1d    with 25.0% cache (cutoff: 2025-12-19T22:00:00)
+    - user_product_timeline_business_1d   :   2.14ms
+    - user_timeline_business_1d           :  67.84ms
+
+benchmark --days=100 --price-update-frequency=14min --products=500 --users=1000
+===============================================================================
+
+⚙️ Event generation: 37.90s
+
+🔍 Querying with 0% cache
+    - user_product_timeline_business_15min:  24.68ms
+    - user_timeline_business_15min        :  331.85ms
+    - user_product_timeline_business_1h   :  10.21ms
+    - user_timeline_business_1h           :  260.48ms
+    - user_product_timeline_business_1d   :   4.48ms
+    - user_timeline_business_1d           :  276.17ms
+
+🔄 Refreshing cache
+    - refresh_cumulative_cashflow         :  12.79s
+    - refresh_user_product_timeline_15min :  48.37s
+    - refresh_user_product_timeline_1h    :  61.82s
+    - refresh_user_product_timeline_1d    :  26.67s
+
+🔍 Querying with 100% cache
+    - user_product_timeline_business_15min:  20.50ms
+    - user_timeline_business_15min        :  223.00ms
+    - user_product_timeline_business_1h   :  10.03ms
+    - user_timeline_business_1h           :  280.57ms
+    - user_product_timeline_business_1d   :   1.28ms
+    - user_timeline_business_1d           :   6.96ms
+
+🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-07T22:00:00)
+    - user_product_timeline_business_15min:  20.25ms
+    - user_timeline_business_15min        :  216.05ms
+
+🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-06T04:00:00)
+    - user_product_timeline_business_15min:  20.14ms
+    - user_timeline_business_15min        :  218.47ms
+
+🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-04T10:00:00)
+    - user_product_timeline_business_15min:  22.05ms
+    - user_timeline_business_15min        :  222.33ms
+
+🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-02T04:00:00)
+    - user_product_timeline_business_1h   :  10.10ms
+    - user_timeline_business_1h           :  271.10ms
+
+🔍 Querying 1h    with 50.0% cache (cutoff: 2026-01-25T16:00:00)
+    - user_product_timeline_business_1h   :   9.64ms
+    - user_timeline_business_1h           :  273.53ms
+
+🔍 Querying 1h    with 25.0% cache (cutoff: 2026-01-18T04:00:00)
+    - user_product_timeline_business_1h   :   9.62ms
+    - user_timeline_business_1h           :  270.94ms
+
+🔍 Querying 1d    with 75.0% cache (cutoff: 2026-01-05T22:00:00)
+    - user_product_timeline_business_1d   :   2.71ms
+    - user_timeline_business_1d           :  82.07ms
+
+🔍 Querying 1d    with 50.0% cache (cutoff: 2025-12-02T04:00:00)
+    - user_product_timeline_business_1d   :   3.05ms
+    - user_timeline_business_1d           :  152.13ms
+
+🔍 Querying 1d    with 25.0% cache (cutoff: 2025-10-28T10:00:00)
+    - user_product_timeline_business_1d   :   3.73ms
+    - user_timeline_business_1d           :  219.58ms
+
+benchmark --days=200 --price-update-frequency=14min --products=500 --users=1000
+===============================================================================
+
+⚙️ Event generation: 94.93s
+
+🔍 Querying with 0% cache
+    - user_product_timeline_business_15min:  40.48ms
+    - user_timeline_business_15min        :  905.85ms
+    - user_product_timeline_business_1h   :  15.18ms
+    - user_timeline_business_1h           :  420.14ms
+    - user_product_timeline_business_1d   :   9.94ms
+    - user_timeline_business_1d           :  910.93ms
+
+🔄 Refreshing cache
+    - refresh_cumulative_cashflow         :  36.73s
+    - refresh_user_product_timeline_15min :  71.51s
+    - refresh_user_product_timeline_1h    :  99.71s
+    - refresh_user_product_timeline_1d    :  105.86s
+
+🔍 Querying with 100% cache
+    - user_product_timeline_business_15min:  47.77ms
+    - user_timeline_business_15min        :  473.39ms
+    - user_product_timeline_business_1h   :  14.49ms
+    - user_timeline_business_1h           :  392.23ms
+    - user_product_timeline_business_1d   :   1.41ms
+    - user_timeline_business_1d           :  24.15ms
+
+🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-07T22:00:00)
+    - user_product_timeline_business_15min:  35.48ms
+    - user_timeline_business_15min        :  301.67ms
+
+🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-06T04:00:00)
+    - user_product_timeline_business_15min:  36.73ms
+    - user_timeline_business_15min        :  311.92ms
+
+🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-04T10:00:00)
+    - user_product_timeline_business_15min:  36.51ms
+    - user_timeline_business_15min        :  296.24ms
+
+🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-02T04:00:00)
+    - user_product_timeline_business_1h   :  16.43ms
+    - user_timeline_business_1h           :  399.07ms
+
+🔍 Querying 1h    with 50.0% cache (cutoff: 2026-01-25T16:00:00)
+    - user_product_timeline_business_1h   :  15.80ms
+    - user_timeline_business_1h           :  359.28ms
+
+🔍 Querying 1h    with 25.0% cache (cutoff: 2026-01-18T04:00:00)
+    - user_product_timeline_business_1h   :  16.65ms
+    - user_timeline_business_1h           :  342.64ms
+
+🔍 Querying 1d    with 75.0% cache (cutoff: 2025-12-01T22:00:00)
+    - user_product_timeline_business_1d   :   5.18ms
+    - user_timeline_business_1d           :  278.11ms
+
+🔍 Querying 1d    with 50.0% cache (cutoff: 2025-09-23T04:00:00)
+    - user_product_timeline_business_1d   :   6.14ms
+    - user_timeline_business_1d           :  518.58ms
+
+🔍 Querying 1d    with 25.0% cache (cutoff: 2025-07-15T10:00:00)
+    - user_product_timeline_business_1d   :   7.35ms
+    - user_timeline_business_1d           :  720.81ms
+
+benchmark --days=400 --price-update-frequency=14min --products=500 --users=1000
+===============================================================================
+
+⚙️ Event generation: 310.79s
+
+🔍 Querying with 0% cache
+    - user_product_timeline_business_15min:  71.96ms
+    - user_timeline_business_15min        :  366.37ms
+    - user_product_timeline_business_1h   :  24.84ms
+    - user_timeline_business_1h           :  762.12ms
+    - user_product_timeline_business_1d   :  16.78ms
+    - user_timeline_business_1d           :  3334.75ms
+
+🔄 Refreshing cache
+    - refresh_cumulative_cashflow         :  118.91s
+    - refresh_user_product_timeline_15min :  141.41s
+    - refresh_user_product_timeline_1h    :  219.92s
+    - refresh_user_product_timeline_1d    :  688.38s
+
+🔍 Querying with 100% cache
+    - user_product_timeline_business_15min:  111.53ms
+    - user_timeline_business_15min        :  1057.26ms
+    - user_product_timeline_business_1h   :  33.14ms
+    - user_timeline_business_1h           :  1260.04ms
+    - user_product_timeline_business_1d   :   3.11ms
+    - user_timeline_business_1d           :  163.99ms
+
+🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-07T22:00:00)
+    - user_product_timeline_business_15min:  78.56ms
+    - user_timeline_business_15min        :  812.40ms
+
+🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-06T04:00:00)
+    - user_product_timeline_business_15min:  74.80ms
+    - user_timeline_business_15min        :  624.37ms
+
+🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-04T10:00:00)
+    - user_product_timeline_business_15min:  72.19ms
+    - user_timeline_business_15min        :  507.27ms
+
+🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-02T04:00:00)
+    - user_product_timeline_business_1h   :  27.12ms
+    - user_timeline_business_1h           :  874.71ms
+
+🔍 Querying 1h    with 50.0% cache (cutoff: 2026-01-25T16:00:00)
+    - user_product_timeline_business_1h   :  38.19ms
+    - user_timeline_business_1h           :  933.48ms
+
+🔍 Querying 1h    with 25.0% cache (cutoff: 2026-01-18T04:00:00)
+    - user_product_timeline_business_1h   :  32.65ms
+    - user_timeline_business_1h           :  621.35ms
+
+🔍 Querying 1d    with 75.0% cache (cutoff: 2025-09-22T22:00:00)
+    - user_product_timeline_business_1d   :  10.85ms
+    - user_timeline_business_1d           :  1394.49ms
+
+🔍 Querying 1d    with 50.0% cache (cutoff: 2025-05-06T04:00:00)
+    - user_product_timeline_business_1d   :  10.04ms
+    - user_timeline_business_1d           :  2014.73ms
+
+🔍 Querying 1d    with 25.0% cache (cutoff: 2024-12-17T10:00:00)
+    - user_product_timeline_business_1d   :  11.93ms
+    - user_timeline_business_1d           :  2898.25ms

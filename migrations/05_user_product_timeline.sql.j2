@@ -229,7 +229,7 @@
             p_after      TIMESTAMPTZ DEFAULT NULL,
             p_before     TIMESTAMPTZ DEFAULT NULL
         )
-        RETURNS TABLE(
+        RETURNS TABLE (
             user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ,
             cashflow_timestamp TIMESTAMPTZ, price_update_timestamp TIMESTAMPTZ
         )
@@ -311,18 +311,6 @@
     -- Purpose: Helper function for retention policy - keeps at least one row per user-product
     -- Returns: Latest timestamp for each (user, product) from the cache
     -- Performance: DISTINCT ON with DESC index
-    CREATE OR REPLACE FUNCTION _latest_up_{{ g.suffix }}()
-        RETURNS TABLE(user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ)
-        LANGUAGE plpgsql STABLE AS $$
-        BEGIN
-            RETURN QUERY
-            SELECT DISTINCT ON (uptc.user_id, uptc.product_id)
-                uptc.user_id, uptc.product_id, uptc."timestamp"
-            FROM user_product_timeline_cache_{{ g.suffix }} uptc
-            ORDER BY uptc.user_id, uptc.product_id, uptc."timestamp" DESC;
-        END;
-        $$;
-
     -- refresh_user_product_timeline_{{ g.suffix }}: Updates the timeline cache and enforces retention
     --
     -- Purpose: Materialization job to move computed timelines into cache
@@ -333,8 +321,11 @@
         RETURNS void
         LANGUAGE plpgsql VOLATILE AS $$
         DECLARE
-            v_watermark     TIMESTAMPTZ;  -- Last cached cashflow timestamp
-            v_max_timestamp TIMESTAMPTZ;  -- Most recent cashflow timestamp, update cache up to this point
+            v_watermark     TIMESTAMPTZ;  -- Last cached timestamp
+            v_max_timestamp TIMESTAMPTZ;  -- Most recent price update timestamp
+            {% if g.cache_retention %}
+            v_retention_start TIMESTAMPTZ;  -- Earliest timestamp to cache (retention boundary)
+            {% endif %}
         BEGIN
             -- Get the maximum timestamp from source data
             SELECT MAX("timestamp") INTO v_max_timestamp
@@ -345,14 +336,28 @@
                 RETURN;
             END IF;
 
+            {% if g.cache_retention %}
+            -- Calculate retention boundary (only cache data within retention window + 1 day buffer)
+            v_retention_start := NOW() - INTERVAL '{{ g.cache_retention }}' - INTERVAL '1 day';
+            {% endif %}
+
             -- Get current watermark
             SELECT MAX("timestamp") INTO v_watermark
             FROM user_product_timeline_cache_{{ g.suffix }};
 
-            -- If no watermark, initialize from oldest price update - 1ms
+            -- If no watermark, initialize based on retention policy
             IF v_watermark IS NULL THEN
-                SELECT MIN("timestamp") - INTERVAL '1 millisecond' INTO v_watermark
-                FROM price_update_{{ g.suffix }};
+                {% if g.cache_retention %}
+                    -- With retention: only cache data within retention window
+                    v_watermark := GREATEST(
+                        v_retention_start,
+                        (SELECT MIN("timestamp") - INTERVAL '1 millisecond' FROM price_update_{{ g.suffix }})
+                    );
+                {% else %}
+                    -- No retention: cache from beginning of time
+                    SELECT MIN("timestamp") - INTERVAL '1 millisecond' INTO v_watermark
+                    FROM price_update_{{ g.suffix }};
+                {% endif %}
             END IF;
 
             LOOP
@@ -376,21 +381,9 @@
             END LOOP;
 
             {% if g.cache_retention %}
-
-                -- Delete old rows beyond retention period, but keep at least one row per
-                -- user-product
-                DELETE FROM user_product_timeline_cache_{{ g.suffix }} upt
-                WHERE
-                    upt."timestamp" < NOW() - INTERVAL '{{ g.cache_retention }}' AND
-                    NOT EXISTS (
-                        SELECT 1
-                        FROM _latest_up_{{ g.suffix }}() latest_up
-                        WHERE
-                            latest_up.user_id     = upt.user_id AND
-                            latest_up.product_id  = upt.product_id AND
-                            latest_up."timestamp" = upt."timestamp"
-                    );
-
+            -- Delete old cached data beyond retention boundary (ongoing cleanup)
+            DELETE FROM user_product_timeline_cache_{{ g.suffix }}
+            WHERE "timestamp" < NOW() - INTERVAL '{{ g.cache_retention }}';
             {% endif %}
         END;
         $$;

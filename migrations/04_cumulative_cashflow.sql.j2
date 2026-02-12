@@ -199,6 +199,7 @@ CREATE OR REPLACE FUNCTION cumulative_cashflow(
                 WINDOW w AS (
                     PARTITION BY fresh_cf.user_id, fresh_cf.product_id
                     ORDER BY fresh_cf."timestamp"
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                 )
             ) AS computed_fresh
             {% if filter_after %}WHERE computed_fresh."timestamp" > p_after{% endif %}
