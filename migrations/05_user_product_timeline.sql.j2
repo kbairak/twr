@@ -112,18 +112,23 @@
 
                 UNION ALL
 
-                SELECT
-                    ccf.user_id, pu.product_id, pu."timestamp",
-                    ccf."timestamp" AS cashflow_timestamp
-                FROM _fresh_price_update_{{ g.suffix }}(p_user_id, p_product_id, p_after, p_before) pu
-                    CROSS JOIN LATERAL (
-                        SELECT DISTINCT ON (ccfm.user_id) ccfm.user_id, ccfm."timestamp"
-                        FROM ccfm
-                        WHERE
-                            ccfm.product_id = pu.product_id AND
-                            ccfm."timestamp" <= pu."timestamp"
-                        ORDER BY ccfm.user_id, ccfm."timestamp" DESC
-                    ) AS ccf
+                SELECT sub.user_id, sub.product_id, sub."timestamp", sub.cashflow_timestamp
+                FROM (
+                    SELECT
+                        ccfm.user_id,
+                        pu.product_id,
+                        pu."timestamp",
+                        ccfm."timestamp" AS cashflow_timestamp,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY ccfm.user_id, pu.product_id, pu."timestamp"
+                            ORDER BY ccfm."timestamp" DESC
+                        ) AS rn
+                    FROM _fresh_price_update_{{ g.suffix }}(p_user_id, p_product_id, p_after, p_before) pu
+                    INNER JOIN ccfm
+                        ON ccfm.product_id = pu.product_id
+                        AND ccfm."timestamp" <= pu."timestamp"
+                ) sub
+                WHERE sub.rn = 1
             {% endmacro %}
 
             {% for fu, fp, fa, fb in itertools.product([False, True], repeat=4) %}

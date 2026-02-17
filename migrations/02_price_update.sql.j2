@@ -86,4 +86,8 @@ END $$;
         (product_id, "timestamp" DESC)
         INCLUDE (price);
 
+    CREATE INDEX IF NOT EXISTS idx_price_update_{{ g.suffix }}_timestamp
+        ON price_update_{{ g.suffix }}
+        ("timestamp" DESC);
+
 {% endfor %}

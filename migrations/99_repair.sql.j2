@@ -15,14 +15,15 @@ CREATE OR REPLACE FUNCTION cashflow_repair()
         v_overall_watermark TIMESTAMPTZ;
         v_user_product_watermark TIMESTAMPTZ;
     BEGIN
+        -- Get watermark BEFORE deletion to know the repair boundary
+        SELECT MAX("timestamp") INTO v_overall_watermark
+        FROM cumulative_cashflow_cache;
+
         DELETE FROM cumulative_cashflow_cache
         WHERE
             user_id = NEW.user_id AND
             product_id = NEW.product_id AND
             "timestamp" >= NEW."timestamp";
-
-        SELECT MAX("timestamp") INTO v_overall_watermark
-        FROM cumulative_cashflow_cache;
 
         IF v_overall_watermark IS NOT NULL THEN
             SELECT MAX("timestamp") INTO v_user_product_watermark
@@ -43,14 +44,15 @@ CREATE OR REPLACE FUNCTION cashflow_repair()
         END IF;
 
         {% for g in GRANULARITIES %}
+            -- Get watermark BEFORE deletion to know the repair boundary
+            SELECT MAX("timestamp") INTO v_overall_watermark
+            FROM user_product_timeline_cache_{{ g.suffix }};
+
             DELETE FROM user_product_timeline_cache_{{ g.suffix }}
             WHERE
                 user_id = NEW.user_id AND
                 product_id = NEW.product_id AND
                 "timestamp" >= NEW."timestamp";
-
-            SELECT MAX("timestamp") INTO v_overall_watermark
-            FROM user_product_timeline_cache_{{ g.suffix }};
 
             IF v_overall_watermark IS NOT NULL THEN
                 SELECT MAX("timestamp") INTO v_user_product_watermark
@@ -58,9 +60,9 @@ CREATE OR REPLACE FUNCTION cashflow_repair()
                 WHERE user_id = NEW.user_id AND product_id = NEW.product_id;
 
                 INSERT INTO user_product_timeline_cache_{{ g.suffix }} (
-                    user_id, product_id, "timestamp", cashflow_timestamp, price_update_timestamp
+                    user_id, product_id, "timestamp", cashflow_timestamp
                 )
-                SELECT user_id, product_id, "timestamp", cashflow_timestamp, price_update_timestamp
+                SELECT user_id, product_id, "timestamp", cashflow_timestamp
                 FROM user_product_timeline_{{ g.suffix }}(NEW.user_id, NEW.product_id)
                 WHERE
                     (

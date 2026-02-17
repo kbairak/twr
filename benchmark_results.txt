@@ -3,377 +3,441 @@
 benchmark --days=10 --price-update-frequency=14min --products=500 --users=1000
 ==============================================================================
 
-⚙️ Event generation: 2.71s
+⚙️ Event generation: 7.15s
 
 🔍 Querying with 0% cache
-    - user_product_timeline_business_15min:    1.17ms
-    - user_timeline_business_15min        :  195.72ms
-    - user_product_timeline_business_1h   :    0.71ms
-    - user_timeline_business_1h           :   39.84ms
-    - user_product_timeline_business_1d   :    0.49ms
-    - user_timeline_business_1d           :    5.50ms
+    - user_product_timeline_business_15min:    0.54ms (CV=0.080, n=10)
+    - user_timeline_business_15min        :   18.12ms (CV=0.047, n=10)
+    - user_product_timeline_business_1h   :    0.49ms (CV=0.042, n=10)
+    - user_timeline_business_1h           :    9.98ms (CV=0.093, n=10)
+    - user_product_timeline_business_1d   :    0.35ms (CV=0.058, n=10)
+    - user_timeline_business_1d           :    1.64ms (CV=0.061, n=10)
 
 🔄 Refreshing cache
-    - refresh_cumulative_cashflow         :   0.42s
-    - refresh_user_product_timeline_15min :  22.70s
-    - refresh_user_product_timeline_1h    :   7.66s
-    - refresh_user_product_timeline_1d    :   1.01s
+    - refresh_cumulative_cashflow         :   0.62s
+    - refresh_user_product_timeline_15min :   5.68s
+    - refresh_user_product_timeline_1h    :   1.55s
+    - refresh_user_product_timeline_1d    :   0.19s
 
 🔍 Querying with 100% cache
-    - user_product_timeline_business_15min:    0.78ms
-    - user_timeline_business_15min        :  177.93ms
-    - user_product_timeline_business_1h   :    0.86ms
-    - user_timeline_business_1h           :   33.16ms
-    - user_product_timeline_business_1d   :    0.82ms
-    - user_timeline_business_1d           :    5.39ms
+    - user_product_timeline_business_15min:    0.59ms (CV=0.300, n=86)
+    - user_timeline_business_15min        :   18.19ms (CV=0.065, n=10)
+    - user_product_timeline_business_1h   :    0.58ms (CV=0.198, n=10)
+    - user_timeline_business_1h           :    9.01ms (CV=0.067, n=10)
+    - user_product_timeline_business_1d   :    0.44ms (CV=0.300, n=96)
+    - user_timeline_business_1d           :    1.89ms (CV=0.103, n=10)
 
-🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-14T22:00:00)
-    - user_product_timeline_business_15min:    0.67ms
-    - user_timeline_business_15min        :  175.25ms
+🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-15T22:00:00)
+    - user_product_timeline_business_15min:    0.65ms (CV=0.092, n=10)
+    - user_timeline_business_15min        :   19.21ms (CV=0.071, n=10)
 
-🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-13T04:00:00)
-    - user_product_timeline_business_15min:    0.60ms
-    - user_timeline_business_15min        :  170.65ms
+🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-14T04:00:00)
+    - user_product_timeline_business_15min:    0.54ms (CV=0.296, n=13)
+    - user_timeline_business_15min        :   19.77ms (CV=0.052, n=10)
 
-🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-13T04:00:00)
-    - user_product_timeline_business_1h   :    0.67ms
-    - user_timeline_business_1h           :   33.57ms
+🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-14T04:00:00)
+    - user_product_timeline_business_1h   :    0.46ms (CV=0.059, n=10)
+    - user_timeline_business_1h           :    8.93ms (CV=0.044, n=10)
 
-🔍 Querying 1d    with 75.0% cache (cutoff: 2026-02-13T04:00:00)
-    - user_product_timeline_business_1d   :    0.56ms
-    - user_timeline_business_1d           :    5.61ms
+🔍 Querying 1d    with 75.0% cache (cutoff: 2026-02-14T04:00:00)
+    - user_product_timeline_business_1d   :    0.41ms (CV=0.076, n=10)
+    - user_timeline_business_1d           :    1.78ms (CV=0.051, n=10)
 
-🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-11T10:00:00)
-    - user_product_timeline_business_15min:    0.65ms
-    - user_timeline_business_15min        :  172.51ms
+🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-12T10:00:00)
+    - user_product_timeline_business_15min:    0.52ms (CV=0.332, n=990)
+    - user_timeline_business_15min        :   18.35ms (CV=0.059, n=10)
 
-🔍 Querying 1h    with 50.0% cache (cutoff: 2026-02-09T16:00:00)
-    - user_product_timeline_business_1h   :    0.53ms
-    - user_timeline_business_1h           :   33.14ms
+🔍 Querying 1h    with 50.0% cache (cutoff: 2026-02-10T16:00:00)
+    - user_product_timeline_business_1h   :    0.53ms (CV=1.082, n=990)
+    - user_timeline_business_1h           :    8.92ms (CV=0.036, n=10)
 
-🔍 Querying 1d    with 50.0% cache (cutoff: 2026-02-09T16:00:00)
-    - user_product_timeline_business_1d   :    0.53ms
-    - user_timeline_business_1d           :    5.50ms
+🔍 Querying 1d    with 50.0% cache (cutoff: 2026-02-10T16:00:00)
+    - user_product_timeline_business_1d   :    0.41ms (CV=0.299, n=131)
+    - user_timeline_business_1d           :    1.77ms (CV=0.044, n=10)
 
-🔍 Querying 1h    with 25.0% cache (cutoff: 2026-02-06T04:00:00)
-    - user_product_timeline_business_1h   :    0.55ms
-    - user_timeline_business_1h           :   33.49ms
+🔍 Querying 1h    with 25.0% cache (cutoff: 2026-02-07T04:00:00)
+    - user_product_timeline_business_1h   :    0.50ms (CV=0.310, n=990)
+    - user_timeline_business_1h           :    9.06ms (CV=0.115, n=10)
 
-🔍 Querying 1d    with 25.0% cache (cutoff: 2026-02-06T04:00:00)
-    - user_product_timeline_business_1d   :    0.53ms
-    - user_timeline_business_1d           :    5.40ms
+🔍 Querying 1d    with 25.0% cache (cutoff: 2026-02-07T04:00:00)
+    - user_product_timeline_business_1d   :    0.40ms (CV=0.444, n=990)
+    - user_timeline_business_1d           :    1.81ms (CV=0.300, n=61)
 
 benchmark --days=20 --price-update-frequency=14min --products=500 --users=1000
 ==============================================================================
 
-⚙️ Event generation: 5.43s
+⚙️ Event generation: 7.31s
 
 🔍 Querying with 0% cache
-    - user_product_timeline_business_15min:    1.04ms
-    - user_timeline_business_15min        :  390.19ms
-    - user_product_timeline_business_1h   :    0.75ms
-    - user_timeline_business_1h           :  165.34ms
-    - user_product_timeline_business_1d   :    0.69ms
-    - user_timeline_business_1d           :   13.88ms
+    - user_product_timeline_business_15min:    0.60ms (CV=1.145, n=990)
+    - user_timeline_business_15min        :   22.33ms (CV=0.108, n=10)
+    - user_product_timeline_business_1h   :    0.77ms (CV=0.284, n=10)
+    - user_timeline_business_1h           :   21.49ms (CV=0.108, n=10)
+    - user_product_timeline_business_1d   :    0.46ms (CV=0.211, n=10)
+    - user_timeline_business_1d           :    2.92ms (CV=0.034, n=10)
 
 🔄 Refreshing cache
-    - refresh_cumulative_cashflow         :   1.19s
-    - refresh_user_product_timeline_15min :  53.30s
-    - refresh_user_product_timeline_1h    :  32.22s
-    - refresh_user_product_timeline_1d    :   4.14s
+    - refresh_cumulative_cashflow         :   1.43s
+    - refresh_user_product_timeline_15min :   7.10s
+    - refresh_user_product_timeline_1h    :   4.18s
+    - refresh_user_product_timeline_1d    :   0.61s
 
 🔍 Querying with 100% cache
-    - user_product_timeline_business_15min:    0.91ms
-    - user_timeline_business_15min        :  342.43ms
-    - user_product_timeline_business_1h   :    0.66ms
-    - user_timeline_business_1h           :   93.89ms
-    - user_product_timeline_business_1d   :    0.61ms
-    - user_timeline_business_1d           :   13.42ms
+    - user_product_timeline_business_15min:    0.60ms (CV=0.524, n=990)
+    - user_timeline_business_15min        :   21.85ms (CV=0.121, n=10)
+    - user_product_timeline_business_1h   :    0.50ms (CV=0.299, n=77)
+    - user_timeline_business_1h           :   19.50ms (CV=0.065, n=10)
+    - user_product_timeline_business_1d   :    0.40ms (CV=0.300, n=244)
+    - user_timeline_business_1d           :    3.26ms (CV=0.079, n=10)
 
-🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-14T22:00:00)
-    - user_product_timeline_business_15min:    0.68ms
-    - user_timeline_business_15min        :  323.96ms
+🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-15T22:00:00)
+    - user_product_timeline_business_15min:    0.42ms (CV=0.214, n=10)
+    - user_timeline_business_15min        :   22.01ms (CV=0.079, n=10)
 
-🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-13T04:00:00)
-    - user_product_timeline_business_15min:    0.64ms
-    - user_timeline_business_15min        :  301.84ms
+🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-14T04:00:00)
+    - user_product_timeline_business_15min:    0.42ms (CV=0.040, n=10)
+    - user_timeline_business_15min        :   24.47ms (CV=0.129, n=10)
 
-🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-11T10:00:00)
-    - user_product_timeline_business_15min:    0.61ms
-    - user_timeline_business_15min        :  313.42ms
+🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-12T10:00:00)
+    - user_product_timeline_business_15min:    0.56ms (CV=0.238, n=10)
+    - user_timeline_business_15min        :   21.59ms (CV=0.102, n=10)
 
-🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-09T16:00:00)
-    - user_product_timeline_business_1h   :    0.67ms
-    - user_timeline_business_1h           :   94.97ms
+🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-10T16:00:00)
+    - user_product_timeline_business_1h   :    0.46ms (CV=0.380, n=990)
+    - user_timeline_business_1h           :   20.04ms (CV=0.067, n=10)
 
-🔍 Querying 1d    with 75.0% cache (cutoff: 2026-02-09T16:00:00)
-    - user_product_timeline_business_1d   :    0.63ms
-    - user_timeline_business_1d           :   14.70ms
+🔍 Querying 1d    with 75.0% cache (cutoff: 2026-02-10T16:00:00)
+    - user_product_timeline_business_1d   :    0.50ms (CV=0.198, n=10)
+    - user_timeline_business_1d           :    3.01ms (CV=0.115, n=10)
 
-🔍 Querying 1h    with 50.0% cache (cutoff: 2026-02-02T16:00:00)
-    - user_product_timeline_business_1h   :    0.62ms
-    - user_timeline_business_1h           :   95.24ms
+🔍 Querying 1h    with 50.0% cache (cutoff: 2026-02-03T16:00:00)
+    - user_product_timeline_business_1h   :    0.53ms (CV=0.157, n=10)
+    - user_timeline_business_1h           :   20.80ms (CV=0.075, n=10)
 
-🔍 Querying 1d    with 50.0% cache (cutoff: 2026-02-02T16:00:00)
-    - user_product_timeline_business_1d   :    0.54ms
-    - user_timeline_business_1d           :   13.75ms
+🔍 Querying 1d    with 50.0% cache (cutoff: 2026-02-03T16:00:00)
+    - user_product_timeline_business_1d   :    0.41ms (CV=0.046, n=10)
+    - user_timeline_business_1d           :    3.20ms (CV=0.058, n=10)
 
-🔍 Querying 1h    with 25.0% cache (cutoff: 2026-01-26T16:00:00)
-    - user_product_timeline_business_1h   :    0.62ms
-    - user_timeline_business_1h           :   93.46ms
+🔍 Querying 1h    with 25.0% cache (cutoff: 2026-01-27T16:00:00)
+    - user_product_timeline_business_1h   :    0.46ms (CV=0.496, n=990)
+    - user_timeline_business_1h           :   19.85ms (CV=0.054, n=10)
 
-🔍 Querying 1d    with 25.0% cache (cutoff: 2026-01-26T16:00:00)
-    - user_product_timeline_business_1d   :    0.57ms
-    - user_timeline_business_1d           :   13.60ms
+🔍 Querying 1d    with 25.0% cache (cutoff: 2026-01-27T16:00:00)
+    - user_product_timeline_business_1d   :    0.37ms (CV=0.052, n=10)
+    - user_timeline_business_1d           :    3.25ms (CV=0.147, n=10)
 
 benchmark --days=50 --price-update-frequency=14min --products=500 --users=1000
 ==============================================================================
 
-⚙️ Event generation: 14.81s
+⚙️ Event generation: 18.22s
 
 🔍 Querying with 0% cache
-    - user_product_timeline_business_15min:    1.04ms
-    - user_timeline_business_15min        :  1501.74ms
-    - user_product_timeline_business_1h   :    0.94ms
-    - user_timeline_business_1h           :  439.15ms
-    - user_product_timeline_business_1d   :    0.58ms
-    - user_timeline_business_1d           :   60.23ms
+    - user_product_timeline_business_15min:    0.70ms (CV=0.836, n=990)
+    - user_timeline_business_15min        :   37.27ms (CV=0.166, n=10)
+    - user_product_timeline_business_1h   :    0.99ms (CV=0.193, n=10)
+    - user_timeline_business_1h           :   38.35ms (CV=0.074, n=10)
+    - user_product_timeline_business_1d   :    0.64ms (CV=0.244, n=10)
+    - user_timeline_business_1d           :    7.89ms (CV=0.054, n=10)
 
 🔄 Refreshing cache
-    - refresh_cumulative_cashflow         :   4.63s
-    - refresh_user_product_timeline_15min :  146.74s
-    - refresh_user_product_timeline_1h    :  127.17s
-    - refresh_user_product_timeline_1d    :  26.38s
+    - refresh_cumulative_cashflow         :   5.10s
+    - refresh_user_product_timeline_15min :  14.71s
+    - refresh_user_product_timeline_1h    :  11.64s
+    - refresh_user_product_timeline_1d    :   3.73s
 
 🔍 Querying with 100% cache
-    - user_product_timeline_business_15min:    1.10ms
-    - user_timeline_business_15min        :  1394.58ms
-    - user_product_timeline_business_1h   :    0.75ms
-    - user_timeline_business_1h           :  440.30ms
-    - user_product_timeline_business_1d   :    0.79ms
-    - user_timeline_business_1d           :   60.48ms
+    - user_product_timeline_business_15min:    0.75ms (CV=0.105, n=10)
+    - user_timeline_business_15min        :   30.34ms (CV=0.132, n=10)
+    - user_product_timeline_business_1h   :    0.52ms (CV=0.063, n=10)
+    - user_timeline_business_1h           :   30.20ms (CV=0.108, n=10)
+    - user_product_timeline_business_1d   :    0.44ms (CV=0.113, n=10)
+    - user_timeline_business_1d           :    8.53ms (CV=0.173, n=10)
 
-🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-14T22:00:00)
-    - user_product_timeline_business_15min:    1.00ms
-    - user_timeline_business_15min        :  1259.63ms
+🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-15T22:00:00)
+    - user_product_timeline_business_15min:    0.91ms (CV=0.144, n=10)
+    - user_timeline_business_15min        :   33.78ms (CV=0.049, n=10)
 
-🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-13T04:00:00)
-    - user_product_timeline_business_15min:    0.99ms
-    - user_timeline_business_15min        :  1262.93ms
+🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-14T04:00:00)
+    - user_product_timeline_business_15min:    0.59ms (CV=0.041, n=10)
+    - user_timeline_business_15min        :   30.29ms (CV=0.114, n=10)
 
-🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-11T10:00:00)
-    - user_product_timeline_business_15min:    0.91ms
-    - user_timeline_business_15min        :  1196.83ms
+🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-12T10:00:00)
+    - user_product_timeline_business_15min:    0.59ms (CV=0.038, n=10)
+    - user_timeline_business_15min        :   33.57ms (CV=0.079, n=10)
 
-🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-09T04:00:00)
-    - user_product_timeline_business_1h   :    1.03ms
-    - user_timeline_business_1h           :  434.32ms
+🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-10T04:00:00)
+    - user_product_timeline_business_1h   :    0.52ms (CV=0.112, n=10)
+    - user_timeline_business_1h           :   33.60ms (CV=0.173, n=10)
 
-🔍 Querying 1h    with 50.0% cache (cutoff: 2026-02-01T16:00:00)
-    - user_product_timeline_business_1h   :    0.73ms
-    - user_timeline_business_1h           :  400.79ms
+🔍 Querying 1h    with 50.0% cache (cutoff: 2026-02-02T16:00:00)
+    - user_product_timeline_business_1h   :    0.54ms (CV=0.520, n=990)
+    - user_timeline_business_1h           :   32.85ms (CV=0.053, n=10)
 
-🔍 Querying 1d    with 75.0% cache (cutoff: 2026-01-30T04:00:00)
-    - user_product_timeline_business_1d   :    0.64ms
-    - user_timeline_business_1d           :   60.68ms
+🔍 Querying 1d    with 75.0% cache (cutoff: 2026-01-31T04:00:00)
+    - user_product_timeline_business_1d   :    0.71ms (CV=0.236, n=10)
+    - user_timeline_business_1d           :    8.41ms (CV=0.082, n=10)
 
-🔍 Querying 1h    with 25.0% cache (cutoff: 2026-01-25T04:00:00)
-    - user_product_timeline_business_1h   :    0.73ms
-    - user_timeline_business_1h           :  424.73ms
+🔍 Querying 1h    with 25.0% cache (cutoff: 2026-01-26T04:00:00)
+    - user_product_timeline_business_1h   :    0.50ms (CV=0.096, n=10)
+    - user_timeline_business_1h           :   34.03ms (CV=0.071, n=10)
 
-🔍 Querying 1d    with 50.0% cache (cutoff: 2026-01-12T16:00:00)
-    - user_product_timeline_business_1d   :    0.60ms
-    - user_timeline_business_1d           :   62.62ms
+🔍 Querying 1d    with 50.0% cache (cutoff: 2026-01-13T16:00:00)
+    - user_product_timeline_business_1d   :    0.48ms (CV=0.292, n=16)
+    - user_timeline_business_1d           :    7.93ms (CV=0.098, n=10)
 
-🔍 Querying 1d    with 25.0% cache (cutoff: 2025-12-26T04:00:00)
-    - user_product_timeline_business_1d   :    0.69ms
-    - user_timeline_business_1d           :   61.73ms
+🔍 Querying 1d    with 25.0% cache (cutoff: 2025-12-27T04:00:00)
+    - user_product_timeline_business_1d   :    0.45ms (CV=0.299, n=12)
+    - user_timeline_business_1d           :    7.51ms (CV=0.051, n=10)
 
 benchmark --days=100 --price-update-frequency=14min --products=500 --users=1000
 ===============================================================================
 
-⚙️ Event generation: 39.31s
+⚙️ Event generation: 41.38s
 
 🔍 Querying with 0% cache
-    - user_product_timeline_business_15min:    2.00ms
-    - user_timeline_business_15min        :  5375.84ms
-    - user_product_timeline_business_1h   :    1.41ms
-    - user_timeline_business_1h           :  1501.36ms
-    - user_product_timeline_business_1d   :    0.87ms
-    - user_timeline_business_1d           :  221.20ms
+    - user_product_timeline_business_15min:    0.85ms (CV=1.103, n=990)
+    - user_timeline_business_15min        :   50.42ms (CV=0.068, n=10)
+    - user_product_timeline_business_1h   :    1.82ms (CV=0.077, n=10)
+    - user_timeline_business_1h           :   52.15ms (CV=0.083, n=10)
+    - user_product_timeline_business_1d   :    0.57ms (CV=0.588, n=990)
+    - user_timeline_business_1d           :   19.54ms (CV=0.074, n=10)
 
 🔄 Refreshing cache
-    - refresh_cumulative_cashflow         :  12.73s
-    - refresh_user_product_timeline_15min :  311.27s
-    - refresh_user_product_timeline_1h    :  313.95s
-    - refresh_user_product_timeline_1d    :  116.23s
+    - refresh_cumulative_cashflow         :  12.88s
+    - refresh_user_product_timeline_15min :  30.66s
+    - refresh_user_product_timeline_1h    :  30.38s
+    - refresh_user_product_timeline_1d    :  15.50s
 
 🔍 Querying with 100% cache
-    - user_product_timeline_business_15min:    1.26ms
-    - user_timeline_business_15min        :  5322.83ms
-    - user_product_timeline_business_1h   :    1.66ms
-    - user_timeline_business_1h           :  1541.14ms
-    - user_product_timeline_business_1d   :    1.16ms
-    - user_timeline_business_1d           :  221.98ms
+    - user_product_timeline_business_15min:    1.29ms (CV=0.274, n=10)
+    - user_timeline_business_15min        :   45.22ms (CV=0.098, n=10)
+    - user_product_timeline_business_1h   :    1.14ms (CV=0.278, n=10)
+    - user_timeline_business_1h           :   44.08ms (CV=0.178, n=10)
+    - user_product_timeline_business_1d   :    0.53ms (CV=0.567, n=990)
+    - user_timeline_business_1d           :   17.32ms (CV=0.113, n=10)
 
-🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-14T22:00:00)
-    - user_product_timeline_business_15min:    1.41ms
-    - user_timeline_business_15min        :  5007.39ms
+🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-15T22:00:00)
+    - user_product_timeline_business_15min:    0.81ms (CV=0.695, n=990)
+    - user_timeline_business_15min        :   55.70ms (CV=0.118, n=10)
 
-🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-13T04:00:00)
-    - user_product_timeline_business_15min:    1.57ms
-    - user_timeline_business_15min        :  4890.73ms
+🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-14T04:00:00)
+    - user_product_timeline_business_15min:    0.78ms (CV=0.578, n=990)
+    - user_timeline_business_15min        :   49.49ms (CV=0.096, n=10)
 
-🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-11T10:00:00)
-    - user_product_timeline_business_15min:    1.15ms
-    - user_timeline_business_15min        :  5287.89ms
+🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-12T10:00:00)
+    - user_product_timeline_business_15min:    0.73ms (CV=0.636, n=990)
+    - user_timeline_business_15min        :   56.08ms (CV=0.163, n=10)
 
-🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-09T04:00:00)
-    - user_product_timeline_business_1h   :    1.30ms
-    - user_timeline_business_1h           :  1501.01ms
+🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-10T04:00:00)
+    - user_product_timeline_business_1h   :    0.66ms (CV=0.743, n=990)
+    - user_timeline_business_1h           :   54.90ms (CV=0.105, n=10)
 
-🔍 Querying 1h    with 50.0% cache (cutoff: 2026-02-01T16:00:00)
-    - user_product_timeline_business_1h   :    0.88ms
-    - user_timeline_business_1h           :  1432.25ms
+🔍 Querying 1h    with 50.0% cache (cutoff: 2026-02-02T16:00:00)
+    - user_product_timeline_business_1h   :    0.60ms (CV=0.782, n=990)
+    - user_timeline_business_1h           :   52.28ms (CV=0.077, n=10)
 
-🔍 Querying 1h    with 25.0% cache (cutoff: 2026-01-25T04:00:00)
-    - user_product_timeline_business_1h   :    1.16ms
-    - user_timeline_business_1h           :  1404.55ms
+🔍 Querying 1h    with 25.0% cache (cutoff: 2026-01-26T04:00:00)
+    - user_product_timeline_business_1h   :    1.02ms (CV=0.206, n=10)
+    - user_timeline_business_1h           :   61.12ms (CV=0.271, n=10)
 
-🔍 Querying 1d    with 75.0% cache (cutoff: 2026-01-12T16:00:00)
-    - user_product_timeline_business_1d   :    0.99ms
-    - user_timeline_business_1d           :  234.27ms
+🔍 Querying 1d    with 75.0% cache (cutoff: 2026-01-13T16:00:00)
+    - user_product_timeline_business_1d   :    0.72ms (CV=0.820, n=990)
+    - user_timeline_business_1d           :   26.26ms (CV=0.123, n=10)
 
-🔍 Querying 1d    with 50.0% cache (cutoff: 2025-12-08T16:00:00)
-    - user_product_timeline_business_1d   :    0.91ms
-    - user_timeline_business_1d           :  233.75ms
+🔍 Querying 1d    with 50.0% cache (cutoff: 2025-12-09T16:00:00)
+    - user_product_timeline_business_1d   :    0.63ms (CV=0.612, n=990)
+    - user_timeline_business_1d           :   25.65ms (CV=0.096, n=10)
 
-🔍 Querying 1d    with 25.0% cache (cutoff: 2025-11-03T16:00:00)
-    - user_product_timeline_business_1d   :    0.72ms
-    - user_timeline_business_1d           :  234.50ms
+🔍 Querying 1d    with 25.0% cache (cutoff: 2025-11-04T16:00:00)
+    - user_product_timeline_business_1d   :    0.49ms (CV=0.297, n=20)
+    - user_timeline_business_1d           :   28.60ms (CV=0.184, n=10)
 
 benchmark --days=200 --price-update-frequency=14min --products=500 --users=1000
 ===============================================================================
 
-⚙️ Event generation: 111.86s
+⚙️ Event generation: 105.68s
 
 🔍 Querying with 0% cache
-    - user_product_timeline_business_15min:    2.67ms
-    - user_timeline_business_15min        :  24535.46ms
-    - user_product_timeline_business_1h   :    2.45ms
-    - user_timeline_business_1h           :  5808.68ms
-    - user_product_timeline_business_1d   :    1.07ms
-    - user_timeline_business_1d           :  817.84ms
+    - user_product_timeline_business_15min:    0.93ms (CV=0.867, n=990)
+    - user_timeline_business_15min        :   72.26ms (CV=0.068, n=10)
+    - user_product_timeline_business_1h   :    0.82ms (CV=0.694, n=990)
+    - user_timeline_business_1h           :   88.80ms (CV=0.050, n=10)
+    - user_product_timeline_business_1d   :    1.08ms (CV=0.282, n=10)
+    - user_timeline_business_1d           :   58.71ms (CV=0.095, n=10)
 
 🔄 Refreshing cache
-    - refresh_cumulative_cashflow         :  41.62s
-    - refresh_user_product_timeline_15min :  636.34s
-    - refresh_user_product_timeline_1h    :  6917.10s
-    - refresh_user_product_timeline_1d    :  3437.29s
+    - refresh_cumulative_cashflow         :  36.87s
+    - refresh_user_product_timeline_15min :  74.25s
+    - refresh_user_product_timeline_1h    :  73.65s
+    - refresh_user_product_timeline_1d    :  1897.58s
 
 🔍 Querying with 100% cache
-    - user_product_timeline_business_15min:    2.23ms
-    - user_timeline_business_15min        :  15155.91ms
-    - user_product_timeline_business_1h   :    1.49ms
-    - user_timeline_business_1h           :  4415.71ms
-    - user_product_timeline_business_1d   :    1.06ms
-    - user_timeline_business_1d           :  803.80ms
+    - user_product_timeline_business_15min:    1.00ms (CV=0.637, n=990)
+    - user_timeline_business_15min        :   63.90ms (CV=0.084, n=10)
+    - user_product_timeline_business_1h   :    0.90ms (CV=0.934, n=990)
+    - user_timeline_business_1h           :   62.12ms (CV=0.152, n=10)
+    - user_product_timeline_business_1d   :    0.74ms (CV=1.375, n=990)
+    - user_timeline_business_1d           :   49.66ms (CV=0.155, n=10)
 
-🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-14T22:00:00)
-    - user_product_timeline_business_15min:    1.26ms
-    - user_timeline_business_15min        :  15402.65ms
+🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-15T22:00:00)
+    - user_product_timeline_business_15min:    0.84ms (CV=0.704, n=990)
+    - user_timeline_business_15min        :   63.27ms (CV=0.117, n=10)
 
-🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-13T04:00:00)
-    - user_product_timeline_business_15min:    1.11ms
-    - user_timeline_business_15min        :  19316.59ms
+🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-14T04:00:00)
+    - user_product_timeline_business_15min:    0.76ms (CV=0.644, n=990)
+    - user_timeline_business_15min        :   63.04ms (CV=0.107, n=10)
 
-🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-11T10:00:00)
-    - user_product_timeline_business_15min:    1.36ms
-    - user_timeline_business_15min        :  15299.50ms
+🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-12T10:00:00)
+    - user_product_timeline_business_15min:  910.71ms (CV=31.397, n=990)
+    - user_timeline_business_15min        :   69.21ms (CV=0.135, n=10)
 
-🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-09T04:00:00)
-    - user_product_timeline_business_1h   :    1.23ms
-    - user_timeline_business_1h           :  4372.91ms
+🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-10T04:00:00)
+    - user_product_timeline_business_1h   :    0.71ms (CV=0.856, n=990)
+    - user_timeline_business_1h           :   66.51ms (CV=0.133, n=10)
 
-🔍 Querying 1h    with 50.0% cache (cutoff: 2026-02-01T16:00:00)
-    - user_product_timeline_business_1h   :    0.97ms
-    - user_timeline_business_1h           :  4543.64ms
+🔍 Querying 1h    with 50.0% cache (cutoff: 2026-02-02T16:00:00)
+    - user_product_timeline_business_1h   :    0.74ms (CV=0.808, n=990)
+    - user_timeline_business_1h           :   80.68ms (CV=0.124, n=10)
 
-🔍 Querying 1h    with 25.0% cache (cutoff: 2026-01-25T04:00:00)
-    - user_product_timeline_business_1h   :    0.87ms
-    - user_timeline_business_1h           :  4602.75ms
+🔍 Querying 1h    with 25.0% cache (cutoff: 2026-01-26T04:00:00)
+    - user_product_timeline_business_1h   :    0.69ms (CV=0.969, n=990)
+    - user_timeline_business_1h           :   79.42ms (CV=0.139, n=10)
 
-🔍 Querying 1d    with 75.0% cache (cutoff: 2025-12-08T16:00:00)
-    - user_product_timeline_business_1d   :    1.11ms
-    - user_timeline_business_1d           :  815.21ms
+🔍 Querying 1d    with 75.0% cache (cutoff: 2025-12-09T16:00:00)
+    - user_product_timeline_business_1d   :    0.70ms (CV=1.046, n=990)
+    - user_timeline_business_1d           :   53.89ms (CV=0.101, n=10)
 
-🔍 Querying 1d    with 50.0% cache (cutoff: 2025-09-29T16:00:00)
-    - user_product_timeline_business_1d   :    0.93ms
-    - user_timeline_business_1d           :  773.53ms
+🔍 Querying 1d    with 50.0% cache (cutoff: 2025-09-30T16:00:00)
+    - user_product_timeline_business_1d   :    0.68ms (CV=1.028, n=990)
+    - user_timeline_business_1d           :   61.05ms (CV=0.119, n=10)
 
-🔍 Querying 1d    with 25.0% cache (cutoff: 2025-07-21T16:00:00)
-    - user_product_timeline_business_1d   :    0.95ms
-    - user_timeline_business_1d           :  839.97ms
+🔍 Querying 1d    with 25.0% cache (cutoff: 2025-07-22T16:00:00)
+    - user_product_timeline_business_1d   :    0.58ms (CV=0.714, n=990)
+    - user_timeline_business_1d           :   62.87ms (CV=0.128, n=10)
 
-benchmark --days=300 --price-update-frequency=14min --products=500 --users=1000
+benchmark --days=500 --price-update-frequency=14min --products=500 --users=1000
 ===============================================================================
 
-⚙️ Event generation: 165.37s
+⚙️ Event generation: 7040.84s
 
 🔍 Querying with 0% cache
-    - user_product_timeline_business_15min:    1.75ms
-    - user_timeline_business_15min        :  43735.50ms
-    - user_product_timeline_business_1h   :    1.34ms
-    - user_timeline_business_1h           :  10368.54ms
-    - user_product_timeline_business_1d   :    1.03ms
-    - user_timeline_business_1d           :  1740.74ms
+    - user_product_timeline_business_15min:    1.05ms (CV=0.875, n=990)
+    - user_timeline_business_15min        :  147.94ms (CV=0.052, n=10)
+    - user_product_timeline_business_1h   :    0.72ms (CV=0.201, n=10)
+    - user_timeline_business_1h           :  180.89ms (CV=0.061, n=10)
+    - user_product_timeline_business_1d   :    1.31ms (CV=1.181, n=990)
+    - user_timeline_business_1d           :  312.55ms (CV=0.077, n=10)
 
 🔄 Refreshing cache
-    - refresh_cumulative_cashflow         :  68.15s
-    - refresh_user_product_timeline_15min :  1829.15s
-    - refresh_user_product_timeline_1h    :  10516.63s
-    - refresh_user_product_timeline_1d    :  1126.31s
+    - refresh_cumulative_cashflow         :  175.22s
+    - refresh_user_product_timeline_15min :  174.42s
+    - refresh_user_product_timeline_1h    :  225.83s
+    - refresh_user_product_timeline_1d    :  761.29s
 
 🔍 Querying with 100% cache
-    - user_product_timeline_business_15min:    7.75ms
-    - user_timeline_business_15min        :  39453.79ms
-    - user_product_timeline_business_1h   :    4.55ms
-    - user_timeline_business_1h           :  11489.68ms
-    - user_product_timeline_business_1d   :    2.53ms
-    - user_timeline_business_1d           :  1664.80ms
+    - user_product_timeline_business_15min:    1.75ms (CV=0.654, n=990)
+    - user_timeline_business_15min        :  114.67ms (CV=0.167, n=10)
+    - user_product_timeline_business_1h   :    1.59ms (CV=0.959, n=990)
+    - user_timeline_business_1h           :  140.51ms (CV=0.068, n=10)
+    - user_product_timeline_business_1d   :    2.90ms (CV=2.276, n=990)
+    - user_timeline_business_1d           :  227.97ms (CV=0.092, n=10)
 
-🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-14T22:00:00)
-    - user_product_timeline_business_15min:    3.18ms
-    - user_timeline_business_15min        :  39987.52ms
+🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-15T22:00:00)
+    - user_product_timeline_business_15min:    1.61ms (CV=0.226, n=10)
+    - user_timeline_business_15min        :  116.89ms (CV=0.084, n=10)
 
-🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-13T04:00:00)
-    - user_product_timeline_business_15min:    2.74ms
-    - user_timeline_business_15min        :  33470.48ms
+🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-14T04:00:00)
+    - user_product_timeline_business_15min:    1.04ms (CV=0.140, n=10)
+    - user_timeline_business_15min        :  113.05ms (CV=0.084, n=10)
 
-🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-11T10:00:00)
-    - user_product_timeline_business_15min:    2.18ms
-    - user_timeline_business_15min        :  36330.23ms
+🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-12T10:00:00)
+    - user_product_timeline_business_15min:    1.61ms (CV=0.169, n=10)
+    - user_timeline_business_15min        :  156.65ms (CV=0.104, n=10)
 
-🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-09T04:00:00)
-    - user_product_timeline_business_1h   :    2.22ms
-    - user_timeline_business_1h           :  10392.55ms
+🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-10T04:00:00)
+    - user_product_timeline_business_1h   :    1.49ms (CV=0.914, n=990)
+    - user_timeline_business_1h           :  142.53ms (CV=0.090, n=10)
 
-🔍 Querying 1h    with 50.0% cache (cutoff: 2026-02-01T16:00:00)
-    - user_product_timeline_business_1h   :    2.18ms
-    - user_timeline_business_1h           :  10910.30ms
+🔍 Querying 1h    with 50.0% cache (cutoff: 2026-02-02T16:00:00)
+    - user_product_timeline_business_1h   :    1.57ms (CV=0.822, n=990)
+    - user_timeline_business_1h           :  177.88ms (CV=0.143, n=10)
 
-🔍 Querying 1h    with 25.0% cache (cutoff: 2026-01-25T04:00:00)
-    - user_product_timeline_business_1h   :    1.89ms
-    - user_timeline_business_1h           :  9837.98ms
+🔍 Querying 1h    with 25.0% cache (cutoff: 2026-01-26T04:00:00)
+    - user_product_timeline_business_1h   :    1.53ms (CV=0.854, n=990)
+    - user_timeline_business_1h           :  174.96ms (CV=0.092, n=10)
 
-🔍 Querying 1d    with 75.0% cache (cutoff: 2025-11-03T16:00:00)
-    - user_product_timeline_business_1d   :    2.09ms
-    - user_timeline_business_1d           :  1835.39ms
+🔍 Querying 1d    with 75.0% cache (cutoff: 2025-08-26T16:00:00)
+    - user_product_timeline_business_1d   :    6.94ms (CV=2.951, n=990)
+    - user_timeline_business_1d           :  369.33ms (CV=0.192, n=10)
 
-🔍 Querying 1d    with 50.0% cache (cutoff: 2025-07-21T16:00:00)
-    - user_product_timeline_business_1d   :    1.49ms
-    - user_timeline_business_1d           :  1835.17ms
+🔍 Querying 1d    with 50.0% cache (cutoff: 2025-03-04T16:00:00)
+    - user_product_timeline_business_1d   :    3.43ms (CV=1.946, n=990)
+    - user_timeline_business_1d           :  307.03ms (CV=0.068, n=10)
 
-🔍 Querying 1d    with 25.0% cache (cutoff: 2025-04-07T16:00:00)
-    - user_product_timeline_business_1d   :    1.77ms
-    - user_timeline_business_1d           :  1837.56ms
+🔍 Querying 1d    with 25.0% cache (cutoff: 2024-09-10T16:00:00)
+    - user_product_timeline_business_1d   :    1.89ms (CV=1.619, n=990)
+    - user_timeline_business_1d           :  307.40ms (CV=0.110, n=10)
+
+
+benchmark --days=1000 --price-update-frequency=14min --products=500 --users=1000
+================================================================================
+
+⚙️ Event generation: 4447.50s
+
+🔍 Querying with 0% cache
+    - user_product_timeline_business_15min:    2.99ms (CV=0.899, n=990)
+    - user_timeline_business_15min        :  264.84ms (CV=0.039, n=10)
+    - user_product_timeline_business_1h   :    1.80ms (CV=0.890, n=990)
+    - user_timeline_business_1h           :  360.69ms (CV=0.040, n=10)
+    - user_product_timeline_business_1d   :    4.12ms (CV=1.338, n=990)
+    - user_timeline_business_1d           : 1256.13ms (CV=0.085, n=10)
+
+🔄 Refreshing cache
+    - refresh_cumulative_cashflow         :  967.79s
+    - refresh_user_product_timeline_15min :  2410.19s
+    - refresh_user_product_timeline_1h    :  587.90s
+    - refresh_user_product_timeline_1d    :  27915.81s
+
+🔍 Querying with 100% cache
+    - user_product_timeline_business_15min:    5.29ms (CV=1.074, n=990)
+    - user_timeline_business_15min        :  350.19ms (CV=0.190, n=10)
+    - user_product_timeline_business_1h   :    4.55ms (CV=0.920, n=990)
+    - user_timeline_business_1h           :  328.23ms (CV=0.064, n=10)
+    - user_product_timeline_business_1d   :   19.90ms (CV=2.321, n=990)
+    - user_timeline_business_1d           : 1138.55ms (CV=0.088, n=10)
+
+🔍 Querying 15min with 75.0% cache (cutoff: 2026-02-15T22:00:00)
+    - user_product_timeline_business_15min:    3.08ms (CV=0.878, n=990)
+    - user_timeline_business_15min        :  297.65ms (CV=0.081, n=10)
+
+🔍 Querying 15min with 50.0% cache (cutoff: 2026-02-14T04:00:00)
+    - user_product_timeline_business_15min:    2.04ms (CV=0.607, n=990)
+    - user_timeline_business_15min        :  272.13ms (CV=0.056, n=10)
+
+🔍 Querying 15min with 25.0% cache (cutoff: 2026-02-12T10:00:00)
+    - user_product_timeline_business_15min:    2.68ms (CV=0.738, n=990)
+    - user_timeline_business_15min        :  293.02ms (CV=0.044, n=10)
+
+🔍 Querying 1h    with 75.0% cache (cutoff: 2026-02-10T04:00:00)
+    - user_product_timeline_business_1h   :    3.73ms (CV=0.915, n=990)
+    - user_timeline_business_1h           :  321.32ms (CV=0.081, n=10)
+
+🔍 Querying 1h    with 50.0% cache (cutoff: 2026-02-02T16:00:00)
+    - user_product_timeline_business_1h   :    4.68ms (CV=0.877, n=990)
+    - user_timeline_business_1h           :  382.06ms (CV=0.300, n=640)
+
+🔍 Querying 1h    with 25.0% cache (cutoff: 2026-01-26T04:00:00)
+    - user_product_timeline_business_1h   :    8.85ms (CV=1.421, n=990)
+    - user_timeline_business_1h           :  565.47ms (CV=0.235, n=10)
+
+🔍 Querying 1d    with 75.0% cache (cutoff: 2025-03-04T22:00:00)
+    - user_product_timeline_business_1d   :   22.13ms (CV=2.923, n=990)
+    - user_timeline_business_1d           : 1190.93ms (CV=0.065, n=10)
+
+🔍 Querying 1d    with 50.0% cache (cutoff: 2024-03-20T04:00:00)
+    - user_product_timeline_business_1d   :    8.48ms (CV=2.138, n=990)
+    - user_timeline_business_1d           : 1252.30ms (CV=0.064, n=10)
+
+🔍 Querying 1d    with 25.0% cache (cutoff: 2023-04-05T10:00:00)
+    - user_product_timeline_business_1d   :    4.21ms (CV=1.728, n=990)
+    - user_timeline_business_1d           : 1185.66ms (CV=0.050, n=10)

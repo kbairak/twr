@@ -13,46 +13,35 @@
         LANGUAGE plpgsql STABLE AS $$
         BEGIN
             RETURN QUERY
-            WITH ccfm AS MATERIALIZED (
+            WITH latest_prices AS (
+                SELECT DISTINCT ON (pu.product_id)
+                    pu.product_id, pu."timestamp", pu.price
+                FROM price_update_{{ g.suffix }} pu
+                WHERE pu."timestamp" < p_before
+                ORDER BY pu.product_id, pu."timestamp" DESC
+            ),
+            cashflows AS (
                 SELECT ccf.product_id, ccf."timestamp",
-                       ccf.buy_units, ccf.sell_units, ccf.buy_cost,
-                       ccf.sell_proceeds, ccf.deposits, ccf.withdrawals
+                    ccf.buy_units, ccf.sell_units, ccf.buy_cost,
+                    ccf.sell_proceeds, ccf.deposits, ccf.withdrawals
                 FROM cumulative_cashflow(p_user_id, NULL, NULL, p_before) ccf
             )
-            SELECT DISTINCT ON (pu.product_id)
-                pu.product_id, pu."timestamp",
-                ccf.buy_units, ccf.sell_units, ccf.buy_cost, ccf.sell_proceeds, ccf.deposits,
-                ccf.withdrawals,
-                ccf.buy_units - ccf.sell_units AS units,
-                ccf.deposits - ccf.withdrawals AS net_investment,
-                ccf.deposits - ccf.buy_cost + ccf.withdrawals - ccf.sell_proceeds AS fees,
-                -- units * pu.price AS market_value
-                pu.price,
-                (ccf.buy_units - ccf.sell_units) * pu.price AS market_value,
-                ccf.buy_cost / NULLIF(ccf.buy_units, 0) AS avg_buy_cost,
-                -- units * avg_buy_cost AS cost_basis
-                (ccf.buy_units - ccf.sell_units) *
-                    (ccf.buy_cost / NULLIF(ccf.buy_units, 0))
-                    AS cost_basis,
-                -- market_value - cost_basis AS unrealized_returns or
-                -- units * (market_price - avg_buy_cost) AS unrealized_returns
-                (ccf.buy_units - ccf.sell_units) *
-                    (pu.price - (ccf.buy_cost / NULLIF(ccf.buy_units, 0)))
-                    AS unrealized_returns
-            FROM price_update_{{ g.suffix }} pu
-                CROSS JOIN LATERAL (
-                    SELECT
-                        ccfm.buy_units, ccfm.sell_units, ccfm.buy_cost,
-                        ccfm.sell_proceeds, ccfm.deposits, ccfm.withdrawals
-                    FROM ccfm
-                    WHERE
-                        ccfm.product_id = pu.product_id AND
-                        ccfm."timestamp" <= pu."timestamp"
-                    ORDER BY ccfm."timestamp" DESC
-                    LIMIT 1
-                ) AS ccf
-            WHERE pu."timestamp" < p_before
-            ORDER BY pu.product_id, pu."timestamp" DESC;
+            SELECT DISTINCT ON (lp.product_id)
+                lp.product_id, lp."timestamp",
+                cf.buy_units, cf.sell_units, cf.buy_cost, cf.sell_proceeds, cf.deposits, cf.withdrawals,
+                cf.buy_units - cf.sell_units AS units,
+                cf.deposits - cf.withdrawals AS net_investment,
+                cf.deposits - cf.buy_cost + cf.withdrawals - cf.sell_proceeds AS fees,
+                lp.price,
+                (cf.buy_units - cf.sell_units) * lp.price AS market_value,
+                cf.buy_cost / NULLIF(cf.buy_units, 0) AS avg_buy_cost,
+                (cf.buy_units - cf.sell_units) * (cf.buy_cost / NULLIF(cf.buy_units, 0)) AS cost_basis,
+                (cf.buy_units - cf.sell_units) * (lp.price - (cf.buy_cost / NULLIF(cf.buy_units, 0))) AS unrealized_returns
+            FROM latest_prices lp
+            INNER JOIN cashflows cf
+                ON cf.product_id = lp.product_id
+                AND cf."timestamp" <= lp."timestamp"
+            ORDER BY lp.product_id, cf."timestamp" DESC;
         END;
         $$;
 

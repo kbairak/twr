@@ -5,16 +5,16 @@ CREATE TABLE IF NOT EXISTS cumulative_cashflow_cache (
     "timestamp"    TIMESTAMPTZ NOT NULL,
 
     -- Monotonic totals - units (always increasing)
-    buy_units     NUMERIC(20, 6),  -- Σ(units_delta) for buys only
-    sell_units    NUMERIC(20, 6),  -- Σ(|units_delta|) for sells only
+    buy_units     NUMERIC(20, 6),  -- Σ(units_delta)       for buys only
+    sell_units    NUMERIC(20, 6),  -- Σ(|units_delta|)     for sells only
 
     -- Monotonic totals - execution_money (always increasing)
-    buy_cost      NUMERIC(20, 6),  -- Σ(execution_money) for buys
+    buy_cost      NUMERIC(20, 6),  -- Σ(execution_money)   for buys
     sell_proceeds NUMERIC(20, 6),  -- Σ(|execution_money|) for sells
 
     -- Monotonic totals - cash flows (always increasing)
-    deposits      NUMERIC(20, 6),  -- Σ(user_money) for buys (what left bank)
-    withdrawals   NUMERIC(20, 6)   -- Σ(|user_money|) for sells (what entered bank)
+    deposits      NUMERIC(20, 6),  -- Σ(user_money)        for buys (what left bank)
+    withdrawals   NUMERIC(20, 6)   -- Σ(|user_money|)      for sells (what entered bank)
 
     -- We can derive:
     --   - units          = buy_units - sell_units
@@ -199,7 +199,6 @@ CREATE OR REPLACE FUNCTION cumulative_cashflow(
                 WINDOW w AS (
                     PARTITION BY fresh_cf.user_id, fresh_cf.product_id
                     ORDER BY fresh_cf."timestamp"
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                 )
             ) AS computed_fresh
             {% if filter_after %}WHERE computed_fresh."timestamp" > p_after{% endif %}
