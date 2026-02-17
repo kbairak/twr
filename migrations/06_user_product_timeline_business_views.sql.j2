@@ -12,18 +12,8 @@
     -- Parameters:
     --   - p_user_id: Required - specific user to query
     --   - p_product_id: Filter by product (NULL = all products)
-    --   - p_after: Only return timestamps after this point (default = retention start if configured)
-    --   - p_before: Only return timestamps before or at this point (NULL = no upper bound)
     CREATE OR REPLACE FUNCTION user_product_timeline_business_{{ g.suffix }}(
-            p_user_id    UUID,
-            p_product_id UUID,
-            p_after      TIMESTAMPTZ DEFAULT
-                {% if g.cache_retention %}
-                    NOW() - '{{ g.cache_retention }}'::interval
-                {% else %}
-                    NULL
-                {% endif %},
-            p_before     TIMESTAMPTZ DEFAULT NULL
+            p_user_id UUID, p_product_id UUID DEFAULT NULL
         )
         RETURNS TABLE(
             user_id UUID, product_id UUID, "timestamp" TIMESTAMPTZ, buy_units NUMERIC(20, 6),
@@ -34,6 +24,13 @@
             unrealized_returns NUMERIC(20, 6)
         )
         LANGUAGE plpgsql STABLE AS $$
+        DECLARE
+            v_after TIMESTAMPTZ :=
+                {% if g.cache_retention %}
+                    NOW() - '{{ g.cache_retention }}'::interval
+                {% else %}
+                    NULL
+                {% endif %};
         BEGIN
             RETURN QUERY
             SELECT
@@ -56,9 +53,9 @@
                 (ccf.buy_units - ccf.sell_units) *
                     (pu.price - (ccf.buy_cost / NULLIF(ccf.buy_units, 0)))
                     AS unrealized_returns
-            FROM user_product_timeline_{{ g.suffix }}(p_user_id, p_product_id, p_after, p_before) upt
+            FROM user_product_timeline_{{ g.suffix }}(p_user_id, p_product_id, v_after, NULL) upt
                 INNER JOIN price_update_{{ g.suffix }} pu ON
-                    upt.product_id = pu.product_id AND upt.price_update_timestamp = pu."timestamp"
+                    upt.product_id = pu.product_id AND upt."timestamp" = pu."timestamp"
                 INNER JOIN cumulative_cashflow(p_user_id, p_product_id) ccf ON
                     upt.user_id = ccf.user_id AND
                     upt.product_id = ccf.product_id AND

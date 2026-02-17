@@ -1,53 +1,180 @@
 {% for g in GRANULARITIES %}
+    CREATE OR REPLACE FUNCTION _user_product_timeline_business_seed_{{ g.suffix }} (
+            p_user_id UUID, p_before TIMESTAMPTZ
+        )
+        RETURNS TABLE(
+            product_id UUID, "timestamp" TIMESTAMPTZ, buy_units NUMERIC(20, 6),
+            sell_units NUMERIC(20, 6), buy_cost NUMERIC(20, 6), sell_proceeds NUMERIC(20, 6),
+            deposits NUMERIC(20, 6), withdrawals NUMERIC(20, 6), units NUMERIC(20, 6),
+            net_investment NUMERIC(20, 6), fees NUMERIC(20, 6), price NUMERIC(20, 6),
+            market_value NUMERIC(20, 6), avg_buy_cost NUMERIC(20, 6), cost_basis NUMERIC(20, 6),
+            unrealized_returns NUMERIC(20, 6)
+        )
+        LANGUAGE plpgsql STABLE AS $$
+        BEGIN
+            RETURN QUERY
+            WITH ccfm AS MATERIALIZED (
+                SELECT ccf.product_id, ccf."timestamp",
+                       ccf.buy_units, ccf.sell_units, ccf.buy_cost,
+                       ccf.sell_proceeds, ccf.deposits, ccf.withdrawals
+                FROM cumulative_cashflow(p_user_id, NULL, NULL, p_before) ccf
+            )
+            SELECT DISTINCT ON (pu.product_id)
+                pu.product_id, pu."timestamp",
+                ccf.buy_units, ccf.sell_units, ccf.buy_cost, ccf.sell_proceeds, ccf.deposits,
+                ccf.withdrawals,
+                ccf.buy_units - ccf.sell_units AS units,
+                ccf.deposits - ccf.withdrawals AS net_investment,
+                ccf.deposits - ccf.buy_cost + ccf.withdrawals - ccf.sell_proceeds AS fees,
+                -- units * pu.price AS market_value
+                pu.price,
+                (ccf.buy_units - ccf.sell_units) * pu.price AS market_value,
+                ccf.buy_cost / NULLIF(ccf.buy_units, 0) AS avg_buy_cost,
+                -- units * avg_buy_cost AS cost_basis
+                (ccf.buy_units - ccf.sell_units) *
+                    (ccf.buy_cost / NULLIF(ccf.buy_units, 0))
+                    AS cost_basis,
+                -- market_value - cost_basis AS unrealized_returns or
+                -- units * (market_price - avg_buy_cost) AS unrealized_returns
+                (ccf.buy_units - ccf.sell_units) *
+                    (pu.price - (ccf.buy_cost / NULLIF(ccf.buy_units, 0)))
+                    AS unrealized_returns
+            FROM price_update_{{ g.suffix }} pu
+                CROSS JOIN LATERAL (
+                    SELECT
+                        ccfm.buy_units, ccfm.sell_units, ccfm.buy_cost,
+                        ccfm.sell_proceeds, ccfm.deposits, ccfm.withdrawals
+                    FROM ccfm
+                    WHERE
+                        ccfm.product_id = pu.product_id AND
+                        ccfm."timestamp" <= pu."timestamp"
+                    ORDER BY ccfm."timestamp" DESC
+                    LIMIT 1
+                ) AS ccf
+            WHERE pu."timestamp" < p_before
+            ORDER BY pu.product_id, pu."timestamp" DESC;
+        END;
+        $$;
 
     -- user_timeline_business_{{ g.suffix }}: Returns aggregated user timeline with business metrics
     --
     -- Purpose: Main query interface for user timeline at {{ g.suffix }} granularity
     -- Returns: Aggregated portfolio metrics across all products for each (user, timestamp)
-    -- Performance: Simple GROUP BY aggregation over user_product_timeline_business
+    -- Performance: Densifies user-product data then aggregates with simple GROUP BY
+    -- Note: Densification ensures all products appear at all timestamps for complete portfolio values
     -- Parameters:
     --   - p_user_id: Filter by user (NULL = all users)
-    --   - p_after: Only return timestamps after this point (default = retention start if configured)
-    --   - p_before: Only return timestamps before or at this point (NULL = no upper bound)
-    CREATE OR REPLACE FUNCTION user_timeline_business_{{ g.suffix }}(
-            p_user_id UUID,
-            p_after   TIMESTAMPTZ DEFAULT
+    CREATE OR REPLACE FUNCTION user_timeline_business_{{ g.suffix }}(p_user_id UUID)
+        RETURNS TABLE(
+            "timestamp" TIMESTAMPTZ, deposits NUMERIC(20, 6), withdrawals NUMERIC(20, 6),
+            buy_cost NUMERIC(20, 6), sell_proceeds NUMERIC(20, 6), buy_units NUMERIC(20, 6),
+            sell_units NUMERIC(20, 6), net_investment NUMERIC(20, 6), fees NUMERIC(20, 6),
+            avg_buy_cost NUMERIC(20, 6), market_value NUMERIC(20, 6), cost_basis NUMERIC(20, 6),
+            unrealized_returns NUMERIC(20, 6)
+        )
+        LANGUAGE plpgsql STABLE AS $$
+        DECLARE
+            v_after TIMESTAMPTZ :=
                 {% if g.cache_retention %}
                     NOW() - '{{ g.cache_retention }}'::interval
                 {% else %}
                     NULL
-                {% endif %},
-            p_before  TIMESTAMPTZ DEFAULT NULL
-        )
-        RETURNS TABLE(
-            user_id UUID, "timestamp" TIMESTAMPTZ, deposits NUMERIC(20, 6),
-            withdrawals NUMERIC(20, 6), buy_cost NUMERIC(20, 6), sell_proceeds NUMERIC(20, 6),
-            buy_units NUMERIC(20, 6), sell_units NUMERIC(20, 6), net_investment NUMERIC(20, 6),
-            fees NUMERIC(20, 6), avg_buy_cost NUMERIC(20, 6), market_value NUMERIC(20, 6),
-            cost_basis NUMERIC(20, 6), unrealized_returns NUMERIC(20, 6)
-        )
-        LANGUAGE plpgsql STABLE AS $$
+                {% endif %};
         BEGIN
             RETURN QUERY
+            WITH
+                -- Step 1: Get sparse data (only actual price update timestamps)
+                sparse AS MATERIALIZED (
+                    SELECT
+                        uptb.product_id, uptb."timestamp", uptb.buy_units, uptb.sell_units,
+                        uptb.buy_cost, uptb.sell_proceeds, uptb.deposits, uptb.withdrawals,
+                        uptb.units, uptb.net_investment, uptb.fees, uptb.price,
+                        uptb.market_value, uptb.avg_buy_cost, uptb.cost_basis,
+                        uptb.unrealized_returns
+                    FROM user_product_timeline_business_{{ g.suffix }}(p_user_id, NULL) uptb
+                ),
+                {% if g.cache_retention %}
+                    -- Step 2: Combine seeds with sparse data
+                    sparse_with_seeds AS (
+                        SELECT * FROM _user_product_timeline_business_seed_{{ g.suffix }}(p_user_id, v_after)
+                        UNION ALL
+                        SELECT * FROM sparse
+                    ),
+                {% else %}
+                    -- No retention window - sparse already has everything from the beginning
+                    sparse_with_seeds AS (
+                        SELECT * FROM sparse
+                    ),
+                {% endif %}
+                -- Step 3: Create dense grid (user's products × user's timestamps)
+                dense_grid AS (
+                    SELECT up.product_id, t."timestamp"
+                    FROM (SELECT DISTINCT sparse.product_id FROM sparse) up
+                        CROSS JOIN (SELECT DISTINCT sparse."timestamp" FROM sparse) t
+                ),
+                -- Step 4: Forward-fill using "groups and islands" technique
+                dense AS (
+                    SELECT
+                        dg.product_id,
+                        dg."timestamp",
+                        -- Create groups: COUNT increases each time we see a non-NULL value
+                        COUNT(s.price) OVER (
+                            PARTITION BY dg.product_id
+                            ORDER BY dg."timestamp"
+                            ROWS UNBOUNDED PRECEDING
+                        ) AS value_group,
+                        s.buy_units, s.sell_units, s.buy_cost, s.sell_proceeds,
+                        s.deposits, s.withdrawals, s.units, s.net_investment, s.fees,
+                        s.price, s.market_value, s.avg_buy_cost, s.cost_basis, s.unrealized_returns
+                    FROM dense_grid dg
+                        LEFT JOIN sparse_with_seeds s
+                            ON dg.product_id = s.product_id
+                            AND dg."timestamp" = s."timestamp"
+                ),
+                dense_filled AS (
+                    SELECT
+                        dense.product_id,
+                        dense."timestamp",
+                        -- Forward-fill: FIRST_VALUE within each group
+                        FIRST_VALUE(dense.buy_units) OVER w AS buy_units,
+                        FIRST_VALUE(dense.sell_units) OVER w AS sell_units,
+                        FIRST_VALUE(dense.buy_cost) OVER w AS buy_cost,
+                        FIRST_VALUE(dense.sell_proceeds) OVER w AS sell_proceeds,
+                        FIRST_VALUE(dense.deposits) OVER w AS deposits,
+                        FIRST_VALUE(dense.withdrawals) OVER w AS withdrawals,
+                        FIRST_VALUE(dense.units) OVER w AS units,
+                        FIRST_VALUE(dense.net_investment) OVER w AS net_investment,
+                        FIRST_VALUE(dense.fees) OVER w AS fees,
+                        FIRST_VALUE(dense.price) OVER w AS price,
+                        FIRST_VALUE(dense.market_value) OVER w AS market_value,
+                        FIRST_VALUE(dense.avg_buy_cost) OVER w AS avg_buy_cost,
+                        FIRST_VALUE(dense.cost_basis) OVER w AS cost_basis,
+                        FIRST_VALUE(dense.unrealized_returns) OVER w AS unrealized_returns
+                    FROM dense
+                    WINDOW w AS (
+                        PARTITION BY dense.product_id, dense.value_group
+                        ORDER BY dense."timestamp"
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                    )
+                )
+            -- Step 5: Aggregate across all products
             SELECT
-                uptb.user_id, uptb."timestamp",
-                SUM(uptb.deposits) AS deposits,
-                SUM(uptb.withdrawals) AS withdrawals,
-                SUM(uptb.buy_cost) AS buy_cost,
-                SUM(uptb.sell_proceeds) AS sell_proceeds,
-                SUM(uptb.buy_units) AS buy_units,
-                SUM(uptb.sell_units) AS sell_units,
-                SUM(uptb.net_investment) AS net_investment,
-                SUM(uptb.fees) AS fees,
-                SUM(uptb.buy_cost) / NULLIF(SUM(uptb.buy_units), 0) AS avg_buy_cost,
-                SUM(uptb.market_value) AS market_value,
-                SUM(uptb.cost_basis) AS cost_basis,
-                SUM(uptb.unrealized_returns) AS unrealized_returns
-            FROM user_product_timeline_business_{{ g.suffix }}(
-                p_user_id, NULL, p_after, p_before
-            ) uptb
-            GROUP BY uptb.user_id, uptb."timestamp"
-            ORDER BY uptb.user_id, uptb."timestamp";
+                dense_filled."timestamp",
+                SUM(dense_filled.deposits) AS deposits,
+                SUM(dense_filled.withdrawals) AS withdrawals,
+                SUM(dense_filled.buy_cost) AS buy_cost,
+                SUM(dense_filled.sell_proceeds) AS sell_proceeds,
+                SUM(dense_filled.buy_units) AS buy_units,
+                SUM(dense_filled.sell_units) AS sell_units,
+                SUM(dense_filled.net_investment) AS net_investment,
+                SUM(dense_filled.fees) AS fees,
+                SUM(dense_filled.buy_cost) / NULLIF(SUM(dense_filled.buy_units), 0) AS avg_buy_cost,
+                SUM(dense_filled.market_value) AS market_value,
+                SUM(dense_filled.cost_basis) AS cost_basis,
+                SUM(dense_filled.unrealized_returns) AS unrealized_returns
+            FROM dense_filled
+            GROUP BY dense_filled."timestamp"
+            ORDER BY dense_filled."timestamp";
         END;
         $$;
 

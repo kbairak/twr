@@ -29,7 +29,7 @@ def _query_granularity(
             cur.fetchall()
             query_timings.append(time.time() - small_tic)
         avg = 1_000 * sum(query_timings) / len(query_timings)
-        print(f"{avg: 6.2f}ms")
+        print(f"{avg: 7.2f}ms")
 
         query_timings: list[float] = []
         print(f"    - user_timeline_business_{suffix:5}        : ", end="", flush=True)
@@ -41,7 +41,7 @@ def _query_granularity(
             cur.fetchall()
             query_timings.append(time.time() - small_tic)
         avg = 1_000 * sum(query_timings) / len(query_timings)
-        print(f"{avg: 6.2f}ms")
+        print(f"{avg: 7.2f}ms")
 
 
 def _clear_cache(cutoff: datetime.datetime) -> None:
