@@ -5,10 +5,10 @@ import itertools
 import json
 import pathlib
 import random
-from dataclasses import dataclass, field
-from typing import Generator, Iterable
 import uuid
+from typing import Generator, Iterable
 
+from twr.models import Cashflow, Investment, PriceUpdate, Product, User
 from twr.utils import connection
 
 MARKET_OPEN = datetime.time(9, 30)
@@ -62,58 +62,6 @@ def _get_ticks(
         yield (last := _get_previous_tick(last, interval))
 
 
-@dataclass
-class PriceUpdate:
-    timestamp: datetime.datetime
-    price: float
-
-
-@dataclass
-class Product:
-    id: uuid.UUID = field(default_factory=uuid.uuid4)
-    price_updates: list[PriceUpdate] = field(default_factory=list)
-
-    def price_at(self, timestamp: datetime.datetime) -> float | None:
-        try:
-            last_price_update = self.price_updates[0]
-        except IndexError:
-            return None
-        for price_update in self.price_updates[1:]:
-            if price_update.timestamp > timestamp:
-                break
-        if last_price_update.timestamp > timestamp:
-            return None
-        return last_price_update.price
-
-
-@dataclass
-class Cashflow:
-    product_id: uuid.UUID
-    timestamp: datetime.datetime
-    units_delta: float
-    execution_price: float
-    user_money: float
-
-
-@dataclass
-class Investment:
-    units: float = 0.0
-
-
-@dataclass
-class User:
-    id: uuid.UUID = field(default_factory=uuid.uuid4)
-    cashflows: list[Cashflow] = field(default_factory=list)
-
-    @property
-    def investments(self) -> dict[uuid.UUID, Investment]:
-        result = {}
-        for cashflow in self.cashflows:
-            result.setdefault(cashflow.product_id, Investment())
-            result[cashflow.product_id].units += cashflow.units_delta
-        return result
-
-
 def _chunkify[T](iterable: Iterable[T], chunk_size: int) -> Generator[Generator[T]]:
     for _, enumerated_chunk in itertools.groupby(
         enumerate(iterable), lambda i: i[0] // chunk_size
@@ -146,7 +94,9 @@ def generate(
                 continue
             while (next_price := last_price + random.random() - 0.5) <= 0:
                 pass
-            product.price_updates.append(PriceUpdate(timestamp=tick + _jitter(), price=next_price))
+            product.price_updates.append(
+                PriceUpdate(product_id=product.id, timestamp=tick + _jitter(), price=next_price)
+            )
             last_price = next_price
 
     users_list: list[User] = []
@@ -174,6 +124,7 @@ def generate(
         assert market_price is not None
         user.cashflows.append(
             Cashflow(
+                user_id=user.id,
                 product_id=product.id,
                 timestamp=timestamp,
                 units_delta=units_delta,

@@ -5,6 +5,7 @@ from decimal import Decimal
 from unittest import mock
 
 from tests.utils import parse_time
+from twr.models import Cashflow, PriceUpdate
 
 
 def test_one_price(make_data, query, product):
@@ -213,7 +214,7 @@ def test_cumulative_cashflow(make_data, query, user, product):
     ]
 
 
-def test_user_product_timeline_includes_realtime_prices(make_data, query, user, product):
+def test_user_product_timeline_includes_realtime_prices(make_data, query, user, product, insert):
     """Test that include_realtime=true includes unbucketed price data for current portfolio value."""
     # Use make_data for initial setup
     make_data("""
@@ -226,10 +227,7 @@ def test_user_product_timeline_includes_realtime_prices(make_data, query, user, 
     query("CALL refresh_continuous_aggregate('price_update_15min', NULL, NULL)")
 
     # Insert raw price 5 minutes later (after the bucket, not yet bucketed)
-    query(
-        "INSERT INTO price_update (product_id, timestamp, price) VALUES (%s, %s, %s)",
-        (product("AAPL"), parse_time("12:35"), 105),
-    )
+    insert(PriceUpdate(product("AAPL"), parse_time("12:35"), 105))
 
     # Query for latest portfolio value
     latest = query(
@@ -322,15 +320,15 @@ def test_user_timeline_aggregates_across_products(make_data, query, user, produc
         assert isinstance(latest["market_value"], Decimal)
 
 
-def test_cashflow_trigger_derives_missing_fields(query, product, user):
+def test_cashflow_trigger_derives_missing_fields(query, product, user, insert):
     """Test that cashflow table stores core fields and allows fees to be derived."""
     # Insert price data
-    query(
-        """
-        INSERT INTO price_update (product_id, timestamp, price) VALUES
-        (%s, '2025-01-01 10:00:00', 101.00)
-        """,
-        (product("AAPL"),),
+    insert(
+        PriceUpdate(
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 10, 0, tzinfo=datetime.timezone.utc),
+            101.00,
+        )
     )
 
     # Test: Provide units_delta, execution_price, user_money
@@ -380,7 +378,7 @@ def test_cashflow_trigger_validates_consistency(query, user, product):
     assert result[0]["user_money"] == Decimal("1015.000000")
 
 
-def test_cumulative_cashflow_calculations(make_data, query, product, user):
+def test_cumulative_cashflow_calculations(make_data, query, product, user, insert):
     """Test cumulative cashflow view calculates running totals correctly."""
     # Setup: Insert price data using make_data
     make_data("""
@@ -393,21 +391,9 @@ def test_cumulative_cashflow_calculations(make_data, query, product, user):
     # Buy 10 @ 101 with fees=5: user_money = 1010 + 5 = 1015
     # Buy 5 @ 102 with fees=10: user_money = 510 + 10 = 520
     # Sell 3 @ 103 with fees=3: user_money = -309 + 3 = -306
-    query(
-        """
-        INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money) VALUES
-        (%(user_id)s, %(product_id)s, %(t1)s, 10, 101.00, 1015.00),   -- Buy 10 @ 101, fees=5
-        (%(user_id)s, %(product_id)s, %(t2)s, 5, 102.00, 520.00),     -- Buy 5 @ 102, fees=10
-        (%(user_id)s, %(product_id)s, %(t3)s, -3, 103.00, -306.00)    -- Sell 3 @ 103, fees=3
-        """,
-        {
-            "user_id": user("Alice"),
-            "product_id": product("AAPL"),
-            "t1": parse_time("10:30"),
-            "t2": parse_time("11:30"),
-            "t3": parse_time("12:30"),
-        },
-    )
+    insert(Cashflow(user("Alice"), product("AAPL"), parse_time("10:30"), 10, 101.00, 1015.00))
+    insert(Cashflow(user("Alice"), product("AAPL"), parse_time("11:30"), 5, 102.00, 520.00))
+    insert(Cashflow(user("Alice"), product("AAPL"), parse_time("12:30"), -3, 103.00, -306.00))
 
     # Query cumulative view with derived fields
     rows = query(
@@ -468,31 +454,79 @@ def test_cumulative_cashflow_calculations(make_data, query, product, user):
     ]
 
 
-def test_out_of_order_cashflow_invalidates_cache(query, product, user):
+def test_out_of_order_cashflow_invalidates_cache(query, product, user, insert):
     """Test that out-of-order cashflow insertion automatically invalidates affected cache."""
     # Setup
-    query(
-        """
-        INSERT INTO price_update (product_id, timestamp, price) VALUES
-        (%(appl)s, '2025-01-01 10:00:00', 101.00),
-        (%(appl)s, '2025-01-01 11:00:00', 102.00),
-        (%(appl)s, '2025-01-01 12:00:00', 103.00),
-        (%(googl)s, '2025-01-01 13:00:00', 200.00)
-        """,
-        {"appl": product("AAPL"), "googl": product("GOOGL")},
+    insert(
+        PriceUpdate(
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 10, 0, tzinfo=datetime.timezone.utc),
+            101.00,
+        )
+    )
+    insert(
+        PriceUpdate(
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 11, 0, tzinfo=datetime.timezone.utc),
+            102.00,
+        )
+    )
+    insert(
+        PriceUpdate(
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 12, 0, tzinfo=datetime.timezone.utc),
+            103.00,
+        )
+    )
+    insert(
+        PriceUpdate(
+            product("GOOGL"),
+            datetime.datetime(2025, 1, 1, 13, 0, tzinfo=datetime.timezone.utc),
+            200.00,
+        )
     )
 
     # Insert 3 cashflows for Alice/AAPL and one for Alice/GOOGL
     # user_money = execution_money + fees
-    query(
-        """
-        INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money) VALUES
-        (%(user_id)s, %(appl)s, '2025-01-01 10:30:00', 10, 101.00, 1015.00),
-        (%(user_id)s, %(appl)s, '2025-01-01 11:30:00', 5, 102.00, 520.00),
-        (%(user_id)s, %(appl)s, '2025-01-01 12:30:00', -3, 103.00, -306.00),
-        (%(user_id)s, %(googl)s, '2025-01-01 13:00:00', 10, 200.00, 2005.00)
-        """,
-        {"user_id": user("Alice"), "appl": product("AAPL"), "googl": product("GOOGL")},
+    insert(
+        Cashflow(
+            user("Alice"),
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 10, 30, tzinfo=datetime.timezone.utc),
+            10,
+            101.00,
+            1015.00,
+        )
+    )
+    insert(
+        Cashflow(
+            user("Alice"),
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 11, 30, tzinfo=datetime.timezone.utc),
+            5,
+            102.00,
+            520.00,
+        )
+    )
+    insert(
+        Cashflow(
+            user("Alice"),
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 12, 30, tzinfo=datetime.timezone.utc),
+            -3,
+            103.00,
+            -306.00,
+        )
+    )
+    insert(
+        Cashflow(
+            user("Alice"),
+            product("GOOGL"),
+            datetime.datetime(2025, 1, 1, 13, 0, tzinfo=datetime.timezone.utc),
+            10,
+            200.00,
+            2005.00,
+        )
     )
 
     # Fill cache
@@ -557,12 +591,15 @@ def test_out_of_order_cashflow_invalidates_cache(query, product, user):
 
     # Insert out-of-order cashflow at 11:00 (between first and second)
     # Buy 2 @ 101.50 with fees=1: user_money = 203 + 1 = 204
-    query(
-        """
-        INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money)
-        VALUES (%(user_id)s, %(product_id)s, '2025-01-01 11:00:00', 2, 101.50, 204.00)
-        """,
-        {"user_id": user("Alice"), "product_id": product("AAPL")},
+    insert(
+        Cashflow(
+            user("Alice"),
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 11, 0, tzinfo=datetime.timezone.utc),
+            2,
+            101.50,
+            204.00,
+        )
     )
 
     # Verify calculations are correct with the out-of-order insert
@@ -638,39 +675,95 @@ def test_out_of_order_cashflow_invalidates_cache(query, product, user):
     ]
 
 
-def test_multi_product_cache_invalidation_isolation(query, product, user):
+def test_multi_product_cache_invalidation_isolation(query, product, user, insert):
     """Test that cache invalidation for one product doesn't affect another product."""
 
-    query(
-        """
-        INSERT INTO price_update (product_id, timestamp, price) VALUES
-        (%(product_a)s, '2025-01-01 10:00:00', 100.00),
-        (%(product_a)s, '2025-01-01 11:00:00', 101.00),
-        (%(product_a)s, '2025-01-01 12:00:00', 102.00),
-        (%(product_b)s, '2025-01-01 10:00:00', 200.00),
-        (%(product_b)s, '2025-01-01 11:00:00', 201.00),
-        (%(product_b)s, '2025-01-01 12:00:00', 202.00)
-        """,
-        {"product_a": product("AAPL"), "product_b": product("GOOGL")},
+    insert(
+        PriceUpdate(
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 10, 0, tzinfo=datetime.timezone.utc),
+            100.00,
+        )
+    )
+    insert(
+        PriceUpdate(
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 11, 0, tzinfo=datetime.timezone.utc),
+            101.00,
+        )
+    )
+    insert(
+        PriceUpdate(
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 12, 0, tzinfo=datetime.timezone.utc),
+            102.00,
+        )
+    )
+    insert(
+        PriceUpdate(
+            product("GOOGL"),
+            datetime.datetime(2025, 1, 1, 10, 0, tzinfo=datetime.timezone.utc),
+            200.00,
+        )
+    )
+    insert(
+        PriceUpdate(
+            product("GOOGL"),
+            datetime.datetime(2025, 1, 1, 11, 0, tzinfo=datetime.timezone.utc),
+            201.00,
+        )
+    )
+    insert(
+        PriceUpdate(
+            product("GOOGL"),
+            datetime.datetime(2025, 1, 1, 12, 0, tzinfo=datetime.timezone.utc),
+            202.00,
+        )
     )
 
     # Insert 2 cashflows for each product
     # Product A: a1(10:30), a2(11:30)
     # Product B: b1(10:30), b2(11:30)
     # user_money = execution_money + fees
-    query(
-        """
-        INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money) VALUES
-        (%(user_id)s, %(product_a)s, '2025-01-01 10:30:00', 10, 100.00, 1001.00),  -- a1: 1000+1
-        (%(user_id)s, %(product_a)s, '2025-01-01 11:30:00', 5, 101.00, 506.00),   -- a2: 505+1
-        (%(user_id)s, %(product_b)s, '2025-01-01 10:30:00', 20, 200.00, 4002.00),  -- b1: 4000+2
-        (%(user_id)s, %(product_b)s, '2025-01-01 11:30:00', 10, 201.00, 2012.00)   -- b2: 2010+2
-        """,
-        {
-            "user_id": user("Alice"),
-            "product_a": product("AAPL"),
-            "product_b": product("GOOGL"),
-        },
+    insert(
+        Cashflow(
+            user("Alice"),
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 10, 30, tzinfo=datetime.timezone.utc),
+            10,
+            100.00,
+            1001.00,
+        )
+    )
+    insert(
+        Cashflow(
+            user("Alice"),
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 11, 30, tzinfo=datetime.timezone.utc),
+            5,
+            101.00,
+            506.00,
+        )
+    )
+    insert(
+        Cashflow(
+            user("Alice"),
+            product("GOOGL"),
+            datetime.datetime(2025, 1, 1, 10, 30, tzinfo=datetime.timezone.utc),
+            20,
+            200.00,
+            4002.00,
+        )
+    )
+    insert(
+        Cashflow(
+            user("Alice"),
+            product("GOOGL"),
+            datetime.datetime(2025, 1, 1, 11, 30, tzinfo=datetime.timezone.utc),
+            10,
+            201.00,
+            2012.00,
+        )
     )
 
     # Refresh cache and verify we have 4 rows (2 per product)
@@ -680,17 +773,25 @@ def test_multi_product_cache_invalidation_isolation(query, product, user):
 
     # Add a3 and b3 (after cache watermark)
     # user_money = execution_money + fees
-    query(
-        """
-        INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money) VALUES
-        (%(user_id)s, %(product_a)s, '2025-01-01 12:30:00', 3, 102.00, 307.00),   -- a3: 306+1
-        (%(user_id)s, %(product_b)s, '2025-01-01 12:30:00', 5, 202.00, 1012.00)    -- b3: 1010+2
-        """,
-        {
-            "user_id": user("Alice"),
-            "product_a": product("AAPL"),
-            "product_b": product("GOOGL"),
-        },
+    insert(
+        Cashflow(
+            user("Alice"),
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 12, 30, tzinfo=datetime.timezone.utc),
+            3,
+            102.00,
+            307.00,
+        )
+    )
+    insert(
+        Cashflow(
+            user("Alice"),
+            product("GOOGL"),
+            datetime.datetime(2025, 1, 1, 12, 30, tzinfo=datetime.timezone.utc),
+            5,
+            202.00,
+            1012.00,
+        )
     )
 
     # Cache still has 4 rows (a3 and b3 not cached yet)
@@ -700,12 +801,15 @@ def test_multi_product_cache_invalidation_isolation(query, product, user):
     # Insert out-of-order cashflow for product B between b1 and b2
     # This should auto-repair product B cache but NOT affect product A's cache
     # user_money = execution_money + fees: 1604 + 1.5 = 1605.5
-    query(
-        """
-        INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money)
-        VALUES (%(user_id)s, %(product_b)s, '2025-01-01 11:00:00', 8, 200.50, 1605.50)  -- bX
-        """,
-        {"user_id": user("Alice"), "product_b": product("GOOGL")},
+    insert(
+        Cashflow(
+            user("Alice"),
+            product("GOOGL"),
+            datetime.datetime(2025, 1, 1, 11, 0, tzinfo=datetime.timezone.utc),
+            8,
+            200.50,
+            1605.50,
+        )
     )
 
     # Verify product A still has both cached rows (a1, a2) - unaffected by product B insert

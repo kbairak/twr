@@ -3,10 +3,11 @@ import itertools
 import random
 import time
 import uuid
-from twr.generate import parser, generate
-from twr.utils import Granularity, GRANULARITIES, connection
+
 from twr.drop import drop_and_recreate_schema
+from twr.generate import generate, parser
 from twr.migrate import run_all_migrations
+from twr.utils import GRANULARITIES, Granularity, connection
 
 
 def _query_granularity(

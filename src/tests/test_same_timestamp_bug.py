@@ -2,10 +2,11 @@
 
 import datetime
 from decimal import Decimal
-from tests.utils import parse_time
+
+from twr.models import Cashflow, PriceUpdate
 
 
-def test_buy_and_sell_at_same_timestamp(query, product, user):
+def test_buy_and_sell_at_same_timestamp(query, product, user, insert):
     """
     Test that when both buys and sells occur at the same timestamp,
     they are aggregated correctly (not netted out).
@@ -17,25 +18,43 @@ def test_buy_and_sell_at_same_timestamp(query, product, user):
     query("TRUNCATE TABLE cumulative_cashflow_cache CASCADE")
 
     # Setup: Insert price data
-    query(
-        """
-        INSERT INTO price_update (product_id, timestamp, price) VALUES
-        (%(product_id)s, '2025-01-01 10:00:00', 100.00),
-        (%(product_id)s, '2025-01-01 12:00:00', 105.00)
-        """,
-        {"product_id": product("AAPL")},
+    insert(
+        PriceUpdate(
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 10, 0, tzinfo=datetime.timezone.utc),
+            100.00,
+        )
+    )
+    insert(
+        PriceUpdate(
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 12, 0, tzinfo=datetime.timezone.utc),
+            105.00,
+        )
     )
 
     # Insert a buy and a sell at the SAME timestamp (12:00)
     # Buy 10 units @ 100 with fees=10: user_money = 1010
     # Sell 5 units @ 105 with fees=5: user_money = -520 (proceeds=525, fees=5)
-    query(
-        """
-        INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money) VALUES
-        (%(user_id)s, %(product_id)s, '2025-01-01 12:00:00', 10, 100.00, 1010.00),
-        (%(user_id)s, %(product_id)s, '2025-01-01 12:00:00', -5, 105.00, -520.00)
-        """,
-        {"user_id": user("Alice"), "product_id": product("AAPL")},
+    insert(
+        Cashflow(
+            user("Alice"),
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 12, 0, tzinfo=datetime.timezone.utc),
+            10,
+            100.00,
+            1010.00,
+        )
+    )
+    insert(
+        Cashflow(
+            user("Alice"),
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 12, 0, tzinfo=datetime.timezone.utc),
+            -5,
+            105.00,
+            -520.00,
+        )
     )
 
     # Query cumulative cashflow
@@ -61,22 +80,22 @@ def test_buy_and_sell_at_same_timestamp(query, product, user):
             "user_id": user("Alice"),
             "product_id": product("AAPL"),
             "timestamp": datetime.datetime(2025, 1, 1, 12, 0, tzinfo=datetime.timezone.utc),
-            "buy_units": Decimal("10.000000"),      # NOT 5
-            "sell_units": Decimal("5.000000"),      # NOT 0
-            "buy_cost": Decimal("1000.000000"),     # NOT 475
-            "sell_proceeds": Decimal("525.000000"), # NOT 0
-            "deposits": Decimal("1010.000000"),     # NOT 490
-            "withdrawals": Decimal("520.000000"),   # NOT 0
+            "buy_units": Decimal("10.000000"),  # NOT 5
+            "sell_units": Decimal("5.000000"),  # NOT 0
+            "buy_cost": Decimal("1000.000000"),  # NOT 475
+            "sell_proceeds": Decimal("525.000000"),  # NOT 0
+            "deposits": Decimal("1010.000000"),  # NOT 490
+            "withdrawals": Decimal("520.000000"),  # NOT 0
             "units_held": Decimal("5.000000"),
             "net_investment": Decimal("490.000000"),
-            "fees": Decimal("5.000000"),            # NOT 490
+            "fees": Decimal("5.000000"),  # NOT 490
         }
     ]
 
     assert rows == expected, f"Expected {expected}, but got {rows}"
 
 
-def test_multiple_buys_and_sells_at_same_timestamp(query, product, user):
+def test_multiple_buys_and_sells_at_same_timestamp(query, product, user, insert):
     """
     Test aggregation with multiple buys and sells at the same timestamp.
 
@@ -88,26 +107,47 @@ def test_multiple_buys_and_sells_at_same_timestamp(query, product, user):
     query("TRUNCATE TABLE cumulative_cashflow_cache CASCADE")
 
     # Setup: Insert price data
-    query(
-        """
-        INSERT INTO price_update (product_id, timestamp, price) VALUES
-        (%(product_id)s, '2025-01-01 10:00:00', 100.00)
-        """,
-        {"product_id": product("AAPL")},
+    insert(
+        PriceUpdate(
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 10, 0, tzinfo=datetime.timezone.utc),
+            100.00,
+        )
     )
 
     # Insert 2 buys and 1 sell at the SAME timestamp (10:00)
     # Buy 10 units @ 100: user_money = 1005 (fees=5)
     # Buy 8 units @ 102: user_money = 820 (fees=4)
     # Sell 3 units @ 105: user_money = -312 (fees=3)
-    query(
-        """
-        INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money) VALUES
-        (%(user_id)s, %(product_id)s, '2025-01-01 10:00:00', 10, 100.00, 1005.00),
-        (%(user_id)s, %(product_id)s, '2025-01-01 10:00:00', 8, 102.00, 820.00),
-        (%(user_id)s, %(product_id)s, '2025-01-01 10:00:00', -3, 105.00, -312.00)
-        """,
-        {"user_id": user("Alice"), "product_id": product("AAPL")},
+    insert(
+        Cashflow(
+            user("Alice"),
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 10, 0, tzinfo=datetime.timezone.utc),
+            10,
+            100.00,
+            1005.00,
+        )
+    )
+    insert(
+        Cashflow(
+            user("Alice"),
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 10, 0, tzinfo=datetime.timezone.utc),
+            8,
+            102.00,
+            820.00,
+        )
+    )
+    insert(
+        Cashflow(
+            user("Alice"),
+            product("AAPL"),
+            datetime.datetime(2025, 1, 1, 10, 0, tzinfo=datetime.timezone.utc),
+            -3,
+            105.00,
+            -312.00,
+        )
     )
 
     # Query cumulative cashflow

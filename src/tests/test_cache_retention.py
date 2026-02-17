@@ -8,50 +8,25 @@ testing the observable behavior: that data within retention is accessible and co
 import datetime
 from decimal import Decimal
 
+from twr.models import Cashflow, PriceUpdate
 
-def test_repair_respects_retention_period_15min(query, user, product):
+
+def test_repair_respects_retention_period_15min(query, user, product, insert):
     """Test that repair doesn't cache data outside 7-day retention period."""
     # Use current time as reference
     now = datetime.datetime.now(datetime.timezone.utc).replace(second=0, microsecond=0)
 
     # Insert cashflow within retention (3 days ago)
     recent_time = now - datetime.timedelta(days=3)
-    query(
-        """
-        INSERT INTO price_update (product_id, timestamp, price)
-        VALUES (%(product_id)s, %(timestamp)s, 100.00)
-        """,
-        {"product_id": product("AAPL"), "timestamp": recent_time},
-    )
-
-    query(
-        """
-        INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money)
-        VALUES (%(user_id)s, %(product_id)s, %(timestamp)s, 10, 100, 1001)
-        """,
-        {
-            "user_id": user("Alice"),
-            "product_id": product("AAPL"),
-            "timestamp": recent_time,
-        },
-    )
+    insert(PriceUpdate(product("AAPL"), recent_time, 100.00))
+    insert(Cashflow(user("Alice"), product("AAPL"), recent_time, 10, 100, 1001))
 
     # Refresh continuous aggregate
     query("CALL refresh_continuous_aggregate('price_update_15min', NULL, NULL)")
 
     # Now insert out-of-order cashflow 10 days ago (outside 7 day retention)
     old_time = now - datetime.timedelta(days=10)
-    query(
-        """
-        INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money)
-        VALUES (%(user_id)s, %(product_id)s, %(timestamp)s, 5, 100, 501)
-        """,
-        {
-            "user_id": user("Alice"),
-            "product_id": product("AAPL"),
-            "timestamp": old_time,
-        },
-    )
+    insert(Cashflow(user("Alice"), product("AAPL"), old_time, 5, 100, 501))
 
     # Trigger invalidates and repairs - repair should NOT cache the 10-day-old data
     # Verify function still works correctly (computes from fresh data when needed)
@@ -89,7 +64,7 @@ def test_repair_respects_retention_period_15min(query, user, product):
     )
 
 
-def test_view_works_with_retention(query, user, product):
+def test_view_works_with_retention(query, user, product, insert):
     """Test that views continue to work correctly even with retention filtering."""
     # Use current time as reference
     now = datetime.datetime.now(datetime.timezone.utc).replace(second=0, microsecond=0)
@@ -97,31 +72,9 @@ def test_view_works_with_retention(query, user, product):
     # Insert data at multiple time points within retention
     for days_ago in [5, 3, 1]:
         timestamp = now - datetime.timedelta(days=days_ago)
-        query(
-            """
-            INSERT INTO price_update (product_id, timestamp, price)
-            VALUES (%(product_id)s, %(timestamp)s, %(price)s)
-            """,
-            {
-                "product_id": product("AAPL"),
-                "timestamp": timestamp,
-                "price": Decimal("100.00") + days_ago,
-            },
-        )
-
-        query(
-            """
-            INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money)
-            VALUES (%(user_id)s, %(product_id)s, %(timestamp)s, 1, %(price)s, %(cost)s)
-            """,
-            {
-                "user_id": user("Alice"),
-                "product_id": product("AAPL"),
-                "timestamp": timestamp,
-                "price": Decimal("100.00") + days_ago,
-                "cost": Decimal("100.00") + days_ago,
-            },
-        )
+        price = Decimal("100.00") + days_ago
+        insert(PriceUpdate(product("AAPL"), timestamp, price))
+        insert(Cashflow(user("Alice"), product("AAPL"), timestamp, 1, price, price))
 
     # Refresh continuous aggregate
     query("CALL refresh_continuous_aggregate('price_update_15min', NULL, NULL)")
@@ -146,7 +99,7 @@ def test_view_works_with_retention(query, user, product):
     assert latest["units"] == Decimal("3.000000"), "View should show correct cumulative units"
 
 
-def test_user_timeline_with_retention(query, user, product):
+def test_user_timeline_with_retention(query, user, product, insert):
     """Test that user_timeline aggregates correctly with retention."""
     # Use recent dates
     now = datetime.datetime.now(datetime.timezone.utc).replace(second=0, microsecond=0)
@@ -154,25 +107,8 @@ def test_user_timeline_with_retention(query, user, product):
     # Insert data for two products within retention
     recent_time = now - datetime.timedelta(days=2)
     for prod in ["AAPL", "GOOGL"]:
-        query(
-            """
-            INSERT INTO price_update (product_id, timestamp, price)
-            VALUES (%(product_id)s, %(timestamp)s, 100.00)
-            """,
-            {"product_id": product(prod), "timestamp": recent_time},
-        )
-
-        query(
-            """
-            INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money)
-            VALUES (%(user_id)s, %(product_id)s, %(timestamp)s, 10, 100, 1001)
-            """,
-            {
-                "user_id": user("Alice"),
-                "product_id": product(prod),
-                "timestamp": recent_time,
-            },
-        )
+        insert(PriceUpdate(product(prod), recent_time, 100.00))
+        insert(Cashflow(user("Alice"), product(prod), recent_time, 10, 100, 1001))
 
     # Refresh continuous aggregate
     query("CALL refresh_continuous_aggregate('price_update_15min', NULL, NULL)")

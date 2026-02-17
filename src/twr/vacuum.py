@@ -6,10 +6,11 @@ This should be run after cache refresh operations to ensure efficient
 index-only scans on watermark calculations.
 """
 
-import psycopg2
 import argparse
-from pathlib import Path
 import json
+from pathlib import Path
+
+import psycopg2
 
 # Import granularities configuration
 migrations_dir = Path(__file__).parent.parent.parent / "migrations"

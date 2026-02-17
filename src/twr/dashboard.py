@@ -1,21 +1,21 @@
 """Streamlit dashboard for product price generation and visualization"""
 
-import streamlit as st
 from datetime import datetime, time, timedelta
+
 import plotly.express as px
 import psycopg2
-
+import streamlit as st
 from dashboard_utils import (
-    parse_frequency,
-    generate_trading_timestamps,
+    create_user,
     generate_prices_linear_interpolation,
+    generate_trading_timestamps,
+    insert_cashflow,
     insert_product_and_prices,
     load_all_products,
     load_all_users,
-    create_user,
-    insert_cashflow,
     load_price_data,
     load_user_product_timeline,
+    parse_frequency,
 )
 
 st.set_page_config(

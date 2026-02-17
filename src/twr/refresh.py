@@ -12,12 +12,13 @@ Examples:
     refresh.py 0%       # Delete all cache (no refresh)
 """
 
-import psycopg2
 import argparse
-import sys
-from pathlib import Path
 import json
+import sys
 import time
+from pathlib import Path
+
+import psycopg2
 
 # Import granularities configuration
 migrations_dir = Path(__file__).parent.parent.parent / "migrations"

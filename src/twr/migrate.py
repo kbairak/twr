@@ -4,6 +4,7 @@
 import itertools
 import sys
 from pathlib import Path
+
 from jinja2 import Template
 
 from twr.utils import GRANULARITIES, Granularity, connection

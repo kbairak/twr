@@ -11,8 +11,8 @@ from pathlib import Path
 
 # Import from twr package
 from twr import TWRDatabase
-from twr.generate import EventGenerator, calculate_missing_parameter
 from twr.benchmark import Benchmark
+from twr.generate import EventGenerator, calculate_missing_parameter
 
 # Import granularities for validation
 migrations_dir = Path(__file__).parent / "migrations"

@@ -3,7 +3,7 @@
 import random
 from contextlib import contextmanager
 from datetime import datetime, time, timedelta
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 import pandas as pd
 import psycopg2

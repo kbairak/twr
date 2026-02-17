@@ -1,5 +1,5 @@
-from contextlib import contextmanager
 import json
+from contextlib import contextmanager
 from typing import TypedDict
 
 import psycopg2
