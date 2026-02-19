@@ -6,11 +6,14 @@ import sys
 from pathlib import Path
 
 from jinja2 import Template
+from psycopg2.extensions import connection as Connection
 
 from twr.utils import GRANULARITIES, Granularity, connection
 
 
-def _run_migration(connection, migration_file: Path, granularities: list[Granularity]) -> None:
+def _run_migration(
+    connection: Connection, migration_file: Path, granularities: list[Granularity]
+) -> None:
     """Run a single migration file."""
 
     content = migration_file.read_text()
@@ -29,7 +32,7 @@ def _run_migration(connection, migration_file: Path, granularities: list[Granula
             raise
 
 
-def run_all_migrations(connection):
+def run_all_migrations(connection: Connection) -> None:
     """Run all migrations in order."""
     migrations_dir = Path(__file__).parent.parent.parent / "migrations"
 
@@ -42,7 +45,7 @@ def run_all_migrations(connection):
         _run_migration(connection, migration_file, GRANULARITIES)
 
 
-def main():
+def main() -> None:
     """Main entry point for running migrations from command line."""
     with connection() as conn:
         try:

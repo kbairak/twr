@@ -6,12 +6,41 @@ testing the observable behavior: that data within retention is accessible and co
 """
 
 import datetime
+from collections.abc import Callable
 from decimal import Decimal
+from typing import Any, Protocol, cast
 
-from twr.models import Cashflow, PriceUpdate
+from twr.models import (
+    Cashflow,
+    CumulativeCashflow,
+    PriceUpdate,
+    UserProductTimelineBusinessEvent,
+    UserTimelineBusinessEvent,
+)
 
 
-def test_repair_respects_retention_period_15min(query, user, product, insert):
+# Type aliases for test fixtures
+class QueryType(Protocol):
+    """Protocol for the query fixture with optional parameters."""
+
+    def __call__(
+        self, q: str, params: tuple[Any, ...] | dict[str, Any] | None = None
+    ) -> list[
+        PriceUpdate
+        | Cashflow
+        | CumulativeCashflow
+        | UserProductTimelineBusinessEvent
+        | UserTimelineBusinessEvent
+        | dict[str, Any]
+    ]: ...
+
+
+def test_repair_respects_retention_period_15min(
+    query: QueryType,
+    user: Callable[[str], str],
+    product: Callable[[str], str],
+    insert: Callable[[PriceUpdate | Cashflow], None],
+) -> None:
     """Test that repair doesn't cache data outside 7-day retention period."""
     # Use current time as reference
     now = datetime.datetime.now(datetime.timezone.utc).replace(second=0, microsecond=0)
@@ -41,7 +70,9 @@ def test_repair_respects_retention_period_15min(query, user, product, insert):
     )
 
     # Should show correct total units (10 + 5 = 15) even though old data may not be cached
-    assert view_data[0]["units"] == Decimal("15.000000"), "View should compute correct values"
+    assert cast(dict[str, Any], view_data[0])["units"] == Decimal("15.000000"), (
+        "View should compute correct values"
+    )
 
     # Check that cache doesn't have an excessive amount of old data
     cache_count = query(
@@ -56,7 +87,8 @@ def test_repair_respects_retention_period_15min(query, user, product, insert):
             "product_id": product("AAPL"),
             "retention_cutoff": now - datetime.timedelta(days=7),
         },
-    )[0]["count"]
+    )
+    cache_count = cast(dict[str, Any], cache_count[0])["count"]
 
     # Should have minimal or no data older than 7 days
     assert cache_count < 10, (
@@ -64,7 +96,12 @@ def test_repair_respects_retention_period_15min(query, user, product, insert):
     )
 
 
-def test_view_works_with_retention(query, user, product, insert):
+def test_view_works_with_retention(
+    query: QueryType,
+    user: Callable[[str], str],
+    product: Callable[[str], str],
+    insert: Callable[[PriceUpdate | Cashflow], None],
+) -> None:
     """Test that views continue to work correctly even with retention filtering."""
     # Use current time as reference
     now = datetime.datetime.now(datetime.timezone.utc).replace(second=0, microsecond=0)
@@ -95,11 +132,16 @@ def test_view_works_with_retention(query, user, product, insert):
     )
 
     # Latest should have 3 units total
-    latest = view_data[-1]
+    latest = cast(dict[str, Any], view_data[-1])
     assert latest["units"] == Decimal("3.000000"), "View should show correct cumulative units"
 
 
-def test_user_timeline_with_retention(query, user, product, insert):
+def test_user_timeline_with_retention(
+    query: QueryType,
+    user: Callable[[str], str],
+    product: Callable[[str], str],
+    insert: Callable[[PriceUpdate | Cashflow], None],
+) -> None:
     """Test that user_timeline aggregates correctly with retention."""
     # Use recent dates
     now = datetime.datetime.now(datetime.timezone.utc).replace(second=0, microsecond=0)
@@ -126,6 +168,7 @@ def test_user_timeline_with_retention(query, user, product, insert):
 
     # Should aggregate both products (10 units × $100 × 2 products = $2000)
     assert len(portfolio) > 0, "User timeline should return data"
-    assert portfolio[0]["market_value"] == Decimal("2000.000000000000"), (
-        f"Portfolio should aggregate both products, got {portfolio[0]['market_value']}"
+    portfolio_row = cast(dict[str, Any], portfolio[0])
+    assert portfolio_row["market_value"] == Decimal("2000.000000000000"), (
+        f"Portfolio should aggregate both products, got {portfolio_row['market_value']}"
     )

@@ -6,7 +6,7 @@ import json
 import pathlib
 import random
 import uuid
-from typing import Generator, Iterable
+from typing import Generator, Iterable, cast
 
 from twr.models import Cashflow, Investment, PriceUpdate, Product, User
 from twr.utils import connection
@@ -83,7 +83,7 @@ def generate(
     ticks = sorted(list(_get_ticks(interval, duration)))
 
     products_list: list[Product] = []
-    products_dict: dict[uuid.UUID, Product] = {}
+    products_dict: dict[uuid.UUID | str, Product] = {}
     for _ in range(product_count):
         products_list.append((product := Product()))
         products_dict[product.id] = product
@@ -130,7 +130,7 @@ def generate(
                 units_delta=units_delta,
                 # Add a 10% discrepancy between market and execution price
                 execution_price=(
-                    execution_price := market_price * (1 + 0.1 * (random.random() - 0.5))
+                    execution_price := float(market_price) * (1 + 0.1 * (random.random() - 0.5))
                 ),
                 # Add an up to 1$ fee
                 user_money=units_delta * execution_price + random.random(),
@@ -200,7 +200,11 @@ def generate(
             )
             cur.execute(f"VACUUM ANALYZE price_update_{g['suffix']}")
 
-    return list(users_dict.keys()), list(products_dict.keys()), ticks
+    return (
+        list(users_dict.keys()),
+        cast(list[uuid.UUID], list(products_dict.keys())),
+        ticks,
+    )
 
 
 parser = argparse.ArgumentParser()
@@ -210,7 +214,7 @@ parser.add_argument("--users", type=int, default=1000)
 parser.add_argument("--products", type=int, default=500)
 
 
-def main():
+def main() -> None:
     args = parser.parse_args()
     _, _, ticks = generate(args.days, args.price_update_frequency, args.products, args.users)
     print(

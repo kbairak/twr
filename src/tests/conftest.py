@@ -8,9 +8,15 @@ import pytest
 from psycopg2.extensions import connection as Connection
 from testcontainers.postgres import PostgresContainer
 
-from tests.utils import parse_time
+from tests.utils import map_to_model, parse_time
 from twr.migrate import run_all_migrations
-from twr.models import Cashflow, PriceUpdate
+from twr.models import (
+    Cashflow,
+    CumulativeCashflow,
+    PriceUpdate,
+    UserProductTimelineBusinessEvent,
+    UserTimelineBusinessEvent,
+)
 
 
 @pytest.fixture(scope="session")
@@ -51,19 +57,42 @@ def truncate(db_connection: Connection) -> None:
 @pytest.fixture
 def query(
     db_connection: Connection, truncate: None
-) -> Callable[[str, tuple[Any, ...] | None], list[dict[str, Any]]]:
+) -> Callable[
+    [str, tuple[Any, ...] | dict[str, Any] | None],
+    list[
+        (
+            PriceUpdate
+            | Cashflow
+            | CumulativeCashflow
+            | UserProductTimelineBusinessEvent
+            | UserTimelineBusinessEvent
+            | dict[str, Any]
+        )
+    ],
+]:
     """Execute query and return results as list of dicts (or empty list for statements without
     RETURNING)
     """
 
-    def fn(q: str, params: tuple[Any, ...] | None = None) -> list[dict[str, Any]]:
+    def fn(
+        q: str, params: tuple[Any, ...] | dict[str, Any] | None = None
+    ) -> list[
+        (
+            PriceUpdate
+            | Cashflow
+            | CumulativeCashflow
+            | UserProductTimelineBusinessEvent
+            | UserTimelineBusinessEvent
+            | dict[str, Any]
+        )
+    ]:
         with db_connection.cursor() as cursor:
             cursor.execute(q, params or ())
             # cursor.description is None for statements without RETURNING
             if cursor.description is None:
                 return []
             columns = [desc[0] for desc in cursor.description]
-            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+            return [map_to_model(dict(zip(columns, row))) for row in cursor.fetchall()]
 
     return fn
 

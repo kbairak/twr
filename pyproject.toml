@@ -10,7 +10,13 @@ dependencies = ["psycopg2-binary>=2.9.9", "jinja2>=3.1.0"]
 line-length = 99
 
 [tool.ruff.lint]
-select = ["I"]  # Enable isort (import sorting) rules
+select = [
+    "I",      # isort (import sorting)
+    "F",      # pyflakes (includes unused imports)
+    "ANN001", # missing-type-function-argument
+    "ANN201", # missing-return-type-undocumented-public-function
+    "ANN202", # missing-return-type-private-function
+]
 
 [tool.pytest.ini_options]
 filterwarnings = ["ignore::DeprecationWarning:testcontainers.*:"]
@@ -28,4 +34,5 @@ dev = [
   "numpy>=1.24.0",
   "rich>=14.2.0",
   "pudb>=2025.1.5",
+  "ty>=0.0.17",
 ]

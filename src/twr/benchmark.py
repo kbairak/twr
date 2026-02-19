@@ -72,18 +72,18 @@ def _query_granularity(
         def query2(args: tuple[uuid.UUID, uuid.UUID]) -> None:
             user_id, product_id = args
             cur.execute(
-                f"SELECT * FROM user_product_timeline_business_{suffix}(%s, %s)",
+                f"SELECT user_product_timeline_business_{suffix}(%s, %s)",
                 (str(user_id), str(product_id)),
             )
             cur.fetchall()
 
         _measure(f"    - user_product_timeline_business_{suffix:5}", query1, query2)
 
-        def query3():
+        def query3() -> uuid.UUID:
             return random.choice(user_ids)
 
-        def query4(user_id):
-            cur.execute(f"SELECT * FROM user_timeline_business_{suffix}(%s)", (str(user_id),))
+        def query4(user_id: uuid.UUID) -> None:
+            cur.execute(f"SELECT user_timeline_business_{suffix}(%s)", (str(user_id),))
             cur.fetchall()
 
         _measure(f"    - user_timeline_business_{suffix:5}        ", query3, query4)

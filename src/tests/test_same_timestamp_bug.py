@@ -1,12 +1,41 @@
 """Test for same-timestamp buy and sell aggregation bug."""
 
 import datetime
+from collections.abc import Callable
 from decimal import Decimal
+from typing import Any, Protocol
 
-from twr.models import Cashflow, PriceUpdate
+from twr.models import (
+    Cashflow,
+    CumulativeCashflow,
+    PriceUpdate,
+    UserProductTimelineBusinessEvent,
+    UserTimelineBusinessEvent,
+)
 
 
-def test_buy_and_sell_at_same_timestamp(query, product, user, insert):
+# Type aliases for test fixtures
+class QueryType(Protocol):
+    """Protocol for the query fixture with optional parameters."""
+
+    def __call__(
+        self, q: str, params: tuple[Any, ...] | dict[str, Any] | None = None
+    ) -> list[
+        PriceUpdate
+        | Cashflow
+        | CumulativeCashflow
+        | UserProductTimelineBusinessEvent
+        | UserTimelineBusinessEvent
+        | dict[str, Any]
+    ]: ...
+
+
+def test_buy_and_sell_at_same_timestamp(
+    query: QueryType,
+    product: Callable[[str], str],
+    user: Callable[[str], str],
+    insert: Callable[[PriceUpdate | Cashflow], None],
+) -> None:
     """
     Test that when both buys and sells occur at the same timestamp,
     they are aggregated correctly (not netted out).
@@ -95,7 +124,12 @@ def test_buy_and_sell_at_same_timestamp(query, product, user, insert):
     assert rows == expected, f"Expected {expected}, but got {rows}"
 
 
-def test_multiple_buys_and_sells_at_same_timestamp(query, product, user, insert):
+def test_multiple_buys_and_sells_at_same_timestamp(
+    query: QueryType,
+    product: Callable[[str], str],
+    user: Callable[[str], str],
+    insert: Callable[[PriceUpdate | Cashflow], None],
+) -> None:
     """
     Test aggregation with multiple buys and sells at the same timestamp.
 

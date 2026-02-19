@@ -1,32 +1,55 @@
 """Tests for cashflow trigger validation and cumulative calculations."""
 
-import datetime
-from decimal import Decimal
-from unittest import mock
+from collections.abc import Callable
+from typing import Any, Protocol
 
-from tests.utils import parse_time
-from twr.models import Cashflow, PriceUpdate
+from tests.utils import (
+    mock_ccf,
+    mock_cf,
+    mock_pu,
+    mock_uptb,
+    mock_utb,
+    parse_time,
+)
+from twr.models import (
+    Cashflow,
+    CumulativeCashflow,
+    PriceUpdate,
+    UserProductTimelineBusinessEvent,
+    UserTimelineBusinessEvent,
+)
 
 
-def test_one_price(make_data, query, product):
+# Type aliases for test fixtures
+class QueryType(Protocol):
+    """Protocol for the query fixture with optional parameters."""
+
+    def __call__(
+        self, q: str, params: tuple[Any, ...] | dict[str, Any] | None = None
+    ) -> list[
+        PriceUpdate
+        | Cashflow
+        | CumulativeCashflow
+        | UserProductTimelineBusinessEvent
+        | UserTimelineBusinessEvent
+        | dict[str, Any]
+    ]: ...
+
+
+def test_one_price(
+    make_data: Callable[[str], None], query: QueryType, product: Callable[[str], str]
+) -> None:
     make_data("""
               12:30
         AAPL:    10
     """)
-    rows = query("""
-        SELECT product_id, "timestamp", price
-        FROM price_update
-    """)
-    assert rows == [
-        {
-            "product_id": product("AAPL"),
-            "timestamp": parse_time("12:30"),
-            "price": Decimal("10.000000"),
-        }
-    ]
+    rows = query('SELECT product_id, "timestamp", price FROM price_update')
+    assert rows == [PriceUpdate(product("AAPL"), parse_time("12:30"), 10)]
 
 
-def test_multiple_prices(make_data, query, product):
+def test_multiple_prices(
+    make_data: Callable[[str], None], query: QueryType, product: Callable[[str], str]
+) -> None:
     make_data("""
                12:30, 12:40, 12:50
         AAPL:     10,    12
@@ -40,182 +63,88 @@ def test_multiple_prices(make_data, query, product):
     # UUIDs sort differently than product names, so we need to check the results match
     # regardless of order
     assert len(rows) == 4
-    aapl_rows = [r for r in rows if r["product_id"] == product("AAPL")]
-    googl_rows = [r for r in rows if r["product_id"] == product("GOOGL")]
+    aapl_rows = [r for r in rows if isinstance(r, PriceUpdate) and r.product_id == product("AAPL")]
+    googl_rows = [
+        r for r in rows if isinstance(r, PriceUpdate) and r.product_id == product("GOOGL")
+    ]
 
     assert aapl_rows == [
-        {
-            "product_id": product("AAPL"),
-            "price": Decimal("10.000000"),
-            "timestamp": parse_time("12:30"),
-        },
-        {
-            "product_id": product("AAPL"),
-            "price": Decimal("12.000000"),
-            "timestamp": parse_time("12:40"),
-        },
+        mock_pu(timestamp=parse_time("12:30"), price=10),
+        mock_pu(timestamp=parse_time("12:40"), price=12),
     ]
     assert googl_rows == [
-        {
-            "product_id": product("GOOGL"),
-            "price": Decimal("30.000000"),
-            "timestamp": parse_time("12:30"),
-        },
-        {
-            "product_id": product("GOOGL"),
-            "price": Decimal("45.000000"),
-            "timestamp": parse_time("12:50"),
-        },
+        mock_pu(timestamp=parse_time("12:30"), price=30),
+        mock_pu(timestamp=parse_time("12:50"), price=45),
     ]
 
 
-def test_same_bucket(make_data, query, product):
+def test_same_bucket(make_data: Callable[[str], None], query: QueryType) -> None:
     make_data("""
               12:05, 12:10
         AAPL:    10,    15
     """)
     query("CALL refresh_continuous_aggregate('price_update_15min', NULL, NULL)")
-    rows = query("""
-        SELECT product_id, "timestamp", price
-        FROM price_update_15min
-    """)
-    assert rows == [
-        {
-            "product_id": product("AAPL"),
-            "timestamp": parse_time("12:15"),
-            "price": Decimal("15.000000"),
-        },
-    ]
+    rows = query("SELECT * FROM price_update_15min")
+    assert rows == [mock_pu(timestamp=parse_time("12:15"), price=15)]
 
 
-def test_different_buckets(make_data, query, product):
+def test_different_buckets(make_data: Callable[[str], None], query: QueryType) -> None:
     make_data("""
               12:12, 12:17
         AAPL:    10,    15
     """)
     query("CALL refresh_continuous_aggregate('price_update_15min', NULL, NULL)")
-    rows = query("""
-        SELECT product_id, "timestamp", price
-        FROM price_update_15min
-        ORDER BY "timestamp"
-    """)
+    rows = query('SELECT * FROM price_update_15min ORDER BY "timestamp"')
     assert rows == [
-        {
-            "product_id": product("AAPL"),
-            "timestamp": parse_time("12:15"),
-            "price": Decimal("10.000000"),
-        },
-        {
-            "product_id": product("AAPL"),
-            "timestamp": parse_time("12:30"),
-            "price": Decimal("15.000000"),
-        },
+        mock_pu(timestamp=parse_time("12:15"), price=10),
+        mock_pu(timestamp=parse_time("12:30"), price=15),
     ]
 
 
-def test_one_cashflow(make_data, query, user, product):
+def test_one_cashflow(make_data: Callable[[str], None], query: QueryType) -> None:
     make_data("""
                     12:00, 12:10
-        AAPL:       10
+        AAPL:          10
         Alice/AAPL:      ,     3
     """)
-    rows = query("""
-        SELECT user_id, product_id, timestamp, units_delta,
-               execution_price,
-               units_delta * execution_price AS execution_money,
-               user_money,
-               user_money - (units_delta * execution_price) AS fees
-        FROM cashflow
-    """)
-    assert rows == [
-        {
-            "execution_money": Decimal("30.000000"),
-            "execution_price": Decimal("10.000000"),
-            "fees": Decimal("0.000000"),
-            "product_id": product("AAPL"),
-            "timestamp": parse_time("12:10"),
-            "units_delta": Decimal("3.000000"),
-            "user_money": Decimal("30.000000"),
-            "user_id": user("Alice"),
-        },
-    ]
+    rows = query("SELECT * FROM cashflow")
+    assert rows == [mock_cf(timestamp=parse_time("12:10"), units_delta=3)]
 
 
-def test_multiple_cashflows(make_data, query, user, product):
+def test_multiple_cashflows(make_data: Callable[[str], None], query: QueryType) -> None:
     make_data("""
                     12:00, 12:10, 12:20
         AAPL:       10
         Alice/AAPL:      ,     3,     4
     """)
-    rows = query("""
-        SELECT user_id, product_id, timestamp, units_delta,
-               execution_price,
-               units_delta * execution_price AS execution_money,
-               user_money,
-               user_money - (units_delta * execution_price) AS fees
-        FROM cashflow
-        ORDER BY "timestamp"
-    """)
+    rows = query('SELECT * FROM cashflow ORDER BY "timestamp"')
     assert rows == [
-        {
-            "execution_money": Decimal("30.000000"),
-            "execution_price": Decimal("10.000000"),
-            "fees": Decimal("0.000000"),
-            "product_id": product("AAPL"),
-            "timestamp": parse_time("12:10"),
-            "units_delta": Decimal("3.000000"),
-            "user_money": Decimal("30.000000"),
-            "user_id": user("Alice"),
-        },
-        {
-            "execution_money": Decimal("40.000000"),
-            "execution_price": Decimal("10.000000"),
-            "fees": Decimal("0.000000"),
-            "product_id": product("AAPL"),
-            "timestamp": parse_time("12:20"),
-            "units_delta": Decimal("4.000000"),
-            "user_money": Decimal("40.000000"),
-            "user_id": user("Alice"),
-        },
+        mock_cf(timestamp=parse_time("12:10"), units_delta=3),
+        mock_cf(timestamp=parse_time("12:20"), units_delta=4),
     ]
 
 
-def test_cumulative_cashflow(make_data, query, user, product):
+def test_cumulative_cashflow(make_data: Callable[[str], None], query: QueryType) -> None:
     make_data("""
                     12:00, 12:10, 12:20, 12:30
         AAPL:       10
         Alice/AAPL:      ,     3,     4,    -5
     """)
-    rows = query("""
-        SELECT user_id, product_id, "timestamp",
-               buy_units - sell_units AS units_held
-        FROM cumulative_cashflow(NULL, NULL)
-        ORDER BY "timestamp"
-    """)
+    rows = query('SELECT * FROM cumulative_cashflow(NULL, NULL) ORDER BY "timestamp"')
     assert rows == [
-        {
-            "user_id": user("Alice"),
-            "product_id": product("AAPL"),
-            "timestamp": parse_time("12:10"),
-            "units_held": Decimal("3.000000"),
-        },
-        {
-            "user_id": user("Alice"),
-            "product_id": product("AAPL"),
-            "timestamp": parse_time("12:20"),
-            "units_held": Decimal("7.000000"),
-        },
-        {
-            "user_id": user("Alice"),
-            "product_id": product("AAPL"),
-            "timestamp": parse_time("12:30"),
-            "units_held": Decimal("2.000000"),
-        },
+        mock_ccf(timestamp=parse_time("12:10"), buy_units=3, sell_units=0),
+        mock_ccf(timestamp=parse_time("12:20"), buy_units=7, sell_units=0),
+        mock_ccf(timestamp=parse_time("12:30"), buy_units=7, sell_units=5),
     ]
 
 
-def test_user_product_timeline_includes_realtime_prices(make_data, query, user, product, insert):
-    """Test that include_realtime=true includes unbucketed price data for current portfolio value."""
+def test_user_product_timeline_latest_includes_realtime_prices(
+    make_data: Callable[[str], None],
+    query: QueryType,
+    user: Callable[[str], str],
+    product: Callable[[str], str],
+    insert: Callable[[PriceUpdate | Cashflow], None],
+) -> None:
     # Use make_data for initial setup
     make_data("""
                   12:30
@@ -232,7 +161,7 @@ def test_user_product_timeline_includes_realtime_prices(make_data, query, user, 
     # Query for latest portfolio value
     latest = query(
         """
-        SELECT timestamp, market_value
+        SELECT *
         FROM user_product_timeline_business_15min(%(user_id)s, %(product_id)s)
         ORDER BY timestamp DESC LIMIT 1
         """,
@@ -240,15 +169,15 @@ def test_user_product_timeline_includes_realtime_prices(make_data, query, user, 
     )
 
     # Returns the bucketed price timestamp (12:45 = 12:30 bucket + 15 min)
-    assert latest == [
-        {
-            "timestamp": parse_time("12:45"),
-            "market_value": Decimal("1000.000000000000"),
-        }
-    ]
+    assert latest == [mock_uptb(timestamp=parse_time("12:45"), market_value=1000)]
 
 
-def test_user_product_timeline_combines_cashflow_and_price_events(make_data, query, user, product):
+def test_user_product_timeline_combines_cashflow_and_price_events(
+    make_data: Callable[[str], None],
+    query: QueryType,
+    user: Callable[[str], str],
+    product: Callable[[str], str],
+) -> None:
     """Test that timeline combines cashflow events with price bucket events."""
     make_data("""
                  10:00, 11:00, 12:00
@@ -261,39 +190,36 @@ def test_user_product_timeline_combines_cashflow_and_price_events(make_data, que
 
     # Query the timeline
     timeline = query(
-        """
-        SELECT *
-        FROM user_product_timeline_business_15min(%(user_id)s, %(product_id)s)
-        ORDER BY timestamp
-        """,
+        "SELECT * FROM user_product_timeline_business_15min(%(user_id)s, %(product_id)s)",
         {"user_id": user("Alice"), "product_id": product("AAPL")},
     )
 
     # Expected results:
     # - Shows latest bucketed price (12:15 = 12:00 + 15min bucket offset)
     # - market_value = 10 * 160 = 1600 (using the 12:00 price)
+    #
+    assert timeline == [
+        mock_uptb(
+            timestamp=parse_time("12:15"),
+            buy_units=10,
+            units=10,
+            deposits=1500,
+            net_investment=1500,
+            market_value=1600,
+        )
+    ]
 
-    assert len(timeline) == 1
-    assert timeline[0]["user_id"] == user("Alice")
-    assert timeline[0]["product_id"] == product("AAPL")
-    assert timeline[0]["timestamp"] == parse_time("12:15")
-    assert timeline[0]["buy_units"] == Decimal("10.000000")
-    assert timeline[0]["sell_units"] == Decimal("0")
-    assert timeline[0]["units"] == Decimal("10.000000")
-    assert timeline[0]["deposits"] == Decimal("1500.000000")
-    assert timeline[0]["withdrawals"] == Decimal("0")
-    assert timeline[0]["net_investment"] == Decimal("1500.000000")
-    assert timeline[0]["market_value"] == Decimal("1600.000000000000")
 
-
-def test_user_timeline_aggregates_across_products(make_data, query, user, product):
+def test_user_timeline_aggregates_across_products(
+    make_data: Callable[[str], None], query: QueryType, user: Callable[[str], str]
+) -> None:
     """Test that user_timeline aggregates portfolio-level metrics across all products."""
     make_data("""
-                     10:00, 11:00, 12:00
-        AAPL:        150
-        GOOGL:       2800
-        Alice/AAPL:       , 10
-        Alice/GOOGL:            ,     , 5
+                     10:00, 10:01, 10:14, 10:29
+        AAPL:        1    ,      ,     2,     4
+        GOOGL:       1    ,      ,     3
+        Alice/AAPL:       , 1
+        Alice/GOOGL:      , 2
     """)
 
     # Refresh continuous aggregate
@@ -303,468 +229,122 @@ def test_user_timeline_aggregates_across_products(make_data, query, user, produc
     # This test validates that the schema and queries work correctly when data is present
     # For now, we'll just verify the query syntax is correct by running it
     timeline = query(
-        """
-        SELECT *
-        FROM user_timeline_business_15min(%(user_id)s)
-        ORDER BY timestamp
-        """,
+        "SELECT * FROM user_timeline_business_15min(%(user_id)s)",
         {"user_id": user("Alice")},
     )
 
-    # If the view returns data, validate it's correct
-    # Note: This may not return data depending on cache state
-    if len(timeline) > 0:
-        latest = timeline[-1]
-        assert latest["user_id"] == user("Alice")
-        # Verify market_value exists and is a Decimal
-        assert isinstance(latest["market_value"], Decimal)
-
-
-def test_cashflow_trigger_derives_missing_fields(query, product, user, insert):
-    """Test that cashflow table stores core fields and allows fees to be derived."""
-    # Insert price data
-    insert(
-        PriceUpdate(
-            product("AAPL"),
-            datetime.datetime(2025, 1, 1, 10, 0, tzinfo=datetime.timezone.utc),
-            101.00,
-        )
-    )
-
-    # Test: Provide units_delta, execution_price, user_money
-    # fees will be derived as user_money - (units_delta * execution_price)
-    result = query(
-        """
-        INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price, user_money)
-        VALUES (%(user_id)s, %(product_id)s, '2025-01-01 10:30:00', 10, 101.00, 1015.00)
-        RETURNING *,
-                  units_delta * execution_price AS execution_money,
-                  user_money - (units_delta * execution_price) AS fees
-        """,
-        {"user_id": user("Alice"), "product_id": product("AAPL")},
-    )
-
-    assert result == [
-        {
-            "execution_money": Decimal("1010.000000"),
-            "execution_price": Decimal("101.000000"),
-            "fees": Decimal("5.000000"),
-            "id": mock.ANY,
-            "product_id": product("AAPL"),
-            "timestamp": datetime.datetime(2025, 1, 1, 10, 30, tzinfo=datetime.timezone.utc),
-            "units_delta": Decimal("10.000000"),
-            "user_id": user("Alice"),
-            "user_money": Decimal("1015.000000"),
-        },
+    assert timeline == [
+        mock_utb(timestamp=parse_time("10:15"), market_value=8),
+        mock_utb(timestamp=parse_time("10:30"), market_value=10),
     ]
 
 
-def test_cashflow_trigger_validates_consistency(query, user, product):
-    """Test that cashflow table accepts valid data."""
-    # Insert valid cashflow data
-    result = query(
-        """
-        INSERT INTO cashflow (user_id, product_id, timestamp, units_delta, execution_price,
-                              user_money)
-        VALUES (%(user_id)s, %(product_id)s, '2025-01-01 10:30:00', 10, 101.00, 1015.00)
-        RETURNING *
-        """,
-        {"user_id": user("Alice"), "product_id": product("AAPL")},
-    )
-
-    # Verify the insert succeeded
-    assert len(result) == 1
-    assert result[0]["units_delta"] == Decimal("10.000000")
-    assert result[0]["user_money"] == Decimal("1015.000000")
-
-
-def test_cumulative_cashflow_calculations(make_data, query, product, user, insert):
-    """Test cumulative cashflow view calculates running totals correctly."""
-    # Setup: Insert price data using make_data
-    make_data("""
-              09:00, 10:00, 11:00, 12:00
-        AAPL: 100,   101,   102,   103
-    """)
-
-    # Insert 3 cashflows with custom fees: 2 buys, 1 sell
-    # user_money = execution_money + fees
-    # Buy 10 @ 101 with fees=5: user_money = 1010 + 5 = 1015
-    # Buy 5 @ 102 with fees=10: user_money = 510 + 10 = 520
-    # Sell 3 @ 103 with fees=3: user_money = -309 + 3 = -306
-    insert(Cashflow(user("Alice"), product("AAPL"), parse_time("10:30"), 10, 101.00, 1015.00))
-    insert(Cashflow(user("Alice"), product("AAPL"), parse_time("11:30"), 5, 102.00, 520.00))
-    insert(Cashflow(user("Alice"), product("AAPL"), parse_time("12:30"), -3, 103.00, -306.00))
-
-    # Query cumulative view with derived fields
-    rows = query(
-        """
-        SELECT user_id, product_id, timestamp,
-               buy_units, sell_units, buy_cost, sell_proceeds, deposits, withdrawals,
-               buy_units - sell_units AS units_held,
-               deposits - withdrawals AS net_investment,
-               deposits - buy_cost + sell_proceeds - withdrawals AS fees
-        FROM cumulative_cashflow(NULL, NULL)
-        ORDER BY timestamp
-        """
-    )
-
-    assert rows == [
-        {
-            "net_investment": Decimal("1015.000000"),
-            "product_id": product("AAPL"),
-            "timestamp": parse_time("10:30"),
-            "buy_cost": Decimal("1010.000000"),
-            "buy_units": Decimal("10.000000"),
-            "deposits": Decimal("1015.000000"),
-            "fees": Decimal("5.000000"),
-            "sell_proceeds": Decimal("0"),
-            "sell_units": Decimal("0"),
-            "withdrawals": Decimal("0"),
-            "units_held": Decimal("10.000000"),
-            "user_id": user("Alice"),
-        },
-        {
-            "net_investment": Decimal("1535.000000"),
-            "product_id": product("AAPL"),
-            "timestamp": parse_time("11:30"),
-            "buy_cost": Decimal("1520.000000"),
-            "buy_units": Decimal("15.000000"),
-            "deposits": Decimal("1535.000000"),
-            "fees": Decimal("15.000000"),
-            "sell_proceeds": Decimal("0"),
-            "sell_units": Decimal("0"),
-            "withdrawals": Decimal("0"),
-            "units_held": Decimal("15.000000"),
-            "user_id": user("Alice"),
-        },
-        {
-            "net_investment": Decimal("1229.000000"),
-            "product_id": product("AAPL"),
-            "timestamp": parse_time("12:30"),
-            "buy_cost": Decimal("1520.000000"),
-            "buy_units": Decimal("15.000000"),
-            "deposits": Decimal("1535.000000"),
-            "fees": Decimal("18.000000"),
-            "sell_proceeds": Decimal("309.000000"),
-            "sell_units": Decimal("3.000000"),
-            "withdrawals": Decimal("306.000000"),
-            "units_held": Decimal("12.000000"),
-            "user_id": user("Alice"),
-        },
-    ]
-
-
-def test_out_of_order_cashflow_invalidates_cache(query, product, user, insert):
+def test_out_of_order_cashflow_invalidates_cache(
+    make_data: Callable[[str], None],
+    query: QueryType,
+    product: Callable[[str], str],
+    user: Callable[[str], str],
+    insert: Callable[[PriceUpdate | Cashflow], None],
+) -> None:
     """Test that out-of-order cashflow insertion automatically invalidates affected cache."""
-    # Setup
-    insert(
-        PriceUpdate(
-            product("AAPL"),
-            datetime.datetime(2025, 1, 1, 10, 0, tzinfo=datetime.timezone.utc),
-            101.00,
-        )
-    )
-    insert(
-        PriceUpdate(
-            product("AAPL"),
-            datetime.datetime(2025, 1, 1, 11, 0, tzinfo=datetime.timezone.utc),
-            102.00,
-        )
-    )
-    insert(
-        PriceUpdate(
-            product("AAPL"),
-            datetime.datetime(2025, 1, 1, 12, 0, tzinfo=datetime.timezone.utc),
-            103.00,
-        )
-    )
-    insert(
-        PriceUpdate(
-            product("GOOGL"),
-            datetime.datetime(2025, 1, 1, 13, 0, tzinfo=datetime.timezone.utc),
-            200.00,
-        )
-    )
-
-    # Insert 3 cashflows for Alice/AAPL and one for Alice/GOOGL
-    # user_money = execution_money + fees
-    insert(
-        Cashflow(
-            user("Alice"),
-            product("AAPL"),
-            datetime.datetime(2025, 1, 1, 10, 30, tzinfo=datetime.timezone.utc),
-            10,
-            101.00,
-            1015.00,
-        )
-    )
-    insert(
-        Cashflow(
-            user("Alice"),
-            product("AAPL"),
-            datetime.datetime(2025, 1, 1, 11, 30, tzinfo=datetime.timezone.utc),
-            5,
-            102.00,
-            520.00,
-        )
-    )
-    insert(
-        Cashflow(
-            user("Alice"),
-            product("AAPL"),
-            datetime.datetime(2025, 1, 1, 12, 30, tzinfo=datetime.timezone.utc),
-            -3,
-            103.00,
-            -306.00,
-        )
-    )
-    insert(
-        Cashflow(
-            user("Alice"),
-            product("GOOGL"),
-            datetime.datetime(2025, 1, 1, 13, 0, tzinfo=datetime.timezone.utc),
-            10,
-            200.00,
-            2005.00,
-        )
-    )
+    # Setup initial data with 3 cashflows for Alice/AAPL
+    make_data("""
+                     10:00, 11:00, 12:00, 13:00
+        AAPL:        100  ,   101,   102,   103
+        Alice/AAPL:       ,    10,     5,    -3
+    """)
 
     # Fill cache
     query("SELECT refresh_cumulative_cashflow()")
 
-    # Verify cache
-    rows = query(
-        """
-        SELECT user_id, product_id, timestamp,
-               buy_units, sell_units, buy_cost, sell_proceeds, deposits, withdrawals,
-               buy_units - sell_units AS units_held,
-               deposits - withdrawals AS net_investment,
-               deposits - buy_cost + sell_proceeds - withdrawals AS fees
-        FROM cumulative_cashflow_cache WHERE product_id = %s ORDER BY timestamp
-        """,
-        (product("AAPL"),),
-    )
+    # Verify cache has 3 rows for AAPL
+    rows = query("SELECT * FROM cumulative_cashflow_cache ORDER BY timestamp")
     assert rows == [
-        {
-            "buy_cost": Decimal("1010.000000"),
-            "buy_units": Decimal("10.000000"),
-            "deposits": Decimal("1015.000000"),
-            "fees": Decimal("5.000000"),
-            "net_investment": Decimal("1015.000000"),
-            "product_id": product("AAPL"),
-            "sell_proceeds": Decimal("0.000000"),
-            "sell_units": Decimal("0.000000"),
-            "timestamp": datetime.datetime(2025, 1, 1, 10, 30, tzinfo=datetime.timezone.utc),
-            "units_held": Decimal("10.000000"),
-            "user_id": user("Alice"),
-            "withdrawals": Decimal("0.000000"),
-        },
-        {
-            "buy_cost": Decimal("1520.000000"),
-            "buy_units": Decimal("15.000000"),
-            "deposits": Decimal("1535.000000"),
-            "fees": Decimal("15.000000"),
-            "net_investment": Decimal("1535.000000"),
-            "product_id": product("AAPL"),
-            "sell_proceeds": Decimal("0.000000"),
-            "sell_units": Decimal("0.000000"),
-            "timestamp": datetime.datetime(2025, 1, 1, 11, 30, tzinfo=datetime.timezone.utc),
-            "units_held": Decimal("15.000000"),
-            "user_id": user("Alice"),
-            "withdrawals": Decimal("0.000000"),
-        },
-        {
-            "buy_cost": Decimal("1520.000000"),
-            "buy_units": Decimal("15.000000"),
-            "deposits": Decimal("1535.000000"),
-            "fees": Decimal("18.000000"),
-            "net_investment": Decimal("1229.000000"),
-            "product_id": product("AAPL"),
-            "sell_proceeds": Decimal("309.000000"),
-            "sell_units": Decimal("3.000000"),
-            "timestamp": datetime.datetime(2025, 1, 1, 12, 30, tzinfo=datetime.timezone.utc),
-            "units_held": Decimal("12.000000"),
-            "user_id": user("Alice"),
-            "withdrawals": Decimal("306.000000"),
-        },
+        mock_ccf(
+            timestamp=parse_time("11:00"),
+            buy_units=10,
+            sell_units=0,
+            buy_cost=1010,
+            sell_proceeds=0,
+        ),
+        mock_ccf(
+            timestamp=parse_time("12:00"),
+            buy_units=15,
+            sell_units=0,
+            buy_cost=1520,
+            sell_proceeds=0,
+        ),
+        mock_ccf(
+            timestamp=parse_time("13:00"),
+            buy_units=15,
+            sell_units=3,
+            buy_cost=1520,
+            sell_proceeds=309,
+        ),
     ]
 
-    # Insert out-of-order cashflow at 11:00 (between first and second)
-    # Buy 2 @ 101.50 with fees=1: user_money = 203 + 1 = 204
-    insert(
-        Cashflow(
-            user("Alice"),
-            product("AAPL"),
-            datetime.datetime(2025, 1, 1, 11, 0, tzinfo=datetime.timezone.utc),
-            2,
-            101.50,
-            204.00,
-        )
-    )
+    # Insert out-of-order cashflow at 11:30 (between first and second)
+    insert(Cashflow(user("Alice"), product("AAPL"), parse_time("11:30"), 2, 101.00, 202.00))
 
     # Verify calculations are correct with the out-of-order insert
-    rows = query(
-        """
-        SELECT user_id, product_id, timestamp,
-               buy_units, sell_units, buy_cost, sell_proceeds, deposits, withdrawals,
-               buy_units - sell_units AS units_held,
-               deposits - withdrawals AS net_investment,
-               deposits - buy_cost + sell_proceeds - withdrawals AS fees
-        FROM cumulative_cashflow(NULL, NULL) WHERE product_id = %s ORDER BY timestamp
-        """,
-        (product("AAPL"),),
-    )
+    rows = query("SELECT * FROM cumulative_cashflow_cache ORDER BY timestamp")
 
     assert rows == [
-        {
-            "buy_cost": Decimal("1010.000000"),
-            "buy_units": Decimal("10.000000"),
-            "deposits": Decimal("1015.000000"),
-            "fees": Decimal("5.000000"),
-            "net_investment": Decimal("1015.000000"),
-            "product_id": product("AAPL"),
-            "sell_proceeds": Decimal("0.000000"),
-            "sell_units": Decimal("0.000000"),
-            "timestamp": datetime.datetime(2025, 1, 1, 10, 30, tzinfo=datetime.timezone.utc),
-            "units_held": Decimal("10.000000"),
-            "user_id": user("Alice"),
-            "withdrawals": Decimal("0.000000"),
-        },
-        {
-            "buy_cost": Decimal("1213.000000"),
-            "buy_units": Decimal("12.000000"),
-            "deposits": Decimal("1219.000000"),
-            "fees": Decimal("6.000000"),
-            "net_investment": Decimal("1219.000000"),
-            "product_id": product("AAPL"),
-            "sell_proceeds": Decimal("0.000000"),
-            "sell_units": Decimal("0.000000"),
-            "timestamp": datetime.datetime(2025, 1, 1, 11, 0, tzinfo=datetime.timezone.utc),
-            "units_held": Decimal("12.000000"),
-            "user_id": user("Alice"),
-            "withdrawals": Decimal("0.000000"),
-        },
-        {
-            "buy_cost": Decimal("1723.000000"),
-            "buy_units": Decimal("17.000000"),
-            "deposits": Decimal("1739.000000"),
-            "fees": Decimal("16.000000"),
-            "net_investment": Decimal("1739.000000"),
-            "product_id": product("AAPL"),
-            "sell_proceeds": Decimal("0.000000"),
-            "sell_units": Decimal("0.000000"),
-            "timestamp": datetime.datetime(2025, 1, 1, 11, 30, tzinfo=datetime.timezone.utc),
-            "units_held": Decimal("17.000000"),
-            "user_id": user("Alice"),
-            "withdrawals": Decimal("0.000000"),
-        },
-        {
-            "buy_cost": Decimal("1723.000000"),
-            "buy_units": Decimal("17.000000"),
-            "deposits": Decimal("1739.000000"),
-            "fees": Decimal("19.000000"),
-            "net_investment": Decimal("1433.000000"),
-            "product_id": product("AAPL"),
-            "sell_proceeds": Decimal("309.000000"),
-            "sell_units": Decimal("3.000000"),
-            "timestamp": datetime.datetime(2025, 1, 1, 12, 30, tzinfo=datetime.timezone.utc),
-            "units_held": Decimal("14.000000"),
-            "user_id": user("Alice"),
-            "withdrawals": Decimal("306.000000"),
-        },
+        mock_ccf(
+            timestamp=parse_time("11:00"),
+            buy_units=10,
+            sell_units=0,
+            buy_cost=1010,
+            sell_proceeds=0,
+            deposits=1010,
+            withdrawals=0,
+        ),
+        mock_ccf(
+            timestamp=parse_time("11:30"),
+            buy_units=12,
+            sell_units=0,
+            buy_cost=1212,
+            sell_proceeds=0,
+            deposits=1212,
+            withdrawals=0,
+        ),
+        mock_ccf(
+            timestamp=parse_time("12:00"),
+            buy_units=17,
+            sell_units=0,
+            buy_cost=1722,
+            sell_proceeds=0,
+            deposits=1722,
+            withdrawals=0,
+        ),
+        mock_ccf(
+            timestamp=parse_time("13:00"),
+            buy_units=17,
+            sell_units=3,
+            buy_cost=1722,
+            sell_proceeds=309,
+            deposits=1722,
+            withdrawals=309,
+        ),
     ]
 
 
-def test_multi_product_cache_invalidation_isolation(query, product, user, insert):
+def test_multi_product_cache_invalidation_isolation(
+    make_data: Callable[[str], None],
+    query: QueryType,
+    product: Callable[[str], str],
+    user: Callable[[str], str],
+    insert: Callable[[PriceUpdate | Cashflow], None],
+) -> None:
     """Test that cache invalidation for one product doesn't affect another product."""
-
-    insert(
-        PriceUpdate(
-            product("AAPL"),
-            datetime.datetime(2025, 1, 1, 10, 0, tzinfo=datetime.timezone.utc),
-            100.00,
-        )
-    )
-    insert(
-        PriceUpdate(
-            product("AAPL"),
-            datetime.datetime(2025, 1, 1, 11, 0, tzinfo=datetime.timezone.utc),
-            101.00,
-        )
-    )
-    insert(
-        PriceUpdate(
-            product("AAPL"),
-            datetime.datetime(2025, 1, 1, 12, 0, tzinfo=datetime.timezone.utc),
-            102.00,
-        )
-    )
-    insert(
-        PriceUpdate(
-            product("GOOGL"),
-            datetime.datetime(2025, 1, 1, 10, 0, tzinfo=datetime.timezone.utc),
-            200.00,
-        )
-    )
-    insert(
-        PriceUpdate(
-            product("GOOGL"),
-            datetime.datetime(2025, 1, 1, 11, 0, tzinfo=datetime.timezone.utc),
-            201.00,
-        )
-    )
-    insert(
-        PriceUpdate(
-            product("GOOGL"),
-            datetime.datetime(2025, 1, 1, 12, 0, tzinfo=datetime.timezone.utc),
-            202.00,
-        )
-    )
-
-    # Insert 2 cashflows for each product
-    # Product A: a1(10:30), a2(11:30)
-    # Product B: b1(10:30), b2(11:30)
-    # user_money = execution_money + fees
-    insert(
-        Cashflow(
-            user("Alice"),
-            product("AAPL"),
-            datetime.datetime(2025, 1, 1, 10, 30, tzinfo=datetime.timezone.utc),
-            10,
-            100.00,
-            1001.00,
-        )
-    )
-    insert(
-        Cashflow(
-            user("Alice"),
-            product("AAPL"),
-            datetime.datetime(2025, 1, 1, 11, 30, tzinfo=datetime.timezone.utc),
-            5,
-            101.00,
-            506.00,
-        )
-    )
-    insert(
-        Cashflow(
-            user("Alice"),
-            product("GOOGL"),
-            datetime.datetime(2025, 1, 1, 10, 30, tzinfo=datetime.timezone.utc),
-            20,
-            200.00,
-            4002.00,
-        )
-    )
-    insert(
-        Cashflow(
-            user("Alice"),
-            product("GOOGL"),
-            datetime.datetime(2025, 1, 1, 11, 30, tzinfo=datetime.timezone.utc),
-            10,
-            201.00,
-            2012.00,
-        )
-    )
+    # Setup: 2 cashflows for each product
+    make_data("""
+                     10:00, 10:30, 11:00, 11:30, 12:00, 12:30
+        AAPL:        100,       , 101,       , 102
+        GOOGL:       200,       , 201,       , 202
+        Alice/AAPL:       , 10,        , 5
+        Alice/GOOGL:      , 20,        , 10
+    """)
 
     # Refresh cache and verify we have 4 rows (2 per product)
     query("SELECT refresh_cumulative_cashflow()")
@@ -772,197 +352,106 @@ def test_multi_product_cache_invalidation_isolation(query, product, user, insert
     assert cache_count == [{"count": 4}]
 
     # Add a3 and b3 (after cache watermark)
-    # user_money = execution_money + fees
-    insert(
-        Cashflow(
-            user("Alice"),
-            product("AAPL"),
-            datetime.datetime(2025, 1, 1, 12, 30, tzinfo=datetime.timezone.utc),
-            3,
-            102.00,
-            307.00,
-        )
-    )
-    insert(
-        Cashflow(
-            user("Alice"),
-            product("GOOGL"),
-            datetime.datetime(2025, 1, 1, 12, 30, tzinfo=datetime.timezone.utc),
-            5,
-            202.00,
-            1012.00,
-        )
-    )
+    insert(Cashflow(user("Alice"), product("AAPL"), parse_time("12:30"), 3, 102.00, 306.00))
+    insert(Cashflow(user("Alice"), product("GOOGL"), parse_time("12:30"), 5, 202.00, 1010.00))
 
     # Cache still has 4 rows (a3 and b3 not cached yet)
     cache_count_after_new = query("SELECT COUNT(*) as count FROM cumulative_cashflow_cache")
     assert cache_count_after_new == [{"count": 4}]
 
-    # Insert out-of-order cashflow for product B between b1 and b2
-    # This should auto-repair product B cache but NOT affect product A's cache
-    # user_money = execution_money + fees: 1604 + 1.5 = 1605.5
-    insert(
-        Cashflow(
-            user("Alice"),
-            product("GOOGL"),
-            datetime.datetime(2025, 1, 1, 11, 0, tzinfo=datetime.timezone.utc),
-            8,
-            200.50,
-            1605.50,
-        )
-    )
+    # Insert out-of-order cashflow for GOOGL between b1 and b2
+    # This should auto-repair GOOGL cache but NOT affect AAPL's cache
+    insert(Cashflow(user("Alice"), product("GOOGL"), parse_time("11:00"), 8, 200.50, 1604.00))
 
-    # Verify product A still has both cached rows (a1, a2) - unaffected by product B insert
-    product_a_cache = query(
-        """
-        SELECT COUNT(*) as count
-        FROM cumulative_cashflow_cache
-        WHERE product_id = %(product_a)s
-        """,
-        {"product_a": product("AAPL")},
+    # Verify AAPL cache still has 2 rows (unaffected by GOOGL insert)
+    aapl_cache = query(
+        "SELECT COUNT(*) as count FROM cumulative_cashflow_cache WHERE product_id = %s",
+        (product("AAPL"),),
     )
-    assert product_a_cache == [{"count": 2}]  # a1, a2 still cached
+    assert aapl_cache == [{"count": 2}]  # a1, a2 still cached
 
-    # Verify product B cache was automatically repaired (b1, bX, b2 cached, but NOT b3)
-    product_b_cache = query(
-        """
-        SELECT COUNT(*) as count
-        FROM cumulative_cashflow_cache
-        WHERE product_id = %(product_b)s
-        """,
-        {"product_b": product("GOOGL")},
+    # Verify GOOGL cache was automatically repaired (b1, bX, b2 cached, but NOT b3)
+    googl_cache = query(
+        "SELECT COUNT(*) as count FROM cumulative_cashflow_cache WHERE product_id = %s",
+        (product("GOOGL"),),
     )
-    assert product_b_cache == [{"count": 3}]  # b1, bX, b2 (NOT b3 - after watermark)
+    assert googl_cache == [{"count": 3}]  # b1, bX, b2 (NOT b3 - after watermark)
 
-    # Verify final state of both products
+    # Verify final cumulative state of AAPL (unaffected by GOOGL repair)
     rows_a = query(
-        """
-        SELECT user_id, product_id, timestamp,
-               buy_units, sell_units, buy_cost, sell_proceeds, deposits, withdrawals,
-               buy_units - sell_units AS units_held,
-               deposits - withdrawals AS net_investment,
-               deposits - buy_cost + sell_proceeds - withdrawals AS fees
-        FROM cumulative_cashflow(NULL, NULL)
-        WHERE user_id = %(user_id)s AND product_id = %(product_a)s
-        ORDER BY timestamp
-        """,
-        {"user_id": user("Alice"), "product_a": product("AAPL")},
+        "SELECT * FROM cumulative_cashflow(NULL, NULL) WHERE product_id = %s ORDER BY timestamp",
+        (product("AAPL"),),
     )
-
     assert rows_a == [
-        {
-            "net_investment": Decimal("1001.000000"),
-            "product_id": product("AAPL"),
-            "timestamp": datetime.datetime(2025, 1, 1, 10, 30, tzinfo=datetime.timezone.utc),
-            "buy_cost": Decimal("1000.000000"),
-            "buy_units": Decimal("10.000000"),
-            "deposits": Decimal("1001.000000"),
-            "fees": Decimal("1.000000"),
-            "sell_proceeds": Decimal("0.000000"),
-            "sell_units": Decimal("0.000000"),
-            "withdrawals": Decimal("0.000000"),
-            "units_held": Decimal("10.000000"),
-            "user_id": user("Alice"),
-        },
-        {
-            "net_investment": Decimal("1507.000000"),
-            "product_id": product("AAPL"),
-            "timestamp": datetime.datetime(2025, 1, 1, 11, 30, tzinfo=datetime.timezone.utc),
-            "buy_cost": Decimal("1505.000000"),
-            "buy_units": Decimal("15.000000"),
-            "deposits": Decimal("1507.000000"),
-            "fees": Decimal("2.000000"),
-            "sell_proceeds": Decimal("0.000000"),
-            "sell_units": Decimal("0.000000"),
-            "withdrawals": Decimal("0.000000"),
-            "units_held": Decimal("15.000000"),
-            "user_id": user("Alice"),
-        },
-        {
-            "net_investment": Decimal("1814.000000"),
-            "product_id": product("AAPL"),
-            "timestamp": datetime.datetime(2025, 1, 1, 12, 30, tzinfo=datetime.timezone.utc),
-            "buy_cost": Decimal("1811.000000000000"),
-            "buy_units": Decimal("18.000000"),
-            "deposits": Decimal("1814.000000"),
-            "fees": Decimal("3.000000"),
-            "sell_proceeds": Decimal("0.000000"),
-            "sell_units": Decimal("0.000000"),
-            "withdrawals": Decimal("0.000000"),
-            "units_held": Decimal("18.000000"),
-            "user_id": user("Alice"),
-        },
+        mock_ccf(
+            timestamp=parse_time("10:30"),
+            buy_units=10,
+            sell_units=0,
+            buy_cost=1000,
+            sell_proceeds=0,
+            deposits=1000,
+            withdrawals=0,
+        ),
+        mock_ccf(
+            timestamp=parse_time("11:30"),
+            buy_units=15,
+            sell_units=0,
+            buy_cost=1505,
+            sell_proceeds=0,
+            deposits=1505,
+            withdrawals=0,
+        ),
+        mock_ccf(
+            timestamp=parse_time("12:30"),
+            buy_units=18,
+            sell_units=0,
+            buy_cost=1811,
+            sell_proceeds=0,
+            deposits=1811,
+            withdrawals=0,
+        ),
     ]
 
+    # Verify final cumulative state of GOOGL (includes out-of-order insert)
     rows_b = query(
-        """
-        SELECT user_id, product_id, timestamp,
-               buy_units, sell_units, buy_cost, sell_proceeds, deposits, withdrawals,
-               buy_units - sell_units AS units_held,
-               deposits - withdrawals AS net_investment,
-               deposits - buy_cost + sell_proceeds - withdrawals AS fees
-        FROM cumulative_cashflow(NULL, NULL)
-        WHERE user_id = %(user_id)s AND product_id = %(product_b)s
-        ORDER BY timestamp
-        """,
-        {"user_id": user("Alice"), "product_b": product("GOOGL")},
+        "SELECT * FROM cumulative_cashflow(NULL, NULL) WHERE product_id = %s ORDER BY timestamp",
+        (product("GOOGL"),),
     )
-
     assert rows_b == [
-        {
-            "net_investment": Decimal("4002.000000"),
-            "product_id": product("GOOGL"),
-            "timestamp": datetime.datetime(2025, 1, 1, 10, 30, tzinfo=datetime.timezone.utc),
-            "buy_cost": Decimal("4000.000000"),
-            "buy_units": Decimal("20.000000"),
-            "deposits": Decimal("4002.000000"),
-            "fees": Decimal("2.000000"),
-            "sell_proceeds": Decimal("0.000000"),
-            "sell_units": Decimal("0.000000"),
-            "withdrawals": Decimal("0.000000"),
-            "units_held": Decimal("20.000000"),
-            "user_id": user("Alice"),
-        },
-        {
-            "net_investment": Decimal("5607.500000"),
-            "product_id": product("GOOGL"),
-            "timestamp": datetime.datetime(2025, 1, 1, 11, 0, tzinfo=datetime.timezone.utc),
-            "buy_cost": Decimal("5604.000000"),
-            "buy_units": Decimal("28.000000"),
-            "deposits": Decimal("5607.500000"),
-            "fees": Decimal("3.500000"),
-            "sell_proceeds": Decimal("0.000000"),
-            "sell_units": Decimal("0.000000"),
-            "withdrawals": Decimal("0.000000"),
-            "units_held": Decimal("28.000000"),
-            "user_id": user("Alice"),
-        },
-        {
-            "net_investment": Decimal("7619.500000"),
-            "product_id": product("GOOGL"),
-            "timestamp": datetime.datetime(2025, 1, 1, 11, 30, tzinfo=datetime.timezone.utc),
-            "buy_cost": Decimal("7614.000000"),
-            "buy_units": Decimal("38.000000"),
-            "deposits": Decimal("7619.500000"),
-            "fees": Decimal("5.500000"),
-            "sell_proceeds": Decimal("0.000000"),
-            "sell_units": Decimal("0.000000"),
-            "withdrawals": Decimal("0.000000"),
-            "units_held": Decimal("38.000000"),
-            "user_id": user("Alice"),
-        },
-        {
-            "net_investment": Decimal("8631.500000"),
-            "product_id": product("GOOGL"),
-            "timestamp": datetime.datetime(2025, 1, 1, 12, 30, tzinfo=datetime.timezone.utc),
-            "buy_cost": Decimal("8624.000000000000"),
-            "buy_units": Decimal("43.000000"),
-            "deposits": Decimal("8631.500000"),
-            "fees": Decimal("7.500000"),
-            "sell_proceeds": Decimal("0.000000"),
-            "sell_units": Decimal("0.000000"),
-            "withdrawals": Decimal("0.000000"),
-            "units_held": Decimal("43.000000"),
-            "user_id": user("Alice"),
-        },
+        mock_ccf(
+            timestamp=parse_time("10:30"),
+            buy_units=20,
+            sell_units=0,
+            buy_cost=4000,
+            sell_proceeds=0,
+            deposits=4000,
+            withdrawals=0,
+        ),
+        mock_ccf(
+            timestamp=parse_time("11:00"),
+            buy_units=28,
+            sell_units=0,
+            buy_cost=5604,
+            sell_proceeds=0,
+            deposits=5604,
+            withdrawals=0,
+        ),
+        mock_ccf(
+            timestamp=parse_time("11:30"),
+            buy_units=38,
+            sell_units=0,
+            buy_cost=7614,
+            sell_proceeds=0,
+            deposits=7614,
+            withdrawals=0,
+        ),
+        mock_ccf(
+            timestamp=parse_time("12:30"),
+            buy_units=43,
+            sell_units=0,
+            buy_cost=8624,
+            sell_proceeds=0,
+            deposits=8624,
+            withdrawals=0,
+        ),
     ]

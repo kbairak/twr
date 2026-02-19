@@ -1,11 +1,12 @@
 """Reset database by dropping schema and running migrations."""
 
 import psycopg2
-from drop import drop_and_recreate_schema
-from migrate import run_all_migrations
+
+from twr.drop import drop_and_recreate_schema
+from twr.migrate import run_all_migrations
 
 
-def main():
+def main() -> None:
     """Drop schema and run all migrations."""
     # First connection: drop schema
     connection = psycopg2.connect(

@@ -24,12 +24,12 @@ except (FileNotFoundError, json.JSONDecodeError):
 
 
 def vacuum_all_caches(
-    db_host="127.0.0.1",
-    db_port=5432,
-    db_name="twr",
-    db_user="twr_user",
-    db_password="twr_password",
-):
+    db_host: str = "127.0.0.1",
+    db_port: int = 5432,
+    db_name: str = "twr",
+    db_user: str = "twr_user",
+    db_password: str = "twr_password",
+) -> None:
     """VACUUM ANALYZE all cache tables."""
 
     # Connect with autocommit enabled (required for VACUUM)

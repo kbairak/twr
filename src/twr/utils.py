@@ -1,12 +1,14 @@
 import json
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import TypedDict
 
 import psycopg2
+from psycopg2.extensions import connection as Connection
 
 
 @contextmanager
-def connection():
+def connection() -> Generator[Connection, None, None]:
     conn = psycopg2.connect(
         dbname="twr", user="twr_user", password="twr_password", host="localhost", port=5432
     )

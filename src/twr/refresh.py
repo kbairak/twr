@@ -31,7 +31,7 @@ except (FileNotFoundError, json.JSONDecodeError):
     GRANULARITIES = []
 
 
-def parse_percentage(percentage_str):
+def parse_percentage(percentage_str: str) -> float:
     """Parse percentage string like '50%' to float 0.5"""
     percentage_str = percentage_str.strip()
     if percentage_str.endswith("%"):
@@ -47,13 +47,13 @@ def parse_percentage(percentage_str):
 
 
 def refresh_and_retain(
-    percentage=1.0,
-    db_host="127.0.0.1",
-    db_port=5432,
-    db_name="twr",
-    db_user="twr_user",
-    db_password="twr_password",
-):
+    percentage: float = 1.0,
+    db_host: str = "127.0.0.1",
+    db_port: int = 5432,
+    db_name: str = "twr",
+    db_user: str = "twr_user",
+    db_password: str = "twr_password",
+) -> None:
     """
     Refresh caches and retain specified percentage.
 
