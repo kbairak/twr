@@ -1,3 +1,4 @@
+import bisect
 import datetime
 import uuid
 from dataclasses import dataclass, field
@@ -15,18 +16,22 @@ class PriceUpdate:
 class Product:
     id: uuid.UUID = field(default_factory=uuid.uuid4)
     price_updates: list[PriceUpdate] = field(default_factory=list)
+    _timestamps: list[datetime.datetime] = field(default_factory=list)
 
     def price_at(self, timestamp: datetime.datetime) -> float | Decimal | None:
-        try:
-            last_price_update = self.price_updates[0]
-        except IndexError:
+        if not self.price_updates:
             return None
-        for price_update in self.price_updates[1:]:
-            if price_update.timestamp > timestamp:
-                break
-        if last_price_update.timestamp > timestamp:
+
+        # Binary search to find the rightmost price update with timestamp <= target
+        # We need a custom key function since we're searching by timestamp
+        idx = bisect.bisect_right(self._timestamps, timestamp)
+
+        # If idx is 0, all price updates are after the target timestamp
+        if idx == 0:
             return None
-        return last_price_update.price
+
+        # Return the price from the last update before or at the timestamp
+        return self.price_updates[idx - 1].price
 
 
 @dataclass
@@ -49,14 +54,6 @@ class Investment:
 class User:
     id: uuid.UUID = field(default_factory=uuid.uuid4)
     cashflows: list[Cashflow] = field(default_factory=list)
-
-    @property
-    def investments(self) -> dict[uuid.UUID | str, Investment]:
-        result = {}
-        for cashflow in self.cashflows:
-            result.setdefault(cashflow.product_id, Investment())
-            result[cashflow.product_id].units += cashflow.units_delta
-        return result
 
 
 @dataclass

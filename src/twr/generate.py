@@ -94,16 +94,21 @@ def generate(
                 continue
             while (next_price := last_price + random.random() - 0.5) <= 0:
                 pass
+            timestamp = tick + _jitter()
             product.price_updates.append(
-                PriceUpdate(product_id=product.id, timestamp=tick + _jitter(), price=next_price)
+                PriceUpdate(product_id=product.id, timestamp=timestamp, price=next_price)
             )
+            product._timestamps.append(timestamp)
             last_price = next_price
 
     users_list: list[User] = []
     users_dict: dict[uuid.UUID, User] = {}
+    # Track investments incrementally to avoid O(n²) recomputation
+    user_investments: dict[uuid.UUID, dict[uuid.UUID | str, Investment]] = {}
     for _ in range(user_count):
         users_list.append((u := User()))
         users_dict[u.id] = u
+        user_investments[u.id] = {}
 
     # Distribute cashflows between ticks
     start = ticks[0] + datetime.timedelta(seconds=1)
@@ -112,7 +117,7 @@ def generate(
     cashflow_ticks = sorted(start + random.random() * (end - start) for _ in range(cashflow_count))
     for timestamp in cashflow_ticks:
         user = random.choice(users_list)
-        investments = user.investments
+        investments = user_investments[user.id]
         if len(investments) > 0 and random.random() < 0.9:
             product = products_dict[random.choice(list(investments.keys()))]
         else:
@@ -136,6 +141,9 @@ def generate(
                 user_money=units_delta * execution_price + random.random(),
             )
         )
+        # Update investments incrementally
+        investments.setdefault(product.id, Investment())
+        investments[product.id].units += units_delta
 
     with connection() as conn:
         cur = conn.cursor()

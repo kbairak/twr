@@ -566,6 +566,7 @@ benchmark --days=1 --price-update-frequency=14min --products=500 --users=1000
 
 ## TODOs
 
+- [ ] Store execution money instead of execution price in cashflows
 - [ ] Understand and review user-product functions
 - [ ] Compress more tables
 - [ ] Rewrite tests
